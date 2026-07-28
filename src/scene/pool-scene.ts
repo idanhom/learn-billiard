@@ -25,6 +25,7 @@ import {
 import { BALL_RADIUS } from '../geometry/table';
 import { type Vec2, lerp as lerpVec, vec } from '../geometry/vec2';
 import type { Ball } from '../physics/world';
+import { CUE_BALL_NUMBER, ballTexture } from './ball-textures';
 import { fromWorld, headingToRotationY, headingToWorld, toWorld, writeWorld } from './coords';
 import { Guides } from './guides';
 import { buildTable } from './table-mesh';
@@ -36,7 +37,14 @@ const CUE_LENGTH = 1.35;
 const CUE_GAP = 0.02;
 const CUE_MAX_PULLBACK = 0.28;
 
-const BALL_COLORS = [0xf5f3ec, 0xd8b02a, 0x2f6bd8, 0xc8452f, 0x6b3fa0];
+/** Behind-the-cue framing. The camera backs off on longer shots so the object
+ * ball stays in view instead of vanishing over the horizon. */
+const VIEW_MIN_BACK = 0.62;
+const VIEW_BACK_PER_METRE = 0.22;
+const VIEW_MIN_HEIGHT = 0.38;
+const VIEW_HEIGHT_PER_METRE = 0.16;
+/** Fraction of the remaining gap the camera closes each frame. */
+const VIEW_SMOOTHING = 0.22;
 
 export interface RenderState {
   readonly balls: readonly Ball[];
@@ -45,6 +53,10 @@ export interface RenderState {
   readonly aimAngle: number;
   readonly power: number;
   readonly showCue: boolean;
+  /** 1-15 for the object ball; the cue ball is always 0. */
+  readonly objectBallNumber: number;
+  /** How far ahead the shot reaches, used to frame the behind-cue camera. */
+  readonly shotLength: number;
 }
 
 export class PoolScene {
@@ -60,8 +72,13 @@ export class PoolScene {
   readonly #clothPlane = new Plane(new Vector3(0, 1, 0), 0);
   readonly #pointer = new Vector2();
   readonly #hit = new Vector3();
+  readonly #ballNumbers = new Map<number, number>();
+  readonly #cameraTarget = new Vector3();
+  readonly #desiredPosition = new Vector3();
+  readonly #desiredTarget = new Vector3();
 
   #view: CameraView = 'behind';
+  #viewSettled = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.#canvas = canvas;
@@ -71,7 +88,10 @@ export class PoolScene {
     this.scene.add(buildTable());
     this.scene.add(this.guides.group);
 
-    const key = new DirectionalLight(0xffffff, 2.1);
+    // One shadow-casting key light, one cheap fill from the far side so the
+    // top corners of the table do not fall away into the dark, and ambient to
+    // lift the whole cloth. Only the key light pays for a shadow map.
+    const key = new DirectionalLight(0xffffff, 2);
     key.position.set(0.6, 2.4, 1.1);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
@@ -82,7 +102,12 @@ export class PoolScene {
     key.shadow.camera.top = 1.4;
     key.shadow.camera.bottom = -1.4;
     this.scene.add(key);
-    this.scene.add(new AmbientLight(0xdfe8ff, 0.9));
+
+    const fill = new DirectionalLight(0xd6e4ff, 0.85);
+    fill.position.set(-1.2, 1.6, -1.4);
+    this.scene.add(fill);
+
+    this.scene.add(new AmbientLight(0xdfe8ff, 1.35));
 
     this.#cue = buildCue();
     this.scene.add(this.#cue);
@@ -129,7 +154,7 @@ export class PoolScene {
     this.#syncBalls(state);
     const cuePos = this.#interpolatedPosition(state, 0);
     this.#placeCue(cuePos, state);
-    this.#placeCamera(cuePos, state.aimAngle);
+    this.#placeCamera(cuePos, state);
     this.#renderer.render(this.scene, this.#camera);
   }
 
@@ -146,16 +171,21 @@ export class PoolScene {
       if (!mesh) {
         mesh = new Mesh(
           new SphereGeometry(BALL_RADIUS, 24, 16),
-          new MeshStandardMaterial({
-            color: BALL_COLORS[ball.id % BALL_COLORS.length]!,
-            roughness: 0.25,
-            metalness: 0.05,
-          }),
+          new MeshStandardMaterial({ roughness: 0.22, metalness: 0.04 }),
         );
         mesh.castShadow = true;
         this.scene.add(mesh);
         this.#ballMeshes.set(ball.id, mesh);
       }
+
+      const wanted = ball.id === 0 ? CUE_BALL_NUMBER : state.objectBallNumber;
+      if (this.#ballNumbers.get(ball.id) !== wanted) {
+        this.#ballNumbers.set(ball.id, wanted);
+        const material = mesh.material as MeshStandardMaterial;
+        material.map = ballTexture(wanted) ?? null;
+        material.needsUpdate = true;
+      }
+
       mesh.visible = !ball.potted;
       if (!ball.potted) {
         writeWorld(mesh.position, this.#interpolatedPosition(state, i), BALL_RADIUS);
@@ -184,21 +214,42 @@ export class PoolScene {
     this.#cue.rotation.y = headingToRotationY(state.aimAngle);
   }
 
-  #placeCamera(cuePos: Vec2, aimAngle: number): void {
+  #placeCamera(cuePos: Vec2, state: RenderState): void {
     if (this.#view === 'overhead') {
       this.#camera.up.set(0, 0, -1);
       this.#camera.position.set(0, 2.15, 0);
       this.#camera.lookAt(0, 0, 0);
+      this.#viewSettled = false;
       return;
     }
-    const direction = headingToWorld(aimAngle);
+
+    const direction = headingToWorld(state.aimAngle);
     const origin = toWorld(cuePos, 0);
-    this.#camera.up.set(0, 1, 0);
-    this.#camera.position
+    const reach = Math.max(0, state.shotLength);
+
+    this.#desiredPosition
       .copy(origin)
-      .addScaledVector(direction, -0.78)
-      .add(new Vector3(0, 0.46, 0));
-    this.#camera.lookAt(origin.clone().addScaledVector(direction, 0.75).setY(0.02));
+      .addScaledVector(direction, -(VIEW_MIN_BACK + reach * VIEW_BACK_PER_METRE));
+    this.#desiredPosition.y += VIEW_MIN_HEIGHT + reach * VIEW_HEIGHT_PER_METRE;
+
+    this.#desiredTarget
+      .copy(origin)
+      .addScaledVector(direction, Math.max(0.5, reach * 0.55));
+    this.#desiredTarget.y = 0.02;
+
+    // Ease toward the framing rather than snapping, so fine aim adjustments
+    // do not jolt the whole view.
+    if (this.#viewSettled) {
+      this.#cameraTarget.lerp(this.#desiredTarget, VIEW_SMOOTHING);
+      this.#camera.position.lerp(this.#desiredPosition, VIEW_SMOOTHING);
+    } else {
+      this.#cameraTarget.copy(this.#desiredTarget);
+      this.#camera.position.copy(this.#desiredPosition);
+      this.#viewSettled = true;
+    }
+
+    this.#camera.up.set(0, 1, 0);
+    this.#camera.lookAt(this.#cameraTarget);
   }
 }
 

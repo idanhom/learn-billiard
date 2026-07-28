@@ -71,7 +71,8 @@ export class Hud {
     this.#shot = panel(root, 'hud-shot', 'top:14px; right:14px; text-align:right;');
     this.#levels = panel(root, 'hud-levels', 'top:150px; left:14px;');
     this.#levels.classList.add('interactive');
-    this.#report = panel(root, 'hud-report', 'bottom:96px; left:50%; transform:translateX(-50%);');
+    // Clear of the power meter and the controls panel, both of which sit low.
+    this.#report = panel(root, 'hud-report', 'top:86px; left:50%; transform:translateX(-50%);');
     this.#report.style.display = 'none';
     this.#notice = panel(root, 'hud-notice', 'top:14px; left:50%; transform:translateX(-50%);');
     this.#notice.style.display = 'none';
@@ -86,7 +87,11 @@ export class Hud {
       '<div class="hud-label">Controls</div>' +
       '<div class="hud-keys">Move mouse to aim &middot; <b>&larr;/&rarr;</b> fine aim &middot; ' +
       'hold <b>Space</b> for power<br><b>V</b> camera &middot; <b>R</b> retry &middot; ' +
-      '<b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level</div>';
+      '<b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level</div>' +
+      // Say plainly what this simulation is not, so nothing learned here comes
+      // as a surprise on a real table.
+      '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
+      'no english, no throw between balls, simplified cushions.</div>';
 
     this.#levels.addEventListener('click', (event) => {
       const target = (event.target as HTMLElement).closest('[data-level]');
@@ -217,8 +222,8 @@ function renderReport(outcome: ShotOutcome, exam: ExamRun | undefined): string {
 
   return (
     `<div class="hud-verdict ${good ? 'good' : 'bad'}">${verdict}</div>` +
-    `<div class="hud-sub">Aim: ${aim} &middot; ${outcome.cutAngle > 0 ? `${((outcome.cutAngle * 180) / Math.PI).toFixed(1)}&deg; cut ` : ''}` +
-    `tolerance ${outcome.toleranceDegrees}&deg;</div>` +
+    `<div class="hud-sub">Aim: ${aim} &middot; ${((outcome.cutAngle * 180) / Math.PI).toFixed(1)}&deg; cut ` +
+    `&middot; tolerance ${outcome.toleranceDegrees}&deg;</div>` +
     `<div class="hud-sub">Result: ${pot}</div>` +
     (notes.length ? `<div class="hud-sub hud-note">${notes.join(' &middot; ')}</div>` : '') +
     '<div class="hud-sub hud-note">R to retry this layout &middot; N for the next one</div>'

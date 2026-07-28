@@ -14,6 +14,7 @@ import { attachInput } from './game/input';
 import { browserStorage, createProgressStore } from './game/progress-store';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
 import { ADVANCE_REQUIRED } from './game/tiers';
+import { ballNumberFor } from './scene/ball-textures';
 import { PoolScene } from './scene/pool-scene';
 import { Hud } from './ui/hud';
 
@@ -120,7 +121,15 @@ canvas.focus();
 
 let lastFrame = performance.now();
 
+/**
+ * Work done inside one frame, as opposed to the gap between frames. The two
+ * differ whenever the browser is throttling the animation callback, and it is
+ * the work that tells us whether this runs on a Pi.
+ */
+const frameCost = { samples: 0, total: 0, worst: 0 };
+
 function frame(now: number): void {
+  const startedAt = performance.now();
   const dt = Math.min((now - lastFrame) / 1000, MAX_FRAME_DT);
   lastFrame = now;
 
@@ -137,6 +146,10 @@ function frame(now: number): void {
 
   const analysis = session.analysis;
   const pocket = pocketById(session.layout.targetPocket);
+  // Guides are for aiming. Once the cue is away they are just clutter over the
+  // thing the player should be watching.
+  const aiming = session.phase === 'aiming' || session.phase === 'charging';
+  scene.guides.setVisible(aiming);
   scene.guides.update({
     visibility: campaign.guides,
     cue: session.cueBall.pos,
@@ -153,6 +166,8 @@ function frame(now: number): void {
     aimAngle: session.aimAngle,
     power: session.power,
     showCue: session.phase === 'aiming' || session.phase === 'charging',
+    objectBallNumber: ballNumberFor(session.layout.id),
+    shotLength: analysis.cueToGhost + analysis.objectToPocket,
   });
 
   const stats = campaign.stats;
@@ -187,6 +202,11 @@ function frame(now: number): void {
     outcome: session.outcome,
   });
 
+  const cost = performance.now() - startedAt;
+  frameCost.samples++;
+  frameCost.total += cost;
+  if (cost > frameCost.worst) frameCost.worst = cost;
+
   requestAnimationFrame(frame);
 }
 
@@ -211,6 +231,16 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       startShot();
     },
     setView: (view: 'behind' | 'overhead') => scene.setView(view),
+    frameCost: () => ({
+      samples: frameCost.samples,
+      mean: frameCost.samples === 0 ? 0 : frameCost.total / frameCost.samples,
+      worst: frameCost.worst,
+    }),
+    resetFrameCost: () => {
+      frameCost.samples = 0;
+      frameCost.total = 0;
+      frameCost.worst = 0;
+    },
     state: () => ({
       phase: session.phase,
       shotId: session.layout.id,

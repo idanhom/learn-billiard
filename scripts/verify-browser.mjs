@@ -191,6 +191,58 @@ const afterReset = await state();
 check('resetting progress clears the counts', afterReset.stats.attempts === 0);
 check('resetting progress returns to level 1', afterReset.levelId === 1 && afterReset.tier === 0);
 
+// Frame-time pass on the production build. Headless Chromium here renders
+// through SwiftShader on the CPU, so these numbers are a pessimistic floor —
+// the Pi's GPU will do better. Treat a pass as "comfortably fast even in
+// software", not as the real frame rate.
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(300);
+await page.evaluate(() => {
+  window.__debug.aimIdeal();
+  window.__debug.fire(1);
+});
+
+// Measure the work done inside a frame, not the gap between frames: headless
+// Chromium throttles the animation callback to roughly 10 Hz, which says
+// nothing about how much the loop actually costs.
+await page.evaluate(() => window.__debug.resetFrameCost());
+await sleep(3000);
+const perf = await page.evaluate(() => window.__debug.frameCost());
+
+console.log(
+  `      per-frame work over ${perf.samples} frames: mean ${perf.mean.toFixed(2)} ms, ` +
+    `worst ${perf.worst.toFixed(2)} ms (software rendering, so a pessimistic floor)`,
+);
+check('a frame of work fits inside a 60 fps budget', perf.mean < 16.6, `mean ${perf.mean.toFixed(2)} ms`);
+check('no single frame blows the budget', perf.worst < 100, `worst ${perf.worst.toFixed(2)} ms`);
+check('the loop actually ran while sampling', perf.samples > 10, `samples=${perf.samples}`);
+
+const pixelRatio = await page.evaluate(() => {
+  const canvas = document.getElementById('game');
+  return canvas.width / canvas.getBoundingClientRect().width;
+});
+check('device pixel ratio is capped for the Pi', pixelRatio <= 1.5 + 1e-6, `ratio ${pixelRatio}`);
+
+// A clean aiming shot of a half-ball cut, guides up, numbered object ball.
+// From a fresh load, so no stale notice or report is left on screen.
+await page.evaluate(() => window.localStorage.clear());
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+await page.evaluate(() => {
+  window.__debug.selectLevel(3);
+  window.__debug.aimIdeal();
+});
+await sleep(600);
+
+const showcase = await state();
+check('the showcase shot really is on the half-ball level', showcase.levelId === 3, `level=${showcase.levelId}`);
+check('the showcase shot is waiting to be aimed', showcase.phase === 'aiming', showcase.phase);
+
+await page.screenshot({ path: `${OUT}aiming-half-ball.png` });
+await page.evaluate(() => window.__debug.setView('overhead'));
+await sleep(400);
+await page.screenshot({ path: `${OUT}aiming-half-ball-overhead.png` });
+
 check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 
 await browser.close();
