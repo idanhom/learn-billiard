@@ -9,10 +9,11 @@
 import { fullness as fullnessOf } from './geometry/shot';
 import { pocketById } from './geometry/table';
 import { type Vec2, add, angleOf, fromAngle, sub } from './geometry/vec2';
-import { SLICE_DRILLS, type ShotLayout } from './game/drills';
+import { Campaign } from './game/campaign';
 import { attachInput } from './game/input';
+import { browserStorage, createProgressStore } from './game/progress-store';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
-import { ADVANCE_REQUIRED, TierTracker } from './game/tiers';
+import { ADVANCE_REQUIRED } from './game/tiers';
 import { PoolScene } from './scene/pool-scene';
 import { Hud } from './ui/hud';
 
@@ -23,46 +24,66 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
 const hudRoot = document.getElementById('hud') as HTMLElement;
 
 const scene = new PoolScene(canvas);
-const hud = new Hud(hudRoot);
+const campaign = new Campaign(createProgressStore(browserStorage()), {
+  seed: Math.floor(Date.now() % 1_000_000),
+});
 
-const DEFAULT_TOLERANCE_DEGREES = 2;
+const hud = new Hud(hudRoot, {
+  onReset: () => {
+    campaign.resetProgress();
+    notice = 'Progress reset.';
+    startShot();
+  },
+  onSelectLevel: (id: number) => selectLevel(id),
+});
 
-const tiers = new TierTracker();
-
-let drillIndex = 0;
-let layout: ShotLayout = SLICE_DRILLS[0]!;
-let session = newSession(layout);
+let session = newSession();
 let chargeSeconds = 0;
-let attempts = 0;
-let qualified = 0;
 let evaluations = 0;
+let notice = campaign.notice;
 
-function newSession(next: ShotLayout): ShotSession {
-  return new ShotSession(next, { toleranceDegrees: DEFAULT_TOLERANCE_DEGREES });
+function newSession(): ShotSession {
+  return new ShotSession(campaign.layout, { toleranceDegrees: campaign.toleranceDegrees });
 }
 
-function startShot(next: ShotLayout): void {
-  layout = next;
-  session = newSession(layout);
+function startShot(): void {
+  session = newSession();
   chargeSeconds = 0;
 }
 
 function retry(): void {
   if (session.phase === 'simulating') return;
-  startShot(layout);
+  campaign.retryShot();
+  startShot();
 }
 
-function nextDrill(): void {
+function nextShot(): void {
   if (session.phase === 'simulating') return;
-  drillIndex = (drillIndex + 1) % SLICE_DRILLS.length;
-  startShot(SLICE_DRILLS[drillIndex]!);
+  campaign.nextShot();
+  startShot();
+}
+
+function selectLevel(id: number): void {
+  if (session.phase === 'simulating') return;
+  if (!campaign.selectLevel(id)) return;
+  notice = undefined;
+  startShot();
+  canvas.focus();
 }
 
 function recordOutcome(outcome: ShotOutcome): void {
   evaluations++;
-  attempts++;
-  if (outcome.qualifying) qualified++;
-  tiers.record(outcome.qualifying);
+  const event = campaign.record(outcome);
+  if (event.examFinished) {
+    const { potted, total, personalBest } = event.examFinished;
+    notice = `Exam finished: ${potted} of ${total} potted${personalBest ? ' — a personal best' : ''}.`;
+    startShot();
+  } else if (event.levelCompleted) {
+    notice = `Level complete. Moving on to ${campaign.level.name}.`;
+    startShot();
+  } else if (event.advancedTier) {
+    notice = `Tier ${campaign.tier}: one more guide comes away.`;
+  }
 }
 
 attachInput(canvas, scene, {
@@ -90,7 +111,8 @@ attachInput(canvas, scene, {
     scene.toggleView();
   },
   onRetry: retry,
-  onNext: nextDrill,
+  onNext: nextShot,
+  onSelectLevel: selectLevel,
 });
 
 window.addEventListener('resize', () => scene.resize());
@@ -114,9 +136,9 @@ function frame(now: number): void {
   }
 
   const analysis = session.analysis;
-  const pocket = pocketById(layout.targetPocket);
+  const pocket = pocketById(session.layout.targetPocket);
   scene.guides.update({
-    visibility: tiers.guides,
+    visibility: campaign.guides,
     cue: session.cueBall.pos,
     aimEnd: add(session.cueBall.pos, fromAngle(session.aimAngle, analysis.cueToGhost)),
     ghost: analysis.ghostCenter,
@@ -133,6 +155,7 @@ function frame(now: number): void {
     showCue: session.phase === 'aiming' || session.phase === 'charging',
   });
 
+  const stats = campaign.stats;
   hud.update({
     phase: session.phase,
     power: session.power,
@@ -140,15 +163,26 @@ function frame(now: number): void {
     cutSide: analysis.cutSide,
     fullness: fullnessOf(analysis.cutAngle),
     liveAimError: session.currentAimError,
-    guides: tiers.guides,
-    tier: tiers.tier,
-    tierComplete: tiers.completed,
-    label: layout.id === 'drill-cut-30' ? 'Drill: 30 degree cut' : 'Drill: straight in',
-    toleranceDegrees: session.toleranceDegrees,
-    windowQualified: tiers.qualifiedInWindow,
+    guides: campaign.guides,
+    tier: campaign.tier,
+    tierComplete: campaign.levelCompleted,
+    levelName: campaign.level.name,
+    levelDescription: campaign.level.description,
+    levels: campaign.levels.map((level) => ({
+      id: level.id,
+      name: level.name,
+      completed: campaign.levelStats(level.id).completed,
+      current: level.id === campaign.level.id,
+    })),
+    toleranceDegrees: campaign.toleranceDegrees,
+    windowQualified: campaign.qualifiedInWindow,
     windowNeeded: ADVANCE_REQUIRED,
-    attempts,
-    qualified,
+    attempts: stats.attempts,
+    qualified: stats.qualified,
+    potted: stats.potted,
+    exam: campaign.exam,
+    examBest: campaign.examBest,
+    notice,
     view: scene.view,
     outcome: session.outcome,
   });
@@ -170,17 +204,25 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       return session.release();
     },
     retry,
-    next: nextDrill,
+    next: nextShot,
+    selectLevel,
+    resetProgress: () => {
+      campaign.resetProgress();
+      startShot();
+    },
     setView: (view: 'behind' | 'overhead') => scene.setView(view),
     state: () => ({
       phase: session.phase,
-      shotId: layout.id,
-      attempts,
-      qualified,
+      shotId: session.layout.id,
+      levelId: campaign.level.id,
+      tier: campaign.tier,
+      tierComplete: campaign.levelCompleted,
+      guides: campaign.guides,
+      stats: campaign.stats,
+      exam: campaign.exam ?? null,
+      examBest: campaign.examBest,
+      notice: notice ?? null,
       evaluations,
-      tier: tiers.tier,
-      tierComplete: tiers.completed,
-      guides: tiers.guides,
       outcome: session.outcome ?? null,
     }),
   };

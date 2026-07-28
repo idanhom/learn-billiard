@@ -1,0 +1,167 @@
+import { describe, expect, test } from 'vitest';
+import {
+  PROGRESS_KEY,
+  PROGRESS_VERSION,
+  type ProgressState,
+  type StorageLike,
+  createProgressStore,
+  emptyProgress,
+  validateProgress,
+} from '../../src/game/progress-store';
+
+class FakeStorage implements StorageLike {
+  readonly items = new Map<string, string>();
+  failOnWrite = false;
+
+  getItem(key: string): string | null {
+    return this.items.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    if (this.failOnWrite) throw new Error('QuotaExceededError');
+    this.items.set(key, value);
+  }
+
+  removeItem(key: string): void {
+    this.items.delete(key);
+  }
+}
+
+function populated(): ProgressState {
+  return {
+    version: PROGRESS_VERSION,
+    currentLevel: 3,
+    examBest: 7,
+    levels: {
+      '1': { tier: 3, completed: true, attempts: 21, qualified: 15, potted: 11 },
+      '3': { tier: 1, completed: false, attempts: 4, qualified: 3, potted: 2 },
+    },
+  };
+}
+
+describe('empty progress', () => {
+  test('starts on the first level with nothing recorded', () => {
+    const empty = emptyProgress();
+    expect(empty.version).toBe(PROGRESS_VERSION);
+    expect(empty.currentLevel).toBe(1);
+    expect(empty.levels).toEqual({});
+    expect(empty.examBest).toBeNull();
+  });
+});
+
+describe('validation', () => {
+  test('accepts a well-formed state', () => {
+    expect(validateProgress(populated())).toEqual(populated());
+  });
+
+  test('rejects anything that is not an object', () => {
+    for (const bad of [null, undefined, 42, 'progress', [], true]) {
+      expect(validateProgress(bad)).toBeUndefined();
+    }
+  });
+
+  test('rejects a state written by a different version', () => {
+    expect(validateProgress({ ...populated(), version: PROGRESS_VERSION + 1 })).toBeUndefined();
+    expect(validateProgress({ ...populated(), version: 'one' })).toBeUndefined();
+  });
+
+  test('rejects a tier outside the range rather than clamping it silently', () => {
+    const state = populated();
+    expect(validateProgress({ ...state, levels: { '1': { ...state.levels['1']!, tier: 9 } } })).toBeUndefined();
+    expect(validateProgress({ ...state, levels: { '1': { ...state.levels['1']!, tier: -1 } } })).toBeUndefined();
+  });
+
+  test('rejects impossible counters', () => {
+    const state = populated();
+    const level = state.levels['1']!;
+    expect(validateProgress({ ...state, levels: { '1': { ...level, attempts: -3 } } })).toBeUndefined();
+    expect(validateProgress({ ...state, levels: { '1': { ...level, attempts: 1.5 } } })).toBeUndefined();
+    // More qualifying shots than attempts is not a state the game can produce.
+    expect(validateProgress({ ...state, levels: { '1': { ...level, qualified: 99 } } })).toBeUndefined();
+    expect(validateProgress({ ...state, levels: { '1': { ...level, potted: 99 } } })).toBeUndefined();
+  });
+
+  test('rejects an unknown level id', () => {
+    const state = populated();
+    expect(validateProgress({ ...state, levels: { '99': state.levels['1'] } })).toBeUndefined();
+    expect(validateProgress({ ...state, currentLevel: 42 })).toBeUndefined();
+  });
+
+  test('rejects a missing field rather than filling it in', () => {
+    const state = populated();
+    const { completed: _completed, ...withoutCompleted } = state.levels['1']!;
+    expect(validateProgress({ ...state, levels: { '1': withoutCompleted } })).toBeUndefined();
+  });
+
+  test('accepts a null exam best but not a nonsense one', () => {
+    expect(validateProgress({ ...populated(), examBest: null })).toBeDefined();
+    expect(validateProgress({ ...populated(), examBest: -1 })).toBeUndefined();
+    expect(validateProgress({ ...populated(), examBest: 'lots' })).toBeUndefined();
+  });
+});
+
+describe('the store', () => {
+  test('round-trips a state', () => {
+    const storage = new FakeStorage();
+    const store = createProgressStore(storage);
+    expect(store.save(populated())).toBe(true);
+    const loaded = store.load();
+    expect(loaded.state).toEqual(populated());
+    expect(loaded.recovered).toBe(false);
+  });
+
+  test('an empty store is a fresh start, not a recovery', () => {
+    const loaded = createProgressStore(new FakeStorage()).load();
+    expect(loaded.state).toEqual(emptyProgress());
+    expect(loaded.recovered).toBe(false);
+  });
+
+  test('corrupt json resets cleanly and says so', () => {
+    const storage = new FakeStorage();
+    storage.items.set(PROGRESS_KEY, '{not json at all');
+    const loaded = createProgressStore(storage).load();
+    expect(loaded.state).toEqual(emptyProgress());
+    expect(loaded.recovered).toBe(true);
+    expect(loaded.reason).toBeTruthy();
+  });
+
+  test('a state from another version resets cleanly and says so', () => {
+    const storage = new FakeStorage();
+    storage.items.set(PROGRESS_KEY, JSON.stringify({ ...populated(), version: 99 }));
+    const loaded = createProgressStore(storage).load();
+    expect(loaded.state).toEqual(emptyProgress());
+    expect(loaded.recovered).toBe(true);
+  });
+
+  test('tampered progress resets rather than being trusted', () => {
+    const storage = new FakeStorage();
+    storage.items.set(
+      PROGRESS_KEY,
+      JSON.stringify({ ...populated(), levels: { '1': { tier: 3, completed: true, attempts: 1, qualified: 50, potted: 0 } } }),
+    );
+    expect(createProgressStore(storage).load().recovered).toBe(true);
+  });
+
+  test('a storage that refuses to write reports failure instead of throwing', () => {
+    const storage = new FakeStorage();
+    storage.failOnWrite = true;
+    expect(() => createProgressStore(storage).save(populated())).not.toThrow();
+    expect(createProgressStore(storage).save(populated())).toBe(false);
+  });
+
+  test('reset clears what was stored', () => {
+    const storage = new FakeStorage();
+    const store = createProgressStore(storage);
+    store.save(populated());
+    store.reset();
+    expect(storage.getItem(PROGRESS_KEY)).toBeNull();
+    expect(store.load().state).toEqual(emptyProgress());
+  });
+
+  test('an unavailable storage degrades to an in-memory session', () => {
+    const store = createProgressStore(undefined);
+    expect(store.load().state).toEqual(emptyProgress());
+    expect(store.save(populated())).toBe(false);
+    expect(() => store.reset()).not.toThrow();
+  });
+});

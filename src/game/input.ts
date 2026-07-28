@@ -18,6 +18,7 @@ export interface InputHandlers {
   onToggleView(): void;
   onRetry(): void;
   onNext(): void;
+  onSelectLevel(id: number): void;
 }
 
 export interface PointerProjector {
@@ -26,6 +27,18 @@ export interface PointerProjector {
 
 const FINE_NUDGE = (0.25 * Math.PI) / 180;
 const COARSE_NUDGE = (1 * Math.PI) / 180;
+
+/** Digit rows 1-7 select a level. Physical codes, so the layout does not matter. */
+const LEVEL_KEYS = new Map<string, number>(
+  [1, 2, 3, 4, 5, 6, 7].flatMap((n) => [
+    [`Digit${n}`, n] as [string, number],
+    [`Numpad${n}`, n] as [string, number],
+  ]),
+);
+
+function levelFromDigit(code: string): number | undefined {
+  return LEVEL_KEYS.get(code);
+}
 
 export function attachInput(
   canvas: HTMLCanvasElement,
@@ -72,7 +85,10 @@ export function attachInput(
           handlers.onChargeCancel();
         }
         return;
-      default:
+      default: {
+        const level = levelFromDigit(event.code);
+        if (level !== undefined) handlers.onSelectLevel(level);
+      }
     }
   };
 

@@ -127,3 +127,80 @@ body {
   min-width: 280px;
   text-align: center;
 }
+
+#hud-notice {
+  max-width: 460px;
+  text-align: center;
+  border-color: rgba(226, 160, 63, 0.5);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.panel.interactive {
+  pointer-events: auto;
+}
+
+.hud-level-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 8px;
+}
+
+.hud-level {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hud-level:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+}
+
+.hud-level.current {
+  color: var(--ink);
+  border-color: rgba(111, 211, 160, 0.45);
+  background: rgba(111, 211, 160, 0.1);
+}
+
+.hud-level-id {
+  display: inline-block;
+  min-width: 14px;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-tick {
+  margin-left: auto;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.hud-reset {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.hud-reset:hover {
+  color: var(--bad);
+  border-color: rgba(224, 108, 117, 0.5);
+}

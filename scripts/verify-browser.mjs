@@ -1,12 +1,14 @@
 /**
  * Browser verification against the production artifact.
  *
- * Runs `vite preview`, not the dev server, so what is checked is what is
- * actually shipped. Drives a deterministic shot through the debug hook and
- * asserts the shot is evaluated exactly once — the guard that stops progress
- * being written twice for a single stroke.
+ * Runs against `vite preview`, not the dev server, so what is checked is what
+ * is actually shipped. Drives real shots through the debug hook and asserts the
+ * things unit tests cannot see: that a shot is evaluated exactly once, that
+ * guides come away as tiers are earned, that progress survives a reload, and
+ * that corrupted storage resets cleanly with a notice.
  *
- *   npm run build && npm run verify:browser
+ *   npm run build && npm run preview   (in one terminal)
+ *   npm run verify:browser
  *
  * Screenshots land in artifacts/.
  */
@@ -60,21 +62,45 @@ page.on('console', (message) => {
 });
 page.on('pageerror', (error) => consoleErrors.push(String(error)));
 
+const state = () => page.evaluate(() => window.__debug.state());
+
+/**
+ * Reset first: an evaluated shot refuses to be re-aimed or re-struck, which is
+ * the point of the guard, so the layout has to be reset before firing again.
+ */
+async function playPerfect({ power = 0.5, fresh = false } = {}) {
+  const fired = await page.evaluate(
+    ({ p, f }) => {
+      if (f) window.__debug.next();
+      else window.__debug.retry();
+      window.__debug.aimIdeal();
+      return window.__debug.fire(p);
+    },
+    { p: power, f: fresh },
+  );
+  if (!fired) throw new Error('the debug hook refused to fire a shot');
+  await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, {
+    timeout: 30000,
+  });
+}
+
 await page.goto(PAGE_URL, { waitUntil: 'load' });
-await sleep(1200);
+await page.evaluate(() => window.localStorage.clear());
+await page.reload({ waitUntil: 'load' });
+await sleep(1000);
 
 check('debug hook is exposed on the production build', await page.evaluate(() => Boolean(window.__debug)));
 
-const initial = await page.evaluate(() => window.__debug.state());
+const initial = await state();
 check('starts in the aiming phase', initial.phase === 'aiming', initial.phase);
-check('starts on the straight-in drill', initial.shotId === 'drill-straight-in', initial.shotId);
+check('starts on level 1 at tier 0', initial.levelId === 1 && initial.tier === 0);
+check('starts with every guide showing', initial.guides.objectPath && initial.guides.ghostBall);
+check('a fresh start carries no recovery notice', initial.notice === null, String(initial.notice));
 
-// Behind-the-cue view.
 await page.evaluate(() => window.__debug.setView('behind'));
 await sleep(300);
 await page.screenshot({ path: `${OUT}camera-behind.png` });
 
-// Overhead view.
 await page.evaluate(() => window.__debug.setView('overhead'));
 await sleep(300);
 await page.screenshot({ path: `${OUT}camera-overhead.png` });
@@ -89,79 +115,81 @@ check(
   `${canvasPixels.width}x${canvasPixels.height}`,
 );
 
-// Drive the deterministic straight-in shot on the ideal line.
-await page.evaluate(() => {
-  window.__debug.aimIdeal();
-  window.__debug.fire(0.5);
-});
-check('shot is simulating after firing', (await page.evaluate(() => window.__debug.state().phase)) === 'simulating');
+// One shot, evaluated exactly once.
+await playPerfect();
+const first = await state();
+check('exactly one evaluation fired', first.evaluations === 1, `evaluations=${first.evaluations}`);
+check('exactly one attempt recorded', first.stats.attempts === 1, `attempts=${first.stats.attempts}`);
+check('a perfectly aimed shot qualifies', first.outcome?.qualifying === true);
 
-await page.waitForFunction(() => window.__debug.state().phase === 'evaluated', null, { timeout: 30000 });
-await sleep(600);
-
-const settled = await page.evaluate(() => window.__debug.state());
-check('exactly one evaluation fired', settled.evaluations === 1, `evaluations=${settled.evaluations}`);
-check('exactly one attempt recorded', settled.attempts === 1, `attempts=${settled.attempts}`);
-check('a perfectly aimed shot qualifies', settled.outcome?.qualifying === true);
-check('a perfectly aimed straight-in shot pots', settled.outcome?.pottedTarget === true);
-
-// Idle for a while: the loop must not re-evaluate a settled shot.
-await sleep(1500);
-const later = await page.evaluate(() => window.__debug.state());
-check('a settled shot is never re-evaluated', later.evaluations === 1, `evaluations=${later.evaluations}`);
-
+await sleep(1200);
+check('a settled shot is never re-evaluated', (await state()).evaluations === 1);
 await page.screenshot({ path: `${OUT}post-shot-report.png` });
 
-// Next drill: the 30 degree cut.
-await page.evaluate(() => window.__debug.next());
-await sleep(300);
-const cut = await page.evaluate(() => window.__debug.state());
-check('N advances to the cut drill', cut.shotId === 'drill-cut-30', cut.shotId);
-check('the new shot starts unevaluated', cut.outcome === null);
+// Guides come away as the aim proves reliable.
+await playPerfect({ fresh: true });
+await playPerfect({ fresh: true });
+const promoted = await state();
+check('three qualifying shots advance a tier', promoted.tier === 1, `tier=${promoted.tier}`);
+check('the pocket line is withdrawn at tier 1', promoted.guides.objectPath === false);
+check('the ghost ball survives to tier 1', promoted.guides.ghostBall === true);
 
-await page.evaluate(() => {
-  window.__debug.aimIdeal();
-  window.__debug.fire(0.55);
-});
-await page.waitForFunction(() => window.__debug.state().phase === 'evaluated', null, { timeout: 30000 });
-const cutResult = await page.evaluate(() => window.__debug.state());
-check('the 30 degree cut pots on the ideal line', cutResult.outcome?.pottedTarget === true);
-check('two attempts recorded in total', cutResult.attempts === 2, `attempts=${cutResult.attempts}`);
-
-await page.screenshot({ path: `${OUT}cut-drill.png` });
-
-// Guides come away as the aim gets reliable.
-const beforeTier = await page.evaluate(() => window.__debug.state());
-check('starts on tier 0 with every guide showing', beforeTier.tier === 0 && beforeTier.guides.objectPath === true);
-
-/**
- * Reset first: an evaluated shot refuses to be re-aimed or re-struck, which is
- * the point of the guard, so the layout has to be reset before firing again.
- */
-async function playPerfect(power = 0.5) {
-  const fired = await page.evaluate((p) => {
-    window.__debug.retry();
-    window.__debug.aimIdeal();
-    return window.__debug.fire(p);
-  }, power);
-  if (!fired) throw new Error('the debug hook refused to fire a shot');
-  await page.waitForFunction(() => window.__debug.state().phase === 'evaluated', null, { timeout: 30000 });
-}
-
-await playPerfect(); // third qualifying shot overall
-const advanced = await page.evaluate(() => window.__debug.state());
-check('three qualifying shots advance a tier', advanced.tier === 1, `tier=${advanced.tier}`);
-check('the pocket line is withdrawn at tier 1', advanced.guides.objectPath === false);
-check('the ghost ball survives to tier 1', advanced.guides.ghostBall === true);
-
-await playPerfect();
-await playPerfect();
-await playPerfect();
-const tierTwo = await page.evaluate(() => window.__debug.state());
+await playPerfect({ fresh: true });
+await playPerfect({ fresh: true });
+await playPerfect({ fresh: true });
+const tierTwo = await state();
 check('another three advance again', tierTwo.tier === 2, `tier=${tierTwo.tier}`);
 check('the ghost ball is withdrawn at tier 2', tierTwo.guides.ghostBall === false);
-
 await page.screenshot({ path: `${OUT}tier-2.png` });
+
+// Progress survives a reload.
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+const reloaded = await state();
+check('progress survives a reload', reloaded.tier === 2 && reloaded.levelId === 1, `tier=${reloaded.tier}`);
+check('per-level counts survive a reload', reloaded.stats.attempts === 6, `attempts=${reloaded.stats.attempts}`);
+
+// Level select.
+await page.evaluate(() => window.__debug.selectLevel(5));
+await sleep(300);
+const levelFive = await state();
+check('level select moves to the chosen level', levelFive.levelId === 5, `level=${levelFive.levelId}`);
+check('a new level starts at its own tier', levelFive.tier === 0);
+check('the layout id records the level and seed', /^L5-s\d+/.test(levelFive.shotId), levelFive.shotId);
+await page.screenshot({ path: `${OUT}level-5.png` });
+
+// The exam is exempt from tiers and shows nothing.
+await page.evaluate(() => window.__debug.selectLevel(7));
+await sleep(300);
+const exam = await state();
+check('the exam turns every guide off', Object.values(exam.guides).every((v) => v === false));
+check('the exam counts shots rather than tiers', exam.exam?.total === 10 && exam.exam?.shotsTaken === 0);
+await page.screenshot({ path: `${OUT}exam.png` });
+
+await playPerfect();
+const examAfter = await state();
+check('an exam shot counts against the run', examAfter.exam?.shotsTaken === 1, JSON.stringify(examAfter.exam));
+
+// Corrupted storage resets cleanly, with a notice.
+await page.evaluate(() => {
+  for (const key of Object.keys(window.localStorage)) {
+    if (key.startsWith('pool-angle-trainer')) window.localStorage.setItem(key, '{ not json');
+  }
+});
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+const recovered = await state();
+check('corrupted progress resets to level 1 tier 0', recovered.levelId === 1 && recovered.tier === 0);
+check('the reset is announced rather than silent', Boolean(recovered.notice), String(recovered.notice));
+await page.screenshot({ path: `${OUT}storage-reset.png` });
+
+// Explicit reset.
+await playPerfect();
+await page.evaluate(() => window.__debug.resetProgress());
+await sleep(300);
+const afterReset = await state();
+check('resetting progress clears the counts', afterReset.stats.attempts === 0);
+check('resetting progress returns to level 1', afterReset.levelId === 1 && afterReset.tier === 0);
 
 check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 
