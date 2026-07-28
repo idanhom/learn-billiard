@@ -1,0 +1,339 @@
+/**
+ * The simulation.
+ *
+ * Fixed 1/240 s tick. Within a tick, velocities are constant and the solver
+ * repeatedly finds the *earliest* impact among ball-ball, ball-cushion and
+ * pocket-capture candidates, advances to it, resolves it, and continues on the
+ * remaining time. Ordering events by time of impact — rather than resolving
+ * whatever a fixed sweep order happens to notice first — is what keeps a fast
+ * ball from passing through a cushion nose or clipping a pocket it should have
+ * dropped into.
+ *
+ * Friction is integrated once per tick, after the event loop. At 1/240 s the
+ * velocity change inside a tick is under a centimetre per second, well below
+ * anything the player can perceive or the geometry cares about.
+ */
+
+import {
+  GRAVITY,
+  REST_SPEED,
+  ROLLING_FRICTION,
+  SLIDING_FRICTION,
+} from '../constants';
+import {
+  BALL_RADIUS,
+  type PocketId,
+  TABLE,
+  capturingPocket,
+  hasEscapedSurface,
+  nearestPocket,
+} from '../geometry/table';
+import { ZERO, type Vec2, add, len, scale, sub, vec } from '../geometry/vec2';
+import {
+  ballBallTOI,
+  ballCircleEntryTOI,
+  ballSegmentTOI,
+  reflectOffCushion,
+  resolveBallPair,
+  separateOverlap,
+} from './collision';
+
+export const TICK = 1 / 240;
+
+/** Ticks with everything stationary before a shot is called over. */
+export const REST_DWELL_TICKS = 12;
+
+/** Failsafe: no shot may run longer than this, however the cloth behaves. */
+export const MAX_SHOT_DURATION = 20;
+
+/** Event-resolution passes allowed inside one tick before we give up and coast. */
+const MAX_EVENT_ITERATIONS = 8;
+
+const TIME_EPSILON = 1e-12;
+const BALL_DIAMETER = BALL_RADIUS * 2;
+
+export interface Ball {
+  readonly id: number;
+  pos: Vec2;
+  vel: Vec2;
+  /** Surface roll velocity (r*omega). Slip at the contact point is `vel - roll`. */
+  roll: Vec2;
+  potted: boolean;
+  pocket?: PocketId;
+}
+
+export type SimEvent =
+  | { readonly type: 'ball-ball'; readonly time: number; readonly a: number; readonly b: number }
+  | { readonly type: 'cushion'; readonly time: number; readonly ball: number }
+  | {
+      readonly type: 'pocket';
+      readonly time: number;
+      readonly ball: number;
+      readonly pocket: PocketId;
+    };
+
+export interface StepResult {
+  readonly balls: Ball[];
+  /** Times are relative to the start of this step. */
+  readonly events: SimEvent[];
+}
+
+export interface SimulateOptions {
+  readonly dt?: number;
+  readonly maxDuration?: number;
+  readonly dwellTicks?: number;
+  readonly onTick?: (time: number, balls: readonly Ball[]) => void;
+}
+
+export interface SimulateResult {
+  readonly balls: Ball[];
+  readonly events: SimEvent[];
+  readonly duration: number;
+  /** False when the failsafe duration cut the shot off before everything stopped. */
+  readonly settled: boolean;
+}
+
+/** A ball is launched sliding: the cue gives it speed, not roll. */
+export function createBall(id: number, pos: Vec2, vel: Vec2 = ZERO, roll: Vec2 = ZERO): Ball {
+  return { id, pos, vel, roll, potted: false };
+}
+
+export function cloneBall(ball: Ball): Ball {
+  const copy: Ball = {
+    id: ball.id,
+    pos: ball.pos,
+    vel: ball.vel,
+    roll: ball.roll,
+    potted: ball.potted,
+  };
+  if (ball.pocket !== undefined) copy.pocket = ball.pocket;
+  return copy;
+}
+
+export function allAtRest(balls: readonly Ball[]): boolean {
+  return balls.every((b) => b.potted || (b.vel.x === 0 && b.vel.y === 0));
+}
+
+interface Candidate {
+  readonly time: number;
+  readonly apply: (balls: Ball[], at: number, events: SimEvent[]) => void;
+}
+
+export function stepWorld(balls: readonly Ball[], dt: number = TICK): StepResult {
+  const work = balls.map(cloneBall);
+  const events: SimEvent[] = [];
+
+  separateInitialOverlaps(work);
+
+  let remaining = dt;
+  let elapsed = 0;
+  for (let i = 0; i < MAX_EVENT_ITERATIONS && remaining > TIME_EPSILON; i++) {
+    const next = earliestCandidate(work, remaining);
+    if (!next) break;
+    advance(work, next.time);
+    elapsed += next.time;
+    remaining -= next.time;
+    next.apply(work, elapsed, events);
+  }
+  if (remaining > TIME_EPSILON) {
+    advance(work, remaining);
+    elapsed += remaining;
+  }
+
+  captureEscapees(work, elapsed, events);
+
+  for (const ball of work) {
+    if (!ball.potted) applyFriction(ball, dt);
+  }
+
+  return { balls: work, events };
+}
+
+export function simulateToRest(
+  balls: readonly Ball[],
+  options: SimulateOptions = {},
+): SimulateResult {
+  const dt = options.dt ?? TICK;
+  const maxDuration = options.maxDuration ?? MAX_SHOT_DURATION;
+  const dwellTicks = options.dwellTicks ?? REST_DWELL_TICKS;
+
+  let current = balls.map(cloneBall);
+  const events: SimEvent[] = [];
+  let time = 0;
+  let dwell = 0;
+
+  while (time < maxDuration - TIME_EPSILON) {
+    const step = stepWorld(current, dt);
+    current = step.balls;
+    for (const event of step.events) {
+      events.push({ ...event, time: event.time + time });
+    }
+    time += dt;
+    options.onTick?.(time, current);
+
+    dwell = allAtRest(current) ? dwell + 1 : 0;
+    if (dwell >= dwellTicks) {
+      return { balls: current, events, duration: time, settled: true };
+    }
+  }
+
+  return { balls: current, events, duration: time, settled: false };
+}
+
+function advance(balls: Ball[], dt: number): void {
+  for (const ball of balls) {
+    if (ball.potted) continue;
+    ball.pos = add(ball.pos, scale(ball.vel, dt));
+  }
+}
+
+function separateInitialOverlaps(balls: Ball[]): void {
+  for (let i = 0; i < balls.length; i++) {
+    for (let j = i + 1; j < balls.length; j++) {
+      const a = balls[i]!;
+      const b = balls[j]!;
+      if (a.potted || b.potted) continue;
+      const fixed = separateOverlap(a.pos, b.pos, BALL_DIAMETER);
+      if (!fixed) continue;
+      a.pos = fixed.posA;
+      b.pos = fixed.posB;
+    }
+  }
+}
+
+function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefined {
+  let best: Candidate | undefined;
+  const take = (candidate: Candidate | undefined): void => {
+    if (candidate && (!best || candidate.time < best.time)) best = candidate;
+  };
+
+  for (let i = 0; i < balls.length; i++) {
+    const a = balls[i]!;
+    if (a.potted) continue;
+    const aMoving = a.vel.x !== 0 || a.vel.y !== 0;
+
+    for (let j = i + 1; j < balls.length; j++) {
+      const b = balls[j]!;
+      if (b.potted) continue;
+      if (!aMoving && b.vel.x === 0 && b.vel.y === 0) continue;
+      const time = ballBallTOI(a.pos, a.vel, b.pos, b.vel, BALL_DIAMETER, remaining);
+      if (time === undefined) continue;
+      take({
+        time,
+        apply: (world, at, events) => {
+          const x = world[i]!;
+          const y = world[j]!;
+          const impulse = resolveBallPair(x.pos, x.vel, y.pos, y.vel);
+          if (!impulse) return;
+          x.vel = impulse.velA;
+          y.vel = impulse.velB;
+          events.push({ type: 'ball-ball', time: at, a: x.id, b: y.id });
+        },
+      });
+    }
+
+    if (!aMoving) continue;
+
+    for (const segment of TABLE.cushions) {
+      const hit = ballSegmentTOI(a.pos, a.vel, segment, BALL_RADIUS, remaining);
+      if (!hit) continue;
+      take({
+        time: hit.time,
+        apply: (world, at, events) => {
+          const ball = world[i]!;
+          const bounced = reflectOffCushion(ball.vel, hit.normal);
+          if (!bounced) return;
+          ball.vel = bounced;
+          // Reflect the roll the same way so a rolling ball stays rolling.
+          ball.roll = reflectOffCushion(ball.roll, hit.normal) ?? ball.roll;
+          events.push({ type: 'cushion', time: at, ball: ball.id });
+        },
+      });
+    }
+
+    for (const pocket of TABLE.pockets) {
+      const time = ballCircleEntryTOI(a.pos, a.vel, pocket.center, pocket.captureRadius, remaining);
+      if (time === undefined) continue;
+      take({
+        time,
+        apply: (world, at, events) => {
+          const ball = world[i]!;
+          if (ball.potted) return;
+          pot(ball, pocket.id);
+          events.push({ type: 'pocket', time: at, ball: ball.id, pocket: pocket.id });
+        },
+      });
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Failsafe for a ball that slipped past the surface edge through a mouth without
+ * its centre ever crossing a capture circle. Nothing is ever lost off-table.
+ */
+function captureEscapees(balls: Ball[], at: number, events: SimEvent[]): void {
+  for (const ball of balls) {
+    if (ball.potted) continue;
+    const pocket = capturingPocket(ball.pos) ?? (hasEscapedSurface(ball.pos) ? nearestPocket(ball.pos) : undefined);
+    if (!pocket) continue;
+    pot(ball, pocket.id);
+    events.push({ type: 'pocket', time: at, ball: ball.id, pocket: pocket.id });
+  }
+}
+
+function pot(ball: Ball, pocket: PocketId): void {
+  ball.potted = true;
+  ball.pocket = pocket;
+  ball.vel = ZERO;
+  ball.roll = ZERO;
+}
+
+/**
+ * Cloth friction over one tick.
+ *
+ * While the contact point slips, the ball sheds speed at mu_s*g and spins up at
+ * (5/2)*mu_s*g, so the slip closes at (7/2)*mu_s*g. The instant it closes the
+ * ball is rolling — velocity and roll are then locked together and decay under
+ * rolling resistance alone. This is what gives a struck ball its natural
+ * follow, and it is why there is no static 90-degree tangent guide: the cue
+ * ball does not leave along the tangent, so drawing that line would teach the
+ * player something the simulation contradicts.
+ */
+function applyFriction(ball: Ball, dt: number): void {
+  let remaining = dt;
+
+  const slip = sub(ball.vel, ball.roll);
+  const slipSpeed = len(slip);
+  if (slipSpeed > 0) {
+    const closingRate = 3.5 * SLIDING_FRICTION * GRAVITY;
+    const timeToRoll = slipSpeed / closingRate;
+    const t = Math.min(timeToRoll, remaining);
+    const direction = scale(slip, 1 / slipSpeed);
+    ball.vel = add(ball.vel, scale(direction, -SLIDING_FRICTION * GRAVITY * t));
+    ball.roll = add(ball.roll, scale(direction, 2.5 * SLIDING_FRICTION * GRAVITY * t));
+    remaining -= t;
+    if (timeToRoll <= dt) ball.roll = ball.vel; // exact at the transition
+  }
+
+  if (remaining > 0) {
+    const speed = len(ball.vel);
+    if (speed > 0) {
+      const shed = ROLLING_FRICTION * GRAVITY * remaining;
+      const next = Math.max(0, speed - shed);
+      ball.vel = next === 0 ? ZERO : scale(ball.vel, next / speed);
+    }
+    ball.roll = ball.vel;
+  }
+
+  if (len(ball.vel) < REST_SPEED) {
+    ball.vel = ZERO;
+    ball.roll = ZERO;
+  }
+}
+
+/** Convenience for callers that only need a snapshot of positions. */
+export function positionsOf(balls: readonly Ball[]): Vec2[] {
+  return balls.map((b) => vec(b.pos.x, b.pos.y));
+}
