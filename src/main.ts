@@ -12,6 +12,7 @@ import { type Vec2, add, angleOf, fromAngle, sub } from './geometry/vec2';
 import { SLICE_DRILLS, type ShotLayout } from './game/drills';
 import { attachInput } from './game/input';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
+import { ADVANCE_REQUIRED, TierTracker } from './game/tiers';
 import { PoolScene } from './scene/pool-scene';
 import { Hud } from './ui/hud';
 
@@ -24,17 +25,25 @@ const hudRoot = document.getElementById('hud') as HTMLElement;
 const scene = new PoolScene(canvas);
 const hud = new Hud(hudRoot);
 
+const DEFAULT_TOLERANCE_DEGREES = 2;
+
+const tiers = new TierTracker();
+
 let drillIndex = 0;
 let layout: ShotLayout = SLICE_DRILLS[0]!;
-let session = new ShotSession(layout);
+let session = newSession(layout);
 let chargeSeconds = 0;
 let attempts = 0;
 let qualified = 0;
 let evaluations = 0;
 
+function newSession(next: ShotLayout): ShotSession {
+  return new ShotSession(next, { toleranceDegrees: DEFAULT_TOLERANCE_DEGREES });
+}
+
 function startShot(next: ShotLayout): void {
   layout = next;
-  session = new ShotSession(layout);
+  session = newSession(layout);
   chargeSeconds = 0;
 }
 
@@ -53,6 +62,7 @@ function recordOutcome(outcome: ShotOutcome): void {
   evaluations++;
   attempts++;
   if (outcome.qualifying) qualified++;
+  tiers.record(outcome.qualifying);
 }
 
 attachInput(canvas, scene, {
@@ -106,7 +116,7 @@ function frame(now: number): void {
   const analysis = session.analysis;
   const pocket = pocketById(layout.targetPocket);
   scene.guides.update({
-    tier: 0,
+    visibility: tiers.guides,
     cue: session.cueBall.pos,
     aimEnd: add(session.cueBall.pos, fromAngle(session.aimAngle, analysis.cueToGhost)),
     ghost: analysis.ghostCenter,
@@ -130,8 +140,13 @@ function frame(now: number): void {
     cutSide: analysis.cutSide,
     fullness: fullnessOf(analysis.cutAngle),
     liveAimError: session.currentAimError,
-    tier: 0,
+    guides: tiers.guides,
+    tier: tiers.tier,
+    tierComplete: tiers.completed,
     label: layout.id === 'drill-cut-30' ? 'Drill: 30 degree cut' : 'Drill: straight in',
+    toleranceDegrees: session.toleranceDegrees,
+    windowQualified: tiers.qualifiedInWindow,
+    windowNeeded: ADVANCE_REQUIRED,
     attempts,
     qualified,
     view: scene.view,
@@ -163,6 +178,9 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       attempts,
       qualified,
       evaluations,
+      tier: tiers.tier,
+      tierComplete: tiers.completed,
+      guides: tiers.guides,
       outcome: session.outcome ?? null,
     }),
   };

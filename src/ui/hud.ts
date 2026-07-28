@@ -5,6 +5,7 @@
 
 import type { AimError, CutSide } from '../geometry/shot';
 import type { ShotOutcome, ShotPhase } from '../game/shot-session';
+import type { GuideVisibility } from '../game/tiers';
 
 export interface HudState {
   readonly phase: ShotPhase;
@@ -13,8 +14,14 @@ export interface HudState {
   readonly cutSide: CutSide;
   readonly fullness: number;
   readonly liveAimError: AimError;
+  readonly guides: GuideVisibility;
   readonly tier: number;
+  readonly tierComplete: boolean;
   readonly label: string;
+  readonly toleranceDegrees: number;
+  /** Qualifying shots inside the current advance window, and its size. */
+  readonly windowQualified: number;
+  readonly windowNeeded: number;
   readonly attempts: number;
   readonly qualified: number;
   readonly view: string;
@@ -50,22 +57,35 @@ export class Hud {
   }
 
   update(state: HudState): void {
+    const tierLine = state.tierComplete
+      ? 'Level complete'
+      : `Tier ${state.tier} &mdash; ${TIER_NAMES[state.tier] ?? ''}`;
     this.#status.innerHTML =
       `<div class="hud-label">${escape(state.label)}</div>` +
-      `<div class="hud-big">Tier ${state.tier} &mdash; ${TIER_NAMES[state.tier] ?? ''}</div>` +
+      `<div class="hud-big">${tierLine}</div>` +
+      `<div class="hud-sub">${state.windowQualified}/${state.windowNeeded} toward the next tier ` +
+      `&middot; within ${state.toleranceDegrees}&deg;</div>` +
       `<div class="hud-sub">${state.qualified} of ${state.attempts} on aim &middot; ${escape(state.view)} view</div>`;
 
-    const cut = state.cutAngleDegrees.toFixed(1);
-    const side = state.cutSide === 'straight' ? 'straight in' : `cut ${state.cutSide}`;
-    const live =
-      state.liveAimError.kind === 'on-line'
-        ? 'on the line'
-        : `${state.liveAimError.degrees.toFixed(2)}&deg; ${state.liveAimError.kind}`;
-    this.#shot.innerHTML =
-      `<div class="hud-label">This shot</div>` +
-      `<div class="hud-big">${cut}&deg; ${side}</div>` +
-      `<div class="hud-sub">${(state.fullness * 100).toFixed(0)}% full ball</div>` +
-      `<div class="hud-sub hud-live">${live}</div>`;
+    // What the readout shows is itself a tier: at the last tier the player gets
+    // the layout and nothing else.
+    if (state.guides.readout) {
+      const cut = state.cutAngleDegrees.toFixed(1);
+      const side = state.cutSide === 'straight' ? 'straight in' : `cut ${state.cutSide}`;
+      const live =
+        state.liveAimError.kind === 'on-line'
+          ? 'on the line'
+          : `${state.liveAimError.degrees.toFixed(2)}&deg; ${state.liveAimError.kind}`;
+      this.#shot.innerHTML =
+        `<div class="hud-label">This shot</div>` +
+        `<div class="hud-big">${cut}&deg; ${side}</div>` +
+        `<div class="hud-sub">${(state.fullness * 100).toFixed(0)}% full ball</div>` +
+        (state.guides.liveAimError ? `<div class="hud-sub hud-live">${live}</div>` : '');
+    } else {
+      this.#shot.innerHTML =
+        `<div class="hud-label">This shot</div><div class="hud-big">no guides</div>` +
+        `<div class="hud-sub">read the angle yourself</div>`;
+    }
 
     this.#powerFill.style.width = `${Math.round(state.power * 100)}%`;
 

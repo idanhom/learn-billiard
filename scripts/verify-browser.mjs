@@ -130,6 +130,39 @@ check('two attempts recorded in total', cutResult.attempts === 2, `attempts=${cu
 
 await page.screenshot({ path: `${OUT}cut-drill.png` });
 
+// Guides come away as the aim gets reliable.
+const beforeTier = await page.evaluate(() => window.__debug.state());
+check('starts on tier 0 with every guide showing', beforeTier.tier === 0 && beforeTier.guides.objectPath === true);
+
+/**
+ * Reset first: an evaluated shot refuses to be re-aimed or re-struck, which is
+ * the point of the guard, so the layout has to be reset before firing again.
+ */
+async function playPerfect(power = 0.5) {
+  const fired = await page.evaluate((p) => {
+    window.__debug.retry();
+    window.__debug.aimIdeal();
+    return window.__debug.fire(p);
+  }, power);
+  if (!fired) throw new Error('the debug hook refused to fire a shot');
+  await page.waitForFunction(() => window.__debug.state().phase === 'evaluated', null, { timeout: 30000 });
+}
+
+await playPerfect(); // third qualifying shot overall
+const advanced = await page.evaluate(() => window.__debug.state());
+check('three qualifying shots advance a tier', advanced.tier === 1, `tier=${advanced.tier}`);
+check('the pocket line is withdrawn at tier 1', advanced.guides.objectPath === false);
+check('the ghost ball survives to tier 1', advanced.guides.ghostBall === true);
+
+await playPerfect();
+await playPerfect();
+await playPerfect();
+const tierTwo = await page.evaluate(() => window.__debug.state());
+check('another three advance again', tierTwo.tier === 2, `tier=${tierTwo.tier}`);
+check('the ghost ball is withdrawn at tier 2', tierTwo.guides.ghostBall === false);
+
+await page.screenshot({ path: `${OUT}tier-2.png` });
+
 check('no console errors', consoleErrors.length === 0, consoleErrors.join(' | '));
 
 await browser.close();

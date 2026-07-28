@@ -18,12 +18,10 @@ import {
   LineSegments,
   LineBasicMaterial,
 } from 'three';
+import type { GuideVisibility } from '../game/tiers';
 import { BALL_RADIUS } from '../geometry/table';
 import type { Vec2 } from '../geometry/vec2';
 import { headingBetween, headingToRotationY, toWorld, writeWorld } from './coords';
-
-/** How much of the teaching scaffolding is showing. */
-export type GuideTier = 0 | 1 | 2 | 3;
 
 const AIM_COLOR = 0xf2f6ff;
 const GHOST_COLOR = 0x9fe8c4;
@@ -31,7 +29,7 @@ const PATH_COLOR = 0xe2a03f;
 const LINE_THICKNESS = 0.006;
 
 export interface GuideState {
-  readonly tier: GuideTier;
+  readonly visibility: GuideVisibility;
   readonly cue: Vec2;
   /** Where the player is currently aiming. */
   readonly aimEnd: Vec2;
@@ -60,19 +58,15 @@ export class Guides {
   }
 
   update(state: GuideState): void {
-    // Tier 0: everything. Tier 1: no object path. Tier 2: no ghost ball.
-    // Tier 3: no guides at all — the aim line goes too, this is the real test.
-    const showAim = state.tier < 3;
-    const showGhost = state.tier < 2;
-    const showPath = state.tier < 1;
+    const { aimLine, ghostBall, objectPath } = state.visibility;
 
-    this.#aimLine.visible = showAim;
-    this.#ghost.visible = showGhost;
-    this.#objectPath.visible = showPath;
+    this.#aimLine.visible = aimLine;
+    this.#ghost.visible = ghostBall;
+    this.#objectPath.visible = objectPath;
 
-    if (showAim) placeLine(this.#aimLine, state.cue, state.aimEnd, 0.004);
-    if (showPath) placeLine(this.#objectPath, state.object, state.pocket, 0.004);
-    if (showGhost) this.#ghost.position.copy(toWorld(state.ghost, BALL_RADIUS));
+    if (aimLine) placeLine(this.#aimLine, state.cue, state.aimEnd, 0.004);
+    if (objectPath) placeLine(this.#objectPath, state.object, state.pocket, 0.004);
+    if (ghostBall) this.#ghost.position.copy(toWorld(state.ghost, BALL_RADIUS));
   }
 
   setVisible(visible: boolean): void {
