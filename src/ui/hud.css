@@ -55,3 +55,75 @@ body {
   padding: 10px 12px;
   backdrop-filter: blur(6px);
 }
+
+.hud-label {
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-bottom: 3px;
+}
+
+.hud-big {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-sub {
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-live {
+  color: var(--accent);
+}
+
+.hud-note {
+  opacity: 0.72;
+}
+
+.hud-keys {
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.hud-keys b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.hud-meter {
+  width: 220px;
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.hud-meter-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--warn));
+  transition: width 60ms linear;
+}
+
+.hud-verdict {
+  font-size: 18px;
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+
+.hud-verdict.good {
+  color: var(--accent);
+}
+
+.hud-verdict.bad {
+  color: var(--bad);
+}
+
+#hud-report {
+  min-width: 280px;
+  text-align: center;
+}
