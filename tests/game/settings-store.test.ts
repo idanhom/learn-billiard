@@ -55,11 +55,11 @@ describe('the speed setting', () => {
 
 describe('the cloth setting', () => {
   /**
-   * Not the 0.005-0.015 coefficient range usually quoted: taken literally that
-   * range makes a ball far too slippery to be a ball, and these are calibrated
-   * against how long a roll actually takes instead. A table length of free
-   * roll has to land between three and five seconds on every preset — quick
-   * enough to be a table, slow enough to be cloth.
+   * Not the 0.005-0.015 coefficient range usually quoted, and knowingly so —
+   * see `ROLLING_FRICTION` for what the departure buys and what it costs. What
+   * this asserts is the property the presets were actually chosen for: a table
+   * length of free roll lands between three and five seconds on every one of
+   * them. The exact figures live in `tests/documented-figures.test.ts`.
    */
   test('offers fast, normal and slow, and every one rolls like a table', () => {
     expect(CLOTH_PRESET_IDS).toEqual(['fast', 'normal', 'slow']);

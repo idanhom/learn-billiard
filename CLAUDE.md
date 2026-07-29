@@ -27,7 +27,7 @@ production artifact, which is what `verify:browser` drives.
 
 ```bash
 npm run typecheck
-npm test                                  # 15 files, vitest, geometry + physics + progression
+npm test                                  # 17 files, vitest, geometry + physics + progression
 npm run build && npm run preview          # then, in another terminal:
 npm run verify:browser                    # drives the production build in real Chromium
 ```
@@ -41,9 +41,11 @@ The physical constants are not independent knobs, and several carry derived
 values that go stale silently:
 
 - `ROLLING_FRICTION` / `CLOTH_PRESETS` are set from **how long a roll takes**
-  (a table length of free roll in 4.7 / 4.0 / 3.4 s), not from the 0.005-0.015
-  coefficient range usually quoted for cloth — that range makes a ball far too
-  slippery to be a ball. If you move them, re-time it.
+  (a table length of free roll in 4.7 / 4.0 / 3.4 s), and normal cloth at 0.025
+  sits two and a half times above the published 0.005-0.015 band and above
+  Alciatore's measured 0.01. That is a deliberate departure, not a measurement,
+  and it has never been checked against a real table. Say so; do not restate it
+  as though the literature were wrong. If you move it, re-time it.
 - `POWER_CURVE_EXPONENT` follows the cloth. It is whatever puts a typical pot
   (0.6 m to the pocket, 0.5 m of cue-ball travel, normal cloth) near 40% of the
   meter, and must be re-derived whenever the rolling resistance moves.

@@ -33,13 +33,15 @@ Progression and feedback use ShotGeometry; the physics sim decides only what phy
 ### Physics (2D on table plane, rendered in 3D)
 
 - Fixed tick 1/240 s. Within each tick: compute earliest time-of-impact among ball-ball, ball-cushion-segment, and pocket-capture events; advance to it; resolve; repeat on remaining time with a hard iteration cap (~8). Max cue speed capped. Initial-overlap resolved by positional correction before integration.
-- Ball state: position, velocity, roll spin. Cue strike = pure sliding; sliding friction (μ≈0.2) until slip reaches zero, then rolling resistance (μ≈0.01). Produces natural follow on the cue ball — which is *why* the static tangent guide is out.
+- Ball state: position, velocity, roll spin, and orientation. Cue strike = pure sliding; sliding friction (μ≈0.2) until slip reaches zero, then rolling resistance (0.025 as shipped — see below, this is *not* the published ≈0.01). Produces natural follow on the cue ball — which is *why* the static tangent guide is out.
+
+  Orientation is integrated from the roll on the fixed tick, not accumulated in the renderer, so it cannot drift with frame rate or time scale; the renderer slerps previous→current on the same alpha as position. Without it the ball reads as a puck at any friction value, which is what the "feels like ice" reports were actually seeing.
 - Ball-ball: impulse along line of centers, e ≈ 0.95 (straight hit transfers 97.5% of normal velocity — tests assert this, not "full transfer"). No throw; labeled ideal.
 - Cushion: point impulse applied 0.27R above the ball's centre (WPA nose height), using the contact-point velocity and rotational effective mass, so a rail is passive at every spin state. Contact restitution 0.54 reproduces both published figures — a square rolling rebound at 0.65, settling to 0.50 after the skid. Tangential retention 0.95; no cushion-induced sidespin.
 
   *Revised after play testing.* The original model reflected the ball's roll along with its velocity, so a rail returned 2.25× too much kinetic energy on a square rolling contact and the table felt like ice. An intermediate fix that computed the impulse from the centre velocity was rejected: it created 58% energy for a ball whose roll opposed its motion.
 
-- Cloth: rolling resistance is a player setting — fast 0.007, normal 0.010, slow 0.014, all inside the published 0.005–0.015. Generation validates power feasibility against the slowest so layouts stay makeable at any setting.
+- Cloth: rolling resistance is a player setting. *Revised.* Shipped at fast 0.018, normal 0.025, slow 0.035 — deliberately above the published 0.005–0.015 band and above the 0.01 Alciatore's TP B.2 measures, chosen instead from how long a roll takes (a table length in 4.7 / 4.0 / 3.4 s) because at the published value the ball spends its last 0.2 m/s crawling 20 cm over two seconds. Not checked against a real table. Generation validates power feasibility against the slowest so layouts stay makeable at any setting.
 
 - **Known deviation:** object/cue travel ratio after a square full hit is 5.25×; published is 6.5–8×. The cause is frictionless ball-ball collisions. Modelling that friction would introduce throw and break the ghost-ball model `ShotGeometry` teaches against, so it is deliberate.
 - Rest: velocity zero-clamp below threshold, all balls at rest for a dwell of N ticks → settled; potted balls excluded; hard max sim duration (~20 s) as a failsafe.

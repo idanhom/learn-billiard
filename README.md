@@ -45,8 +45,9 @@ The simulation runs on a fixed 1/240 s tick, and wall-clock time only decides
 *how many ticks a rendered frame is allowed to run*. So `.` changes how long you
 watch a shot for, not what the shot does — quarter speed replays identical
 physics, collision for collision. The browser verification asserts exactly this:
-the same shot at 1x and 0.25x differs in wall-clock by 4.7x and in simulated
-duration by nothing at all.
+the same shot at 1x and 0.25x takes over four times as long on the clock, and
+differs in simulated duration, in outcome and in the final orientation of every
+ball by nothing at all.
 
 The setting is remembered between sessions, stored separately from your
 progress so a bad preference can never cost you a level.
@@ -56,11 +57,14 @@ progress so a bad preference can never cost you a level.
 The meter is not linear, and that is the point.
 
 A cue can send a ball anywhere from a touch shot to a break, but almost nothing
-in this trainer wants a break. A 0.6 m pot needs the object ball leaving at
-about 0.47 m/s; the longest shot in the curriculum, level 6's 1.4 m pot, needs
-0.74 m/s. Spread linearly across 0.35–4.5 m/s, every shot you will ever play
-here sits in the bottom fifth of the bar and the rest of it is for shots that
-never come up.
+in this trainer wants a break. An ordinary pot — 0.6 m to the pocket, half a
+metre of cue-ball travel — is a 1.23 m/s stroke, which on a bar spread linearly
+across 0.35–4.5 m/s is 21% of the travel. Even the longest pot in the
+curriculum, level 6's 1.4 m, only asks 1.96 m/s, or 39%.
+
+Not every shot, though, and that is why the range itself stays: a level-5 thin
+cut throws away cos(80°) at contact and genuinely needs about 3.5 m/s, which is
+76% of a linear bar. The problem is the shape, not the ends.
 
 So the bar is a curve — `speed = 0.35 + 4.15 × power^1.7` — set so an ordinary
 pot lands near 40%:
@@ -142,8 +146,13 @@ straight-ins tells you nothing about thin cuts.
 ## The physics is idealised
 
 Centre-ball hits only — no english, no draw, no swerve. No throw between balls,
-and cushions impart no sidespin. Balls slide, then roll, with published typical
-friction values rather than measurements of a specific table.
+and cushions impart no sidespin. Balls slide, then roll — visibly so: the cue
+ball carries six marks, and off the tip it skids, turning about 2.4x less than
+its travel would imply, before the cloth catches it and the two lock together.
+
+Sliding friction, restitution and the cushion figures are published typical
+values rather than measurements of a specific table. The rolling resistance is
+not, and the next section says what it is instead.
 
 Cushions *do* couple top and bottom spin, because that is what makes a rail
 behave like a rail: the nose sits above the ball's centre, so the impulse also
@@ -152,15 +161,23 @@ settles at 0.50 once it has skidded out of its now-backwards roll — both
 published figures, from one coefficient.
 
 Cloth speed is a setting (`C`), so you can match your own table rather than
-accept a guess. The three presets are **not** taken from the 0.005-0.015
-rolling-resistance range usually quoted for billiard cloth. That range, taken
-literally, makes a ball far too slippery to be a ball: at 0.01 a roll that just
-crosses the table takes six seconds and a lag takes ten, both about twice what
-a real table does. So they are calibrated against the clock instead — a table
-length of free roll in 4.7 s, 4.0 s and 3.4 s on fast, normal and slow.
+accept a guess. The three presets are 0.018, 0.025 and 0.035, which is a
+deliberate departure from the literature and is stated here as one: the usual
+quoted range is 0.005–0.015, and Alciatore's TP B.2 derives μ_r = 0.01 by
+timing a rolling ball to a stop under the same `a = μ_r·g` this simulation
+uses. Normal cloth here is two and a half times that.
 
-That is a number you can check in ten seconds. Roll a ball the length of your
-table so it just dies at the far cushion, and time it.
+What it buys, on this 7-foot table: a table length of free roll in 4.0 s
+instead of 6.3, down and back in 5.6 s instead of 9.0, and a ball that spends
+its last 0.2 m/s dying over 0.8 s and 8 cm instead of 2.0 s and 20 cm. That
+terminal crawl is what the "it feels like ice" reports kept landing on. The
+three presets come out at 4.7 s, 4.0 s and 3.4 s for a table length.
+
+Whether it has gone too far the other way is open — nobody has timed it against
+a real table. **Do that.** Roll a ball the length of your table so it just dies
+at the far cushion, and time it: about 6.3 s means the published value is right
+and this is wrong, about 4 s means this is. Every figure in these two paragraphs
+is held to the code by `tests/documented-figures.test.ts`.
 
 **Known deviation:** after a rolling cue ball hits an object ball square, the
 object should travel 6.5-8x farther than the cue ball; here it travels 5.2x, so

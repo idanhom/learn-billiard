@@ -1,8 +1,10 @@
 /**
  * Physical constants shared by the analytic geometry and the simulation.
  *
- * These are published typical values for cloth and phenolic-resin balls, not
- * measurements of a specific table. The model is deliberately IDEAL: no english,
+ * Most of these are published typical values for cloth and phenolic-resin
+ * balls, not measurements of a specific table. `ROLLING_FRICTION` is the
+ * exception and says so at length: it sits two and a half times above the
+ * published band, on purpose. The model is deliberately IDEAL: no english,
  * no ball-to-ball throw, and no cushion-induced sidespin. Cushions DO couple
  * top and bottom spin, because contact above the ball's centre is what makes a
  * rail behave like a rail. The app says what is and is not modelled on screen,
@@ -18,15 +20,22 @@ export const SLIDING_FRICTION = 0.2;
 /**
  * Rolling resistance once the contact point has stopped slipping.
  *
- * Set from how long a ball takes to die, NOT from the 0.005-0.015 coefficient
- * range usually quoted for billiard cloth. That range, taken literally, makes
- * a ball far too slippery to be a ball: at 0.01 a lag — five metres down the
- * table and back — takes ten seconds, and a roll that just crosses the table
- * takes six. Both are about twice what a real table does.
+ * A deliberate departure from the literature, and worth naming as one rather
+ * than dressing up. The usual quoted range is 0.005-0.015, and Alciatore's
+ * TP B.2 ("Rolling Resistance", billiards.colostate.edu) derives mu_r = 0.01 by
+ * timing a rolling ball to a stop under a = mu_r*g — the identical model
+ * `applyFriction` uses. This runs at 0.025, two and a half times that.
  *
- * So these are calibrated against the clock instead. At 0.025 a table length
- * of free roll takes 4.0 s and a lag 6.3 s, which is what a table looks like.
- * If yours differs, that is what the cloth setting is for.
+ * What the departure buys, on this 7-foot table: a table length of free roll in
+ * 4.0 s instead of 6.3, down and back in 5.6 s instead of 9.0, and a ball that
+ * spends its last 0.2 m/s dying over 0.8 s and 8 cm instead of 2.0 s and 20 cm.
+ * That terminal crawl is what the "it feels like ice" reports kept landing on.
+ *
+ * Whether 0.025 is too far the other way is open: nobody has timed it against a
+ * real table. Do that — roll a ball the length of your table so it just dies at
+ * the far cushion, and time it. About 6.3 s means the published 0.01 is right
+ * and this is wrong; about 4 s means this is. Every figure in this comment is
+ * held to the code by `tests/documented-figures.test.ts`.
  */
 export const ROLLING_FRICTION = 0.025;
 
@@ -108,14 +117,16 @@ export const MIN_CUE_SPEED = 0.35;
  * Shape of the power meter: speed is MIN + (MAX - MIN) * power^this.
  *
  * Not a feel knob. The range 0.35-4.5 m/s is right — a level-5 thin cut throws
- * away cos(80 degrees) of its speed at contact and genuinely needs ~3.5 m/s —
- * but spread linearly it puts every ordinary pot inside the bottom quarter of
- * the bar. The exponent is set so a typical pot (0.6 m to the pocket, 0.5 m of
- * cue-ball travel, normal cloth) lands near 40%, which puts the real shots
- * across 40-95% of the travel instead of 0-25%.
+ * away cos(80 degrees) of its speed at contact and genuinely needs ~3.5 m/s,
+ * which is 76% of a linear bar — but spread linearly it crushes the ordinary
+ * shots into the bottom quarter of it: a typical pot is a 1.23 m/s stroke at
+ * 21%, and the longest in the curriculum 1.96 m/s at 39%. The exponent is set
+ * so that typical pot (0.6 m to the pocket, 0.5 m of cue-ball travel, normal
+ * cloth) reads 40% here, which moves the same two to 40% and 57%.
  *
- * It follows the cloth: it was 2.4 when the cloth was half as resistant, and
- * has to be re-derived from that typical pot whenever ROLLING_FRICTION moves.
+ * It follows the cloth: it was 2.4 when ROLLING_FRICTION was 0.010, and has to
+ * be re-derived from that typical pot whenever the cloth moves. If the cloth
+ * ever goes back to 0.010 this becomes 2.364.
  */
 export const POWER_CURVE_EXPONENT = 1.7;
 
