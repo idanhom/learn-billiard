@@ -322,4 +322,34 @@ describe('the simulation clock', () => {
     expect(session.alpha).toBeLessThan(1);
     expect(session.previousBalls).toHaveLength(session.balls.length);
   });
+
+  /**
+   * Slow motion is the identical shot watched for longer, and that has to hold
+   * for which way the balls are facing as well as for where they are. It holds
+   * because orientation is integrated on the fixed tick: accumulate it per
+   * rendered frame instead and the answer depends on the frame rate, since
+   * rotations do not commute and four ticks would collapse into one sample.
+   */
+  test('orientation does not depend on how the frames are paced', () => {
+    const play = (frameSeconds: number): ShotSession => {
+      const session = new ShotSession(STRAIGHT_IN_DRILL);
+      session.aimTo(idealAngle());
+      session.beginCharge();
+      session.setPower(0.6);
+      session.release();
+      for (let i = 0; i < 30 / frameSeconds && session.phase === 'simulating'; i++) {
+        session.advance(frameSeconds);
+      }
+      if (session.phase !== 'settled') throw new Error(`stuck in ${session.phase}`);
+      return session;
+    };
+
+    const smooth = play(1 / 240);
+    const choppy = play(1 / 30);
+    expect(choppy.elapsed).toBeCloseTo(smooth.elapsed, 9);
+    for (let i = 0; i < smooth.balls.length; i++) {
+      expect(choppy.balls[i]!.spin).toEqual(smooth.balls[i]!.spin);
+      expect(choppy.balls[i]!.pos).toEqual(smooth.balls[i]!.pos);
+    }
+  });
 });

@@ -6,7 +6,8 @@
  * far long rail) becomes world -z.
  */
 
-import { Vector3 } from 'three';
+import { Quaternion, Vector3 } from 'three';
+import type { Quat } from '../geometry/quat';
 import type { Vec2 } from '../geometry/vec2';
 
 export function toWorld(p: Vec2, height = 0): Vector3 {
@@ -45,4 +46,25 @@ export function headingToRotationY(angle: number): number {
 
 export function headingBetween(from: Vec2, to: Vec2): number {
   return Math.atan2(to.y - from.y, to.x - from.x);
+}
+
+/**
+ * The orientation half of the same basis map.
+ *
+ * (x, y) -> (x, h, -y) sends table x^ -> X^, y^ -> -Z^, z^ -> Y^, which is
+ * exactly R_x(-90 degrees). A rotation changes basis by conjugation rather than
+ * by substitution, so a table-frame orientation becomes a world one through
+ *
+ *     q_world = q_B * q_table * q_B^-1
+ *
+ * Cross-check: the map sends omega_table = (-roll.y, roll.x, 0)/R to
+ * omega_world = (-roll.y, 0, -roll.x)/R, so a ball rolling toward table +x
+ * turns about world -Z and the top of it, at world (0, R, 0), moves toward +X.
+ */
+const TABLE_BASIS = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -Math.PI / 2);
+const TABLE_BASIS_INVERSE = TABLE_BASIS.clone().invert();
+
+/** Table-frame orientation into an existing quaternion — for per-frame callers. */
+export function writeWorldQuat(target: Quaternion, q: Quat): Quaternion {
+  return target.set(q.x, q.y, q.z, q.w).premultiply(TABLE_BASIS).multiply(TABLE_BASIS_INVERSE);
 }

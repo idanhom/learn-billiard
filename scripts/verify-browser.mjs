@@ -330,8 +330,19 @@ async function timedShot(scale) {
     timeout: 60000,
   });
   const wall = Date.now() - startedAt;
-  const outcome = (await state()).outcome;
-  return { wall, outcome };
+  const after = await state();
+  return { wall, outcome: after.outcome, balls: after.balls };
+}
+
+/** Largest difference between two runs' final orientations, over every ball. */
+function orientationDrift(a, b) {
+  let worst = 0;
+  for (let i = 0; i < a.length; i++) {
+    for (const axis of ['x', 'y', 'z', 'w']) {
+      worst = Math.max(worst, Math.abs(a[i].spin[axis] - b[i].spin[axis]));
+    }
+  }
+  return worst;
 }
 
 await page.evaluate(() => window.__debug.selectLevel(2));
@@ -350,6 +361,18 @@ check(
     Math.abs(quarterSpeed.outcome.duration - fullSpeed.outcome.duration) < 1e-9,
   `sim duration ${fullSpeed.outcome.duration}s both times`,
 );
+// Orientation is integrated on the fixed tick, so the two runs execute the same
+// ticks and must agree to floating-point noise. Accumulated per rendered frame
+// instead it drifts by degrees, because rotations do not commute and quarter
+// speed samples the roll four times as often.
+{
+  const drift = orientationDrift(fullSpeed.balls, quarterSpeed.balls);
+  check(
+    'the balls end up facing the same way at 1x and 0.25x',
+    fullSpeed.balls.length === quarterSpeed.balls.length && drift < 1e-9,
+    `worst quaternion component drift ${drift.toExponential(2)}`,
+  );
+}
 
 const speedPersisted = await page.evaluate(() => window.__debug.state().timeScale);
 check('the speed setting is live', speedPersisted === 0.25, String(speedPersisted));

@@ -322,6 +322,16 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     },
     state: () => ({
       phase: session.phase,
+      // Where the balls are AND which way they are facing. Orientation is
+      // simulation state, so the browser pass can assert it is untouched by the
+      // frame rate and by the time scale — the check that would have caught
+      // accumulating it in the renderer instead.
+      balls: session.balls.map((b) => ({
+        id: b.id,
+        pos: { x: b.pos.x, y: b.pos.y },
+        spin: { x: b.spin.x, y: b.spin.y, z: b.spin.z, w: b.spin.w },
+        potted: b.potted,
+      })),
       aimAngle: session.aimAngle,
       power: session.power,
       cueSpeed: session.cueSpeed,

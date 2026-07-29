@@ -30,6 +30,7 @@ import {
   hasEscapedSurface,
   nearestPocket,
 } from '../geometry/table';
+import { IDENTITY, type Quat, spinBy } from '../geometry/quat';
 import { ZERO, type Vec2, add, len, scale, sub, vec } from '../geometry/vec2';
 import {
   ballBallTOI,
@@ -60,6 +61,14 @@ export interface Ball {
   vel: Vec2;
   /** Surface roll velocity (r*omega). Slip at the contact point is `vel - roll`. */
   roll: Vec2;
+  /**
+   * Orientation in the table frame. Integrated from `roll`, and read by nothing
+   * in this solver — it exists so the renderer can show the slide-to-roll
+   * transition the rest of this file already computes. Simulation state rather
+   * than renderer state because the physics ticks are fixed: orientation
+   * accumulated per frame would depend on frame rate and on the time scale.
+   */
+  spin: Quat;
   potted: boolean;
   pocket?: PocketId;
 }
@@ -100,7 +109,7 @@ export interface SimulateResult {
 
 /** A ball is launched sliding: the cue gives it speed, not roll. */
 export function createBall(id: number, pos: Vec2, vel: Vec2 = ZERO, roll: Vec2 = ZERO): Ball {
-  return { id, pos, vel, roll, potted: false };
+  return { id, pos, vel, roll, spin: IDENTITY, potted: false };
 }
 
 export function cloneBall(ball: Ball): Ball {
@@ -109,6 +118,7 @@ export function cloneBall(ball: Ball): Ball {
     pos: ball.pos,
     vel: ball.vel,
     roll: ball.roll,
+    spin: ball.spin,
     potted: ball.potted,
   };
   if (ball.pocket !== undefined) copy.pocket = ball.pocket;
@@ -191,10 +201,18 @@ export function simulateToRest(
   return { balls: current, events, duration: time, settled: false };
 }
 
+/**
+ * Move time forward by `dt` with velocities held constant.
+ *
+ * Called once per sub-interval between events, not once per tick, so a ball
+ * that meets a rail mid-tick turns through its old roll up to the contact and
+ * its new roll after it — which is the skid a rail leaves behind, made visible.
+ */
 function advance(balls: Ball[], dt: number): void {
   for (const ball of balls) {
     if (ball.potted) continue;
     ball.pos = add(ball.pos, scale(ball.vel, dt));
+    ball.spin = spinBy(ball.spin, ball.roll, BALL_RADIUS, dt);
   }
 }
 

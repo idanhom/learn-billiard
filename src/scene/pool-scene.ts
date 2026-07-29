@@ -14,6 +14,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   PerspectiveCamera,
+  Quaternion,
   Scene,
   SphereGeometry,
   Vector3,
@@ -23,7 +24,7 @@ import { BALL_RADIUS } from '../geometry/table';
 import { type Vec2, lerp as lerpVec, vec } from '../geometry/vec2';
 import type { Ball } from '../physics/world';
 import { CUE_BALL_NUMBER, ballTexture, companionBallNumber } from './ball-textures';
-import { headingToRotationY, writeHeading, writeWorld } from './coords';
+import { headingToRotationY, writeHeading, writeWorld, writeWorldQuat } from './coords';
 import { Guides } from './guides';
 import { buildTable } from './table-mesh';
 
@@ -78,6 +79,9 @@ export class PoolScene {
   /** Scratch, reused every frame by the cue and camera placement. */
   readonly #origin = new Vector3();
   readonly #direction = new Vector3();
+  /** Scratch, reused every frame by the ball orientation interpolation. */
+  readonly #spinFrom = new Quaternion();
+  readonly #spinTo = new Quaternion();
 
   #view: CameraView = 'behind';
   #viewSettled = false;
@@ -184,6 +188,7 @@ export class PoolScene {
       mesh.visible = !ball.potted;
       if (!ball.potted) {
         writeWorld(mesh.position, this.#interpolatedPosition(state, i), BALL_RADIUS);
+        this.#writeOrientation(mesh.quaternion, state, i);
       }
     }
     for (const [id, mesh] of this.#ballMeshes) {
@@ -197,6 +202,26 @@ export class PoolScene {
     const previous = state.previous[index];
     if (!previous || current.potted) return current.pos;
     return lerpVec(previous.pos, current.pos, state.alpha);
+  }
+
+  /**
+   * Orientation on the same `alpha` as the position, so the ball's turn and its
+   * travel stay in step. Slerped in the table frame and converted once —
+   * conjugating by a fixed basis is an isometry, so the order does not matter
+   * and this way costs one conjugation instead of two.
+   */
+  #writeOrientation(target: Quaternion, state: RenderState, index: number): void {
+    const current = state.balls[index];
+    if (!current) return;
+    const previous = state.previous[index];
+    if (!previous) {
+      writeWorldQuat(target, current.spin);
+      return;
+    }
+    this.#spinFrom.set(previous.spin.x, previous.spin.y, previous.spin.z, previous.spin.w);
+    this.#spinTo.set(current.spin.x, current.spin.y, current.spin.z, current.spin.w);
+    this.#spinFrom.slerp(this.#spinTo, state.alpha);
+    writeWorldQuat(target, this.#spinFrom);
   }
 
   #placeCue(cuePos: Vec2, state: RenderState): void {

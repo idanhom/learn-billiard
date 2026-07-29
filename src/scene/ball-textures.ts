@@ -25,6 +25,46 @@ const SUIT_COLORS = [
 
 const CUE_COLOR = '#f5f3ec';
 const EIGHT_COLOR = '#151515';
+const CUE_MARK_COLOR = '#b23a2e';
+
+/**
+ * Half-angle a cue-ball mark subtends at the ball's centre, in radians.
+ *
+ * Deliberately fatter than a real measle ball, whose spots come in around 8
+ * degrees. At ~17 they still read at the behind-cue framing, where the ball is
+ * a few dozen pixels across. This is a legibility choice, not a measurement of
+ * any ball.
+ */
+export const MARK_ANGULAR_RADIUS = 0.295;
+
+/** A mark centre in texture space, plus how much of the ball it covers. */
+export interface CueMark {
+  readonly u: number;
+  /** 0 and 1 are the poles, where the mark is painted as a band. */
+  readonly v: number;
+  readonly radius: number;
+}
+
+/**
+ * Marks on the six octahedral axes.
+ *
+ * Six, not two: with a single pair, every rotation about the axis through them
+ * is invisible, and a rolling ball turns about whichever horizontal axis the
+ * shot handed it. Four round the equator at 90-degree spacing plus both poles
+ * is the smallest arrangement with no blind axis — which is why a real training
+ * ball carries six.
+ *
+ * The equatorial four sit at u = 0.125, 0.375, 0.625, 0.875 rather than at
+ * multiples of 0.25, so none of them straddles the u = 0 seam.
+ */
+export const CUE_MARKS: readonly CueMark[] = [
+  { u: 0.125, v: 0.5, radius: MARK_ANGULAR_RADIUS },
+  { u: 0.375, v: 0.5, radius: MARK_ANGULAR_RADIUS },
+  { u: 0.625, v: 0.5, radius: MARK_ANGULAR_RADIUS },
+  { u: 0.875, v: 0.5, radius: MARK_ANGULAR_RADIUS },
+  { u: 0.5, v: 0, radius: MARK_ANGULAR_RADIUS },
+  { u: 0.5, v: 1, radius: MARK_ANGULAR_RADIUS },
+];
 
 /** Solids 1-7, the 8-ball, then stripes 9-15 repeating the same seven colours. */
 const SUIT_CYCLE = SUIT_COLORS.length + 1;
@@ -67,8 +107,7 @@ export function ballTexture(ballNumber: number): Texture | undefined {
 
 function paintBall(ctx: CanvasRenderingContext2D, ballNumber: number): void {
   if (ballNumber === CUE_BALL_NUMBER) {
-    ctx.fillStyle = CUE_COLOR;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    paintCueBall(ctx);
     return;
   }
 
@@ -89,6 +128,35 @@ function paintBall(ctx: CanvasRenderingContext2D, ballNumber: number): void {
   // Number patches on opposite sides of the equator, as on a real ball.
   for (const centerX of [WIDTH * 0.25, WIDTH * 0.75]) {
     drawNumberPatch(ctx, centerX, HEIGHT / 2, ballNumber);
+  }
+}
+
+/**
+ * A flat white ball is a puck: nothing about it says which way it is turning,
+ * so the slide-to-roll transition the simulation computes never reaches the
+ * player. The marks are the whole point of it.
+ *
+ * A pole mark is a band, not a disc — at constant v an equirectangular strip IS
+ * a polar cap, and drawing a circle there would smear round the pole instead.
+ * Away from the poles, degrees per pixel are equal in both axes (256 px over
+ * 360 degrees, 128 over 180), which is what lets one radius serve both.
+ */
+function paintCueBall(ctx: CanvasRenderingContext2D): void {
+  ctx.fillStyle = CUE_COLOR;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.fillStyle = CUE_MARK_COLOR;
+  for (const mark of CUE_MARKS) {
+    const pixels = (mark.radius / Math.PI) * HEIGHT;
+    if (mark.v === 0) {
+      ctx.fillRect(0, 0, WIDTH, pixels);
+    } else if (mark.v === 1) {
+      ctx.fillRect(0, HEIGHT - pixels, WIDTH, pixels);
+    } else {
+      ctx.beginPath();
+      ctx.arc(mark.u * WIDTH, mark.v * HEIGHT, pixels, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 

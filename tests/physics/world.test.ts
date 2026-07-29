@@ -5,9 +5,11 @@ import {
   MAX_CUE_SPEED,
   clothRollingFriction,
 } from '../../src/constants';
+import { angleBetween, spinBy } from '../../src/geometry/quat';
 import { stoppingDistance } from '../../src/geometry/shot';
 import { BALL_RADIUS, TABLE, isInLegalBounds, pocketById } from '../../src/geometry/table';
-import { type Vec2, add, fromAngle, len, scale, sub, vec } from '../../src/geometry/vec2';
+import { type Vec2, add, dist, fromAngle, len, scale, sub, vec } from '../../src/geometry/vec2';
+import { resolveCushion } from '../../src/physics/collision';
 import {
   TICK,
   type Ball,
@@ -383,6 +385,108 @@ describe('the tick', () => {
         expectFinite(ball.roll);
       }
     }
+  });
+});
+
+/**
+ * Orientation, exercised through `stepWorld` rather than through `spinBy`.
+ *
+ * A test of the helper alone would still pass if `advance` composed the turn on
+ * the wrong side, or spun once per tick with whichever roll happened to survive
+ * to the end of it instead of once per sub-interval between events.
+ */
+describe('which way a ball is facing', () => {
+  test('a struck ball turns 2.4x less than its travel while it is still sliding', () => {
+    let current: Ball[] = [createBall(0, vec(-0.8, 0.2), vec(2, 0))];
+    let path = 0;
+    let turned = 0;
+
+    // Until the cloth has closed the slip: after that, roll equals velocity and
+    // the two rates agree by definition.
+    for (let i = 0; i < 240 && len(sub(current[0]!.vel, current[0]!.roll)) > 0; i++) {
+      const before = current[0]!;
+      current = stepWorld(current).balls;
+      path += dist(before.pos, current[0]!.pos);
+      turned += angleBetween(before.spin, current[0]!.spin);
+    }
+
+    // Analytically the slide is 0.49928 m and 7.28029 rad. The solver holds
+    // both velocity and roll at their start-of-tick values and applies friction
+    // afterwards, so it overshoots the distance by ~0.4% and undershoots the
+    // turn by ~1%; the exact 2.4 comes out at 2.44. What must not move is the
+    // order of magnitude of the gap — a position-derived turn would read 1.0.
+    expect(Math.abs(path / 0.49928 - 1)).toBeLessThan(0.01);
+    expect(Math.abs(turned / 7.28029 - 1)).toBeLessThan(0.02);
+    expect(path / BALL_RADIUS / turned).toBeCloseTo(2.4, 1);
+  });
+
+  test('a rolling ball turns exactly as far as it travels', () => {
+    let current: Ball[] = [rollingBall(0, vec(-0.8, 0.2), vec(1.2, 0))];
+    let path = 0;
+    let turned = 0;
+    for (let i = 0; i < 120; i++) {
+      const before = current[0]!;
+      current = stepWorld(current).balls;
+      path += dist(before.pos, current[0]!.pos);
+      turned += angleBetween(before.spin, current[0]!.spin);
+    }
+    expect(path / BALL_RADIUS / turned).toBeCloseTo(1, 6);
+  });
+
+  /**
+   * A rail changes the roll partway through a tick, and the ball has to turn
+   * one way up to the contact and the other way after it. Spinning once for the
+   * whole tick — with either roll — is the mistake this pins down.
+   */
+  test('composes both sides of a cushion contact inside one tick', () => {
+    let current: Ball[] = [rollingBall(0, vec(0.4, -0.2), vec(0, 1.4))];
+    let before = current;
+    let contactTime = -1;
+    for (let i = 0; i < 240 * 5 && contactTime < 0; i++) {
+      before = current;
+      const step = stepWorld(current);
+      current = step.balls;
+      for (const event of step.events) {
+        if (event.type === 'cushion') contactTime = event.time;
+      }
+    }
+    expect(contactTime).toBeGreaterThan(0);
+    expect(contactTime).toBeLessThan(TICK);
+
+    // The far long rail, so the inward normal is -y. Velocity and roll are
+    // constant inside a tick, so these are exactly what the solver resolved.
+    const incoming = before[0]!;
+    const bounced = resolveCushion(incoming.vel, incoming.roll, vec(0, -1))!;
+    const composed = spinBy(
+      spinBy(incoming.spin, incoming.roll, BALL_RADIUS, contactTime),
+      bounced.roll,
+      BALL_RADIUS,
+      TICK - contactTime,
+    );
+    expect(angleBetween(current[0]!.spin, composed)).toBeLessThan(1e-12);
+
+    // Neither roll on its own accounts for the tick.
+    const onlyIncoming = spinBy(incoming.spin, incoming.roll, BALL_RADIUS, TICK);
+    const onlyOutgoing = spinBy(incoming.spin, bounced.roll, BALL_RADIUS, TICK);
+    expect(angleBetween(current[0]!.spin, onlyIncoming)).toBeGreaterThan(1e-3);
+    expect(angleBetween(current[0]!.spin, onlyOutgoing)).toBeGreaterThan(1e-3);
+  });
+
+  test('stays a unit quaternion the length of a full-power shot', () => {
+    const result = simulateToRest([createBall(0, vec(-0.9, 0), vec(MAX_CUE_SPEED, 0.3))]);
+    const { x, y, z, w } = result.balls[0]!.spin;
+    expect(Math.hypot(x, y, z, w)).toBeCloseTo(1, 12);
+  });
+
+  test('a potted ball stops turning', () => {
+    const pocket = pocketById('top-left');
+    const start = createBall(0, add(pocket.center, vec(0.3, -0.2)), vec(-1.2, 0.8));
+    const result = simulateToRest([start]);
+    expect(result.balls[0]!.potted).toBe(true);
+
+    const settled = result.balls[0]!.spin;
+    const again = stepWorld(result.balls).balls[0]!.spin;
+    expect(again).toBe(settled);
   });
 });
 
