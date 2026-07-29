@@ -12,7 +12,15 @@
  */
 
 import { analyseShot, cutAngle, ghostBallCenter } from '../geometry/shot';
-import { BALL_RADIUS, TABLE, type Pocket, isInLegalBounds, pocketById } from '../geometry/table';
+import {
+  BALL_RADIUS,
+  TABLE,
+  type Pocket,
+  isInLegalBounds,
+  isInPocketMouth,
+  pocketById,
+  pocketOnPath,
+} from '../geometry/table';
 import { type Vec2, add, angleOf, dist, fromAngle, scale, vec } from '../geometry/vec2';
 import { type ShotLayout, layoutWithCut } from './drills';
 import type { LevelDefinition } from './levels';
@@ -29,7 +37,11 @@ export type LayoutViolation =
   | 'underpowered'
   | 'pot-distance-out-of-range'
   | 'cue-distance-out-of-range'
-  | 'not-rail-adjacent';
+  | 'not-rail-adjacent'
+  | 'cue-in-pocket'
+  | 'object-in-pocket'
+  | 'cue-path-enters-pocket'
+  | 'object-path-enters-pocket';
 
 export interface GenerateOptions {
   readonly preferredSide?: 'left' | 'right';
@@ -47,6 +59,15 @@ const DEFAULT_MAX_ATTEMPTS = 400;
 
 /** Keep a little daylight between balls so a layout never starts in contact. */
 const SEPARATION_MARGIN = 0.006;
+
+/**
+ * Clearance a ball and its route must keep from every pocket it is not aimed
+ * at. Without it the generator produced shots the player could not make at any
+ * angle or power: the cue ball rolled over a pocket on its way to the object
+ * ball and vanished, so the shot reported "missed the object ball" for ever.
+ * Half a ball's width keeps layouts off the knife edge as well as out of it.
+ */
+const POCKET_CLEARANCE = BALL_RADIUS / 2;
 
 /** How wide a fan of object-ball positions to sample in front of each pocket. */
 const CORNER_CONE = (100 * Math.PI) / 180;
@@ -153,6 +174,23 @@ export function layoutViolations(
     violations.push('balls-overlap');
   }
 
+  // Being inside the legal-bounds rectangle is not the same as being on the
+  // table: its corners sit inside the corner pockets' capture circles, so a
+  // ball placed there is potted on the first tick.
+  if (isInPocketMouth(layout.cue, POCKET_CLEARANCE)) violations.push('cue-in-pocket');
+  if (isInPocketMouth(layout.object, POCKET_CLEARANCE)) violations.push('object-in-pocket');
+
+  // Neither ball may be required to roll over a pocket on its way. The cue ball
+  // has no exception — any pocket it crosses swallows it. The object ball is
+  // allowed exactly one: the pocket it is being sent to.
+  const ghost = ghostBallCenter(layout.object, pocket.center);
+  if (pocketOnPath(layout.cue, ghost, { margin: POCKET_CLEARANCE })) {
+    violations.push('cue-path-enters-pocket');
+  }
+  if (pocketOnPath(layout.object, pocket.center, { ignore: pocket.id, margin: POCKET_CLEARANCE })) {
+    violations.push('object-path-enters-pocket');
+  }
+
   const analysis = analyseShot({
     cue: layout.cue,
     object: layout.object,
@@ -171,7 +209,7 @@ export function layoutViolations(
     violations.push('pot-distance-out-of-range');
   }
 
-  const cueDistance = dist(layout.cue, ghostBallCenter(layout.object, pocket.center));
+  const cueDistance = dist(layout.cue, ghost);
   if (cueDistance < level.cueDistance[0] || cueDistance > level.cueDistance[1]) {
     violations.push('cue-distance-out-of-range');
   }

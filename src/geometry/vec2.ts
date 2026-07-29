@@ -89,3 +89,17 @@ export function angleBetween(a: Vec2, b: Vec2): number {
 export function lerp(a: Vec2, b: Vec2, t: number): Vec2 {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
+
+/** Fraction along the segment ab that is nearest to p, clamped to [0, 1]. */
+export function projectOntoSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const ab = sub(b, a);
+  const lengthSq = dot(ab, ab);
+  if (lengthSq === 0) return 0;
+  const t = dot(sub(p, a), ab) / lengthSq;
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
+export function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const t = projectOntoSegment(p, a, b);
+  return Math.hypot(p.x - (a.x + (b.x - a.x) * t), p.y - (a.y + (b.y - a.y) * t));
+}

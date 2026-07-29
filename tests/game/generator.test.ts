@@ -1,9 +1,18 @@
 import { describe, expect, test } from 'vitest';
-import { cutAngle, cutSide } from '../../src/geometry/shot';
-import { BALL_RADIUS, TABLE, isInLegalBounds, pocketById } from '../../src/geometry/table';
+import { cutAngle, cutSide, ghostBallCenter } from '../../src/geometry/shot';
+import {
+  BALL_RADIUS,
+  TABLE,
+  isInLegalBounds,
+  isInPocketMouth,
+  pocketById,
+  pocketOnPath,
+} from '../../src/geometry/table';
 import { dist } from '../../src/geometry/vec2';
+import { idealAimAngle } from '../../src/game/drills';
 import { LEVELS, examLevel, levelById } from '../../src/game/levels';
 import { generateShot, layoutViolations, makeRng } from '../../src/game/generator';
+import { ShotSession } from '../../src/game/shot-session';
 
 const toDeg = (r: number) => (r * 180) / Math.PI;
 
@@ -187,8 +196,116 @@ describe('generated layouts', () => {
   });
 });
 
+describe('shots must actually be playable', () => {
+  test('no layout starts a ball inside a pocket', () => {
+    for (const level of LEVELS) {
+      for (let seed = 0; seed < 200; seed++) {
+        const { layout } = generateShot(level, seed, {
+          preferredSide: seed % 2 === 0 ? 'left' : 'right',
+        });
+        expect(isInPocketMouth(layout.cue), `level ${level.id} seed ${seed} cue`).toBe(false);
+        expect(isInPocketMouth(layout.object), `level ${level.id} seed ${seed} object`).toBe(false);
+      }
+    }
+  });
+
+  test('the cue ball never has to roll over a pocket to reach the object ball', () => {
+    for (const level of LEVELS) {
+      for (let seed = 0; seed < 200; seed++) {
+        const { layout } = generateShot(level, seed, {
+          preferredSide: seed % 2 === 0 ? 'left' : 'right',
+        });
+        const ghost = ghostBallCenter(layout.object, pocketById(layout.targetPocket).center);
+        const swallowed = pocketOnPath(layout.cue, ghost);
+        expect(swallowed?.id, `level ${level.id} seed ${seed} loses the cue ball`).toBeUndefined();
+      }
+    }
+  });
+
+  test('the object ball never has to cross a pocket that is not the target', () => {
+    for (const level of LEVELS) {
+      for (let seed = 0; seed < 200; seed++) {
+        const { layout } = generateShot(level, seed, {
+          preferredSide: seed % 2 === 0 ? 'left' : 'right',
+        });
+        const target = pocketById(layout.targetPocket);
+        const swallowed = pocketOnPath(layout.object, target.center, { ignore: target.id });
+        expect(swallowed?.id, `level ${level.id} seed ${seed} drops in the wrong pocket`).toBeUndefined();
+      }
+    }
+  });
+
+  /**
+   * The property the player actually cares about, and the one that was broken:
+   * aim a generated shot perfectly and the cue ball must reach the object ball.
+   * Layouts that failed this reported "missed the object ball" at every angle
+   * and every power, so the level was unplayable until the shot was skipped.
+   */
+  test('a perfectly aimed shot always reaches the object ball', () => {
+    for (const level of LEVELS) {
+      for (let seed = 0; seed < 25; seed++) {
+        const { layout } = generateShot(level, seed, {
+          preferredSide: seed % 2 === 0 ? 'left' : 'right',
+        });
+        const session = new ShotSession(layout, { toleranceDegrees: level.toleranceDegrees });
+        session.aimTo(idealAimAngle(layout));
+        session.beginCharge();
+        session.setPower(0.6);
+        session.release();
+        for (let i = 0; i < 60 * 40 && session.phase === 'simulating'; i++) session.advance(1 / 60);
+        const outcome = session.evaluate();
+        expect(outcome?.contacted, `level ${level.id} seed ${seed} never reaches the object ball`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  test('the known bad layouts from the bug report are gone', () => {
+    // Each of these put the cue ball on a route straight into the side pocket,
+    // or started it inside a corner pocket's capture circle.
+    for (const [levelId, seed] of [[1, 203], [1, 276], [2, 24], [3, 233], [6, 1]] as const) {
+      const level = levelById(levelId);
+      const { layout } = generateShot(level, seed, {
+        preferredSide: seed % 2 === 0 ? 'left' : 'right',
+      });
+      expect(layoutViolations(layout, level), `L${levelId}-s${seed}`).toEqual([]);
+      const ghost = ghostBallCenter(layout.object, pocketById(layout.targetPocket).center);
+      expect(pocketOnPath(layout.cue, ghost)).toBeUndefined();
+      expect(isInPocketMouth(layout.cue)).toBe(false);
+    }
+  });
+});
+
 describe('invariant checking', () => {
   const level = levelById(3);
+
+  test('flags a cue ball parked in a pocket mouth', () => {
+    const base = generateShot(level, 5).layout;
+    const inPocket = { ...base, cue: { x: TABLE.bounds.maxX, y: TABLE.bounds.maxY } };
+    expect(layoutViolations(inPocket, level)).toContain('cue-in-pocket');
+  });
+
+  test('flags a cue path that runs over a pocket', () => {
+    // Both balls hard against the bottom rail, either side of the side pocket.
+    const railed = {
+      id: 'railed',
+      cue: { x: -0.4, y: TABLE.bounds.minY },
+      object: { x: 0.19, y: TABLE.bounds.minY },
+      targetPocket: 'bottom-right',
+    } as const;
+    expect(layoutViolations(railed, level)).toContain('cue-path-enters-pocket');
+  });
+
+  test('flags an object path that runs over the wrong pocket', () => {
+    const railed = {
+      id: 'railed-object',
+      cue: { x: -0.75, y: TABLE.bounds.maxY },
+      object: { x: -0.45, y: TABLE.bounds.maxY },
+      targetPocket: 'top-right',
+    } as const;
+    expect(layoutViolations(railed, level)).toContain('object-path-enters-pocket');
+  });
 
   test('flags a cue ball off the table', () => {
     const layout = { ...generateShot(level, 5).layout, cue: { x: 5, y: 5 } };

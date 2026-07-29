@@ -10,7 +10,18 @@
  * The scene maps this plane onto world XZ; nothing here knows about rendering.
  */
 
-import { type Vec2, dist, distSq, normalize, perp, scale, sub, vec } from './vec2';
+import {
+  type Vec2,
+  dist,
+  distSq,
+  distanceToSegment,
+  normalize,
+  perp,
+  projectOntoSegment,
+  scale,
+  sub,
+  vec,
+} from './vec2';
 
 /** 7-foot ("bar box") playing surface. */
 export const PLAY_LENGTH = 1.98;
@@ -189,6 +200,55 @@ export function pocketById(id: PocketId): Pocket {
   const pocket = POCKET_BY_ID.get(id);
   if (!pocket) throw new Error(`unknown pocket: ${id}`);
   return pocket;
+}
+
+/**
+ * True when a ball centre at `p` is inside a pocket's capture circle.
+ *
+ * The legal-bounds rectangle is not enough to decide where a ball may be put:
+ * the corner of that rectangle, (maxX, maxY), is only 4 cm from the corner
+ * pocket centre and well inside its 5.5 cm capture radius. A ball placed there
+ * is, as far as the solver is concerned, already in the pocket. Anything
+ * choosing positions must ask this too.
+ */
+export function isInPocketMouth(p: Vec2, margin = 0): boolean {
+  return POCKETS.some((pocket) => dist(p, pocket.center) <= pocket.captureRadius + margin);
+}
+
+export interface PathPocketOptions {
+  /** Extra clearance, so a path that merely grazes a mouth also counts. */
+  readonly margin?: number;
+  /** The pocket a shot is aimed at, which it is of course allowed to reach. */
+  readonly ignore?: PocketId;
+}
+
+/**
+ * The first pocket a ball rolling from `from` to `to` would drop into.
+ *
+ * A ball does not have to be aimed at a pocket to find one: rolled along a long
+ * rail it passes within 3 cm of the side pocket's centre, comfortably inside
+ * the 5 cm capture circle, and disappears. A shot that requires such a path
+ * cannot be played at any speed or angle.
+ */
+export function pocketOnPath(
+  from: Vec2,
+  to: Vec2,
+  options: PathPocketOptions = {},
+): Pocket | undefined {
+  const margin = options.margin ?? 0;
+  let earliest: Pocket | undefined;
+  let earliestT = Number.POSITIVE_INFINITY;
+
+  for (const pocket of POCKETS) {
+    if (pocket.id === options.ignore) continue;
+    if (distanceToSegment(pocket.center, from, to) > pocket.captureRadius + margin) continue;
+    const t = projectOntoSegment(pocket.center, from, to);
+    if (t < earliestT) {
+      earliestT = t;
+      earliest = pocket;
+    }
+  }
+  return earliest;
 }
 
 /** True when a ball centre at `p` sits wholly on the playing surface, inset by `margin`. */

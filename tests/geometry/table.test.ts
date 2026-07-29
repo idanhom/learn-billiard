@@ -7,7 +7,9 @@ import {
   TABLE,
   capturingPocket,
   isInLegalBounds,
+  isInPocketMouth,
   pocketById,
+  pocketOnPath,
 } from '../../src/geometry/table';
 
 describe('table constants', () => {
@@ -98,6 +100,77 @@ describe('pockets', () => {
   test('a ball that has escaped the playing surface is captured by the nearest pocket', () => {
     const escaped = vec(TABLE.playLength / 2 + 0.2, TABLE.playWidth / 2 + 0.2);
     expect(capturingPocket(escaped)?.id).toBe('top-right');
+  });
+});
+
+describe('pocket mouths', () => {
+  test('a ball wedged in the legal-bounds corner is already in the pocket', () => {
+    // The bounds rectangle alone says this is a legal place to put a ball, but
+    // the solver would pot it on the first tick.
+    const corner = vec(TABLE.bounds.maxX, TABLE.bounds.maxY);
+    expect(isInLegalBounds(corner)).toBe(true);
+    expect(isInPocketMouth(corner)).toBe(true);
+  });
+
+  test('the middle of the table is not in a pocket', () => {
+    expect(isInPocketMouth(vec(0, 0))).toBe(false);
+    expect(isInPocketMouth(vec(0.4, 0.2))).toBe(false);
+  });
+
+  test('a margin widens the mouth, for keeping layouts clear of the edge', () => {
+    // 7.9 cm from the side pocket centre: outside its 5 cm capture circle, but
+    // close enough that a generator ought to leave it alone.
+    const nearSide = vec(0, TABLE.bounds.maxY - 0.05);
+    expect(isInPocketMouth(nearSide)).toBe(false);
+    expect(isInPocketMouth(nearSide, 0.04)).toBe(true);
+  });
+
+  test('agrees with the pocket the solver would actually use', () => {
+    for (const pocket of TABLE.pockets) {
+      const justInside = vec(
+        pocket.center.x + pocket.inward.x * (pocket.captureRadius - 1e-4),
+        pocket.center.y + pocket.inward.y * (pocket.captureRadius - 1e-4),
+      );
+      expect(isInPocketMouth(justInside)).toBe(true);
+      expect(capturingPocket(justInside)?.id).toBe(pocket.id);
+    }
+  });
+});
+
+describe('paths that run over a pocket', () => {
+  test('a ball rolled along the long rail past a side pocket falls in', () => {
+    const from = vec(-0.5, TABLE.bounds.maxY);
+    const to = vec(0.5, TABLE.bounds.maxY);
+    expect(pocketOnPath(from, to)?.id).toBe('top-middle');
+  });
+
+  test('a path across the middle of the table reaches no pocket', () => {
+    expect(pocketOnPath(vec(-0.5, 0), vec(0.5, 0))).toBeUndefined();
+  });
+
+  test('a path that stops short of the pocket is clear', () => {
+    expect(pocketOnPath(vec(-0.5, TABLE.bounds.maxY), vec(-0.2, TABLE.bounds.maxY))).toBeUndefined();
+  });
+
+  test('the pocket a shot is aimed at can be ignored', () => {
+    const object = vec(0.5, 0.25);
+    const target = pocketById('top-right').center;
+    expect(pocketOnPath(object, target)?.id).toBe('top-right');
+    expect(pocketOnPath(object, target, { ignore: 'top-right' })).toBeUndefined();
+  });
+
+  test('reports the first pocket along the path, not just any of them', () => {
+    // Down the length of the table on the rail: the side pocket comes first.
+    const from = vec(-0.8, TABLE.bounds.maxY);
+    const to = vec(0.95, TABLE.bounds.maxY);
+    expect(pocketOnPath(from, to)?.id).toBe('top-middle');
+  });
+
+  test('a margin catches a path that merely grazes a mouth', () => {
+    const from = vec(-0.4, TABLE.bounds.maxY - 0.05);
+    const to = vec(0.4, TABLE.bounds.maxY - 0.05);
+    expect(pocketOnPath(from, to)).toBeUndefined();
+    expect(pocketOnPath(from, to, { margin: 0.04 })?.id).toBe('top-middle');
   });
 });
 
