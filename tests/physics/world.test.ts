@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { CUSHION_RESTITUTION, CUSHION_TANGENT_RETENTION, MAX_CUE_SPEED } from '../../src/constants';
+import { MAX_CUE_SPEED } from '../../src/constants';
 import { stoppingDistance } from '../../src/geometry/shot';
 import { BALL_RADIUS, TABLE, isInLegalBounds, pocketById } from '../../src/geometry/table';
-import { type Vec2, fromAngle, len, sub, vec } from '../../src/geometry/vec2';
+import { type Vec2, add, fromAngle, len, scale, sub, vec } from '../../src/geometry/vec2';
 import {
   TICK,
   type Ball,
@@ -11,6 +11,21 @@ import {
   simulateToRest,
   stepWorld,
 } from '../../src/physics/world';
+
+/**
+ * A ball already rolling, not sliding. `createBall` leaves roll at zero, which
+ * is right for a struck ball but wrong for every cushion calibration — a
+ * stunned ball rebounds quite differently from a rolling one, so measuring the
+ * wrong state would silently measure the wrong number.
+ */
+function rollingBall(id: number, pos: Vec2, vel: Vec2): Ball {
+  return createBall(id, pos, vel, vel);
+}
+
+/** Speed a ball will settle at once the cloth has resolved its slip. */
+function rollingSpeedOf(ball: Ball): number {
+  return len(add(scale(ball.vel, 5 / 7), scale(ball.roll, 2 / 7)));
+}
 
 /** Deterministic pseudo-random source so property sweeps are reproducible. */
 function lcg(seed: number): () => number {
@@ -86,17 +101,59 @@ describe('a ball on its own', () => {
 });
 
 describe('cushions', () => {
-  test('reverse and damp the normal component, retaining most of the tangential', () => {
-    const { balls, before } = stepUntil(
-      [createBall(0, vec(0, 0), vec(1, 2))],
-      (events) => events.some((e) => e.type === 'cushion'),
+  /**
+   * The number the whole cushion model is calibrated against: a rolling ball
+   * driven square into a rail should come back having lost about half its
+   * speed. Measured after it has settled, because most of that loss is the skid
+   * that follows the rebound, not the rebound itself.
+   */
+  test('take about half the speed of a rolling ball hit square', () => {
+    const speed = 1.4;
+    const start = rollingBall(0, vec(0.4, -0.2), vec(0, speed));
+    const { balls } = stepUntil([start], (events) => events.some((e) => e.type === 'cushion'));
+    const retained = rollingSpeedOf(balls[0]!) / speed;
+    expect(retained).toBeGreaterThan(0.45);
+    expect(retained).toBeLessThan(0.6);
+  });
+
+  test('send the ball back the way it came', () => {
+    const start = rollingBall(0, vec(0.4, -0.2), vec(0, 1.4));
+    const { balls } = stepUntil([start], (events) => events.some((e) => e.type === 'cushion'));
+    expect(balls[0]!.vel.y).toBeLessThan(0);
+  });
+
+  test('cost a glancing ball far less than a square one', () => {
+    const square = rollingBall(0, vec(0.4, -0.2), vec(0, 1.4));
+    const glancing = rollingBall(0, vec(-0.6, 0.2), vec(1.35, 0.36)); // ~15 degrees
+    const afterSquare = stepUntil([square], (e) => e.some((x) => x.type === 'cushion')).balls[0]!;
+    const afterGlancing = stepUntil([glancing], (e) => e.some((x) => x.type === 'cushion')).balls[0]!;
+    expect(rollingSpeedOf(afterGlancing) / 1.4).toBeGreaterThan(
+      rollingSpeedOf(afterSquare) / 1.4,
     );
-    const inbound = before[0]!.vel;
-    const outbound = balls[0]!.vel;
-    // `inbound` is sampled a tick early, so allow one tick of cloth friction.
-    const tickFriction = 0.01;
-    expect(Math.abs(outbound.y - -CUSHION_RESTITUTION * inbound.y)).toBeLessThan(tickFriction);
-    expect(Math.abs(outbound.x - CUSHION_TANGENT_RETENTION * inbound.x)).toBeLessThan(tickFriction);
+    expect(rollingSpeedOf(afterGlancing) / 1.4).toBeGreaterThan(0.85);
+  });
+
+  /**
+   * The corrected impulse can leave the ball's centre still moving into the
+   * rail — a ball whose spin fights its motion gets a small impulse because its
+   * contact point is barely moving. Energy falls every time, so it must
+   * converge rather than chatter against the rail for ever.
+   */
+  test('settle a ball whose spin fights its motion instead of chattering', () => {
+    const fighting = createBall(0, vec(0.4, 0.4), vec(0, 1.2), vec(0, -1.2));
+    const result = simulateToRest([fighting], { maxDuration: 30 });
+    expect(result.settled).toBe(true);
+    expect(result.balls[0]!.potted || isInLegalBounds(result.balls[0]!.pos, -2e-3)).toBe(true);
+    expectFinite(result.balls[0]!.pos);
+    expectFinite(result.balls[0]!.vel);
+  });
+
+  test('a shot settles sooner than it used to, because rails now cost real speed', () => {
+    // Before the cushion fix this took far longer: every rail returned 75% of
+    // the ball's speed and left it perfectly rolling.
+    const result = simulateToRest([rollingBall(0, vec(-0.8, 0), vec(3, 0.9))]);
+    expect(result.settled).toBe(true);
+    expect(result.duration).toBeLessThan(8);
   });
 
   test('keep the ball on the table', () => {

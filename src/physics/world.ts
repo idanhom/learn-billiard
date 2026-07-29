@@ -33,8 +33,8 @@ import {
   ballBallTOI,
   ballCircleEntryTOI,
   ballSegmentTOI,
-  reflectOffCushion,
   resolveBallPair,
+  resolveCushion,
   separateOverlap,
 } from './collision';
 
@@ -241,11 +241,14 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
         time: hit.time,
         apply: (world, at, events) => {
           const ball = world[i]!;
-          const bounced = reflectOffCushion(ball.vel, hit.normal);
+          const bounced = resolveCushion(ball.vel, ball.roll, hit.normal);
           if (!bounced) return;
-          ball.vel = bounced;
-          // Reflect the roll the same way so a rolling ball stays rolling.
-          ball.roll = reflectOffCushion(ball.roll, hit.normal) ?? ball.roll;
+          // The roll is NOT reflected. A ball comes off a rail still spinning
+          // the way it was going, which fights its new direction until the
+          // cloth resolves it — that skid is most of what a rail costs a ball,
+          // and applyFriction below produces it for free.
+          ball.vel = bounced.vel;
+          ball.roll = bounced.roll;
           events.push({ type: 'cushion', time: at, ball: ball.id });
         },
       });

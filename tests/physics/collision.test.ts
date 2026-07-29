@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { BALL_RESTITUTION, CUSHION_RESTITUTION, CUSHION_TANGENT_RETENTION } from '../../src/constants';
+import { BALL_RESTITUTION } from '../../src/constants';
 import { BALL_RADIUS } from '../../src/geometry/table';
-import { angleOf, len, normalize, sub, vec } from '../../src/geometry/vec2';
+import { type Vec2, add, angleOf, dot, len, lenSq, normalize, scale, vec } from '../../src/geometry/vec2';
 import {
   ballBallTOI,
   ballCircleEntryTOI,
   ballSegmentTOI,
-  reflectOffCushion,
   resolveBallPair,
+  resolveCushion,
 } from '../../src/physics/collision';
 
 const D = 2 * BALL_RADIUS;
@@ -125,28 +125,112 @@ describe('ball-ball resolution', () => {
   });
 });
 
-describe('cushion reflection', () => {
-  const normal = vec(0, -1); // top rail, facing the table
+/** 15 degrees off the rail: a genuinely glancing contact. */
+const GLANCING = (15 * Math.PI) / 180;
 
-  test('reverses and damps the normal component, retains most of the tangential', () => {
-    const out = reflectOffCushion(vec(1, 2), normal);
-    expect(out!.y).toBeCloseTo(-2 * CUSHION_RESTITUTION, 12);
-    expect(out!.x).toBeCloseTo(1 * CUSHION_TANGENT_RETENTION, 12);
-  });
+describe('cushion impulse', () => {
+  // A rail along the top of the table; the normal faces back into the playing
+  // surface, which is the side the ball arrives from.
+  const normal = vec(0, -1);
 
-  test('a ball loses speed on every cushion', () => {
-    const inbound = vec(1, 2);
-    expect(len(reflectOffCushion(inbound, normal)!)).toBeLessThan(len(inbound));
-  });
+  /** Speed a ball settles at once the cloth has resolved the slip it leaves with. */
+  function settledSpeed(vel: Vec2, roll: Vec2): number {
+    return len(add(scale(vel, 5 / 7), scale(roll, 2 / 7)));
+  }
+
+  /** The energy this model actually tracks: translation plus ball rotation. */
+  function modelledEnergy(vel: Vec2, roll: Vec2): number {
+    return 0.5 * lenSq(vel) + 0.2 * lenSq(roll);
+  }
 
   test('is undefined for a ball already moving away from the cushion', () => {
-    expect(reflectOffCushion(vec(1, -2), normal)).toBeUndefined();
+    expect(resolveCushion(vec(1, -2), vec(1, -2), normal)).toBeUndefined();
   });
 
-  test('reflects about an arbitrary unit normal', () => {
-    const n = normalize(sub(vec(0, 0), vec(1, 1)));
-    const out = reflectOffCushion(vec(1, 1), n);
-    expect(out!.x).toBeCloseTo(-CUSHION_RESTITUTION, 12);
-    expect(out!.y).toBeCloseTo(-CUSHION_RESTITUTION, 12);
+  test('a rolling ball hitting the rail square rebounds within the published range', () => {
+    const inbound = vec(0, 2);
+    const out = resolveCushion(inbound, inbound, normal)!;
+    // Ball-rail coefficient of restitution, measured at the moment of rebound.
+    expect(-out.vel.y / inbound.y).toBeGreaterThan(0.6);
+    expect(-out.vel.y / inbound.y).toBeLessThan(0.75);
+  });
+
+  test('and once the skid is done it has lost about half its speed', () => {
+    const inbound = vec(0, 2);
+    const out = resolveCushion(inbound, inbound, normal)!;
+    const retained = settledSpeed(out.vel, out.roll) / len(inbound);
+    expect(retained).toBeGreaterThan(0.45);
+    expect(retained).toBeLessThan(0.6);
+  });
+
+  test('the rail leaves the ball spinning the wrong way, which is what costs it', () => {
+    const inbound = vec(0, 2);
+    const out = resolveCushion(inbound, inbound, normal)!;
+    // Velocity is now heading away from the rail while the roll barely is:
+    // that mismatch is the skid.
+    expect(out.vel.y).toBeLessThan(0);
+    expect(Math.abs(out.roll.y)).toBeLessThan(Math.abs(out.vel.y));
+  });
+
+  test('a glancing hit costs almost nothing', () => {
+    // 15 degrees off the rail.
+    const inbound = vec(Math.cos(GLANCING), Math.sin(GLANCING));
+    const out = resolveCushion(inbound, inbound, normal)!;
+    expect(settledSpeed(out.vel, out.roll) / len(inbound)).toBeGreaterThan(0.85);
+  });
+
+  test('steeper hits cost more than glancing ones', () => {
+    const retained = [10, 30, 60, 90].map((degrees) => {
+      const angle = (degrees * Math.PI) / 180;
+      const inbound = vec(Math.cos(angle), Math.sin(angle));
+      const out = resolveCushion(inbound, inbound, normal)!;
+      return settledSpeed(out.vel, out.roll) / len(inbound);
+    });
+    for (let i = 1; i < retained.length; i++) {
+      expect(retained[i]!).toBeLessThan(retained[i - 1]!);
+    }
+  });
+
+  test('works about an arbitrary unit normal', () => {
+    const n = normalize(vec(-1, -1));
+    const inbound = vec(1, 1);
+    const out = resolveCushion(inbound, inbound, n)!;
+    expect(dot(out.vel, n)).toBeGreaterThan(0); // sent back into the table
+    expect(len(out.vel)).toBeLessThan(len(inbound));
+  });
+
+  /**
+   * The property that matters most. A rail is passive: it can never hand a ball
+   * more energy than it arrived with, whatever that ball happened to be doing.
+   *
+   * Sweeping only pure-rolling approaches would miss this entirely — the states
+   * that break a naive impulse are the ones where roll opposes velocity, which
+   * resolveBallPair produces routinely because it changes velocity and leaves
+   * roll alone.
+   */
+  test('never gives a ball more energy than it arrived with, at any spin', () => {
+    for (let degrees = 5; degrees <= 90; degrees += 5) {
+      const angle = (degrees * Math.PI) / 180;
+      const vel = vec(Math.cos(angle), Math.sin(angle));
+      for (let rollX = -3; rollX <= 3; rollX += 0.5) {
+        for (let rollY = -3; rollY <= 3; rollY += 0.5) {
+          const roll = vec(rollX, rollY);
+          const out = resolveCushion(vel, roll, normal);
+          if (!out) continue;
+          expect(
+            modelledEnergy(out.vel, out.roll),
+            `angle ${degrees} roll ${rollX},${rollY}`,
+          ).toBeLessThanOrEqual(modelledEnergy(vel, roll) + 1e-12);
+        }
+      }
+    }
+  });
+
+  test('a ball whose spin fights its motion still loses energy', () => {
+    // The case that broke a centre-velocity impulse: rolling away, moving in.
+    const vel = vec(0, 1);
+    const roll = vec(0, -1);
+    const out = resolveCushion(vel, roll, normal)!;
+    expect(modelledEnergy(out.vel, out.roll)).toBeLessThan(modelledEnergy(vel, roll));
   });
 });

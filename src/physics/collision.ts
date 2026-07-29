@@ -6,7 +6,12 @@
  * impact instead of resolving whatever it happens to notice first.
  */
 
-import { BALL_RESTITUTION, CUSHION_RESTITUTION, CUSHION_TANGENT_RETENTION } from '../constants';
+import {
+  BALL_RESTITUTION,
+  CUSHION_CONTACT_HEIGHT_RATIO,
+  CUSHION_CONTACT_RESTITUTION,
+  CUSHION_TANGENT_RETENTION,
+} from '../constants';
 import type { Segment } from '../geometry/table';
 import { type Vec2, add, dot, normalize, scale, sub, vec } from '../geometry/vec2';
 
@@ -157,20 +162,52 @@ export function resolveBallPair(
   };
 }
 
-/**
- * Cushion rebound: the normal component reverses and is damped, the tangential
- * component is retained less a slice. No spin coupling — declared simplified.
- */
-export function reflectOffCushion(vel: Vec2, normal: Vec2): Vec2 | undefined {
-  const approach = dot(vel, normal);
-  if (approach >= 0) return undefined;
+export interface CushionImpulse {
+  readonly vel: Vec2;
+  readonly roll: Vec2;
+}
 
-  const normalPart = scale(normal, approach);
-  const tangentPart = sub(vel, normalPart);
-  return add(
-    scale(normalPart, -CUSHION_RESTITUTION),
-    scale(tangentPart, CUSHION_TANGENT_RETENTION),
-  );
+/**
+ * Cushion rebound as a point impulse applied above the ball's centre.
+ *
+ * The cushion nose sits at 0.27R above centre, so three things follow, and all
+ * three matter:
+ *
+ *  - The contact point is not the centre. For a rolling ball it is moving 1.27x
+ *    faster than the centre, so that is the velocity restitution applies to.
+ *  - An impulse there also spins the ball, by `2.5 * (h/R) * j`, toward rolling
+ *    in its new direction.
+ *  - The ball resists an impulse at that point with a rotational effective
+ *    mass, hence the `1 + 2.5c^2` divisor.
+ *
+ * Getting the first and third wrong is not a rounding error: computing the
+ * impulse from the centre velocity and then adding the angular term creates
+ * energy — around +58% for a ball whose roll opposes its motion, a state
+ * `resolveBallPair` produces routinely, since it changes velocity and leaves
+ * roll alone. With the contact-point velocity and effective mass, a rail is
+ * passive by construction at every spin state.
+ *
+ * What is deliberately NOT modelled: tangential cushion friction, and so no
+ * cushion-induced sidespin. The tangential retention factor stands in for it.
+ */
+export function resolveCushion(vel: Vec2, roll: Vec2, normal: Vec2): CushionImpulse | undefined {
+  const c = CUSHION_CONTACT_HEIGHT_RATIO;
+
+  // Normal velocity of the contact point, not of the centre.
+  const closing = dot(vel, normal) + c * dot(roll, normal);
+  if (closing >= 0) return undefined;
+
+  const effectiveMass = 1 + 2.5 * c * c;
+  const j = (-(1 + CUSHION_CONTACT_RESTITUTION) * closing) / effectiveMass;
+
+  const bounced = add(vel, scale(normal, j));
+  const normalPart = scale(normal, dot(bounced, normal));
+  const tangentPart = sub(bounced, normalPart);
+
+  return {
+    vel: add(normalPart, scale(tangentPart, CUSHION_TANGENT_RETENTION)),
+    roll: add(roll, scale(normal, 2.5 * c * j)),
+  };
 }
 
 /** Push two overlapping balls apart along their line of centres, sharing the correction. */
