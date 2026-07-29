@@ -11,6 +11,7 @@
  * The seed is part of the layout id, so any shot can be reproduced exactly.
  */
 
+import { SLOWEST_CLOTH, clothRollingFriction } from '../constants';
 import { analyseShot, cutAngle, ghostBallCenter } from '../geometry/shot';
 import {
   BALL_RADIUS,
@@ -196,6 +197,9 @@ export function layoutViolations(
     object: layout.object,
     pocket,
     obstacles,
+    // Judge power against the most sluggish cloth on offer, so a layout stays
+    // makeable whichever cloth the player switches to afterwards.
+    rollingFriction: clothRollingFriction(SLOWEST_CLOTH),
   });
   for (const blocker of analysis.blockers) violations.push(blocker);
 

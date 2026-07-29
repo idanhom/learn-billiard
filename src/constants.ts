@@ -18,6 +18,35 @@ export const SLIDING_FRICTION = 0.2;
 /** Rolling resistance once the contact point has stopped slipping. */
 export const ROLLING_FRICTION = 0.01;
 
+/**
+ * Cloth speed, as rolling resistance. Real cloth varies table to table — a
+ * fast new cloth against a slow worn one — and the published range is
+ * 0.005-0.015, so picking one number for everybody is a guess. All three of
+ * these sit inside that range.
+ *
+ * Only the coefficient lives here. What the player picked is a preference, and
+ * belongs in the settings store; physics must not import from game.
+ */
+export const CLOTH_PRESETS = {
+  fast: { rollingFriction: 0.007 },
+  normal: { rollingFriction: ROLLING_FRICTION },
+  slow: { rollingFriction: 0.014 },
+} as const;
+
+export type ClothPreset = keyof typeof CLOTH_PRESETS;
+
+export const CLOTH_PRESET_IDS = ['fast', 'normal', 'slow'] as const;
+
+export const DEFAULT_CLOTH: ClothPreset = 'normal';
+
+/** The most sluggish cloth on offer. Shot generation validates against this so
+ * a layout stays makeable whichever cloth the player is using. */
+export const SLOWEST_CLOTH: ClothPreset = 'slow';
+
+export function clothRollingFriction(preset: ClothPreset): number {
+  return CLOTH_PRESETS[preset].rollingFriction;
+}
+
 /** Ball-to-ball restitution. A straight hit therefore transfers (1+e)/2 = 97.5%. */
 export const BALL_RESTITUTION = 0.95;
 

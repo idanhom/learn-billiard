@@ -49,6 +49,8 @@ export interface HudState {
   readonly cutTendency: Tendency | null;
   readonly straightTendency: Tendency | null;
   readonly timeScale: number;
+  readonly cloth: string;
+  readonly clothLabel: string;
 }
 
 export interface HudActions {
@@ -104,12 +106,12 @@ export class Hud {
       '<div class="hud-label">Controls</div>' +
       '<div class="hud-keys"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
-      '<b>V</b> camera &middot; <b>.</b> slow motion &middot; <b>R</b> retry &middot; ' +
-      '<b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level</div>' +
+      '<b>V</b> camera &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
+      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level</div>' +
       // Say plainly what this simulation is not, so nothing learned here comes
       // as a surprise on a real table.
       '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
-      'no english, no throw between balls, simplified cushions.</div>';
+      'no english, no throw between balls, no sidespin off the cushions.</div>';
 
     this.#levels.addEventListener('click', (event) => {
       const target = (event.target as HTMLElement).closest('[data-level]');
@@ -163,13 +165,14 @@ export class Hud {
       : `${state.windowQualified}/${state.windowNeeded} toward the next tier &middot; within ${state.toleranceDegrees}&deg;`;
 
     const speed = state.timeScale === 1 ? '' : ` &middot; ${formatSpeed(state.timeScale)}`;
+    const cloth = ` &middot; ${escape(state.clothLabel.toLowerCase())} cloth`;
 
     const html =
       `<div class="hud-label">${escape(state.levelName)}</div>` +
       `<div class="hud-big">${heading}</div>` +
       `<div class="hud-sub">${line}</div>` +
       `<div class="hud-sub">${state.qualified}/${state.attempts} on aim &middot; ` +
-      `${state.potted} potted &middot; ${escape(state.view)} view${speed}</div>`;
+      `${state.potted} potted &middot; ${escape(state.view)} view${speed}${cloth}</div>`;
     if (html === this.#renderedStatus) return;
     this.#renderedStatus = html;
     this.#status.innerHTML = html;

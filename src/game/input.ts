@@ -24,6 +24,7 @@ export interface InputHandlers {
   onNext(): void;
   onSelectLevel(id: number): void;
   onCycleSpeed(): void;
+  onCycleCloth(): void;
 }
 
 const FINE_NUDGE = (0.25 * Math.PI) / 180;
@@ -113,7 +114,12 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
         handlers.onNext();
         return;
       case 'Period':
+        if (event.repeat) return;
         handlers.onCycleSpeed();
+        return;
+      case 'KeyC':
+        if (event.repeat) return;
+        handlers.onCycleCloth();
         return;
       case 'Escape':
         if (charging) {

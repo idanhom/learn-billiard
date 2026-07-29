@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { SLOWEST_CLOTH } from '../../src/constants';
 import { cutAngle, cutSide, ghostBallCenter } from '../../src/geometry/shot';
 import {
   BALL_RADIUS,
@@ -257,6 +258,35 @@ describe('shots must actually be playable', () => {
         expect(outcome?.contacted, `level ${level.id} seed ${seed} never reaches the object ball`).toBe(
           true,
         );
+      }
+    }
+  });
+
+  /**
+   * Stronger than "the cue ball reaches the object ball": a level is only
+   * playable if some legal stroke actually pots the thing. Checked on the
+   * slowest cloth, because that is the setting where a long shot runs out of
+   * legs — and the generator validates against it for exactly that reason.
+   */
+  test('a legal power pots the target, even on the slowest cloth', () => {
+    for (const level of LEVELS) {
+      for (let seed = 0; seed < 12; seed++) {
+        const { layout } = generateShot(level, seed, {
+          preferredSide: seed % 2 === 0 ? 'left' : 'right',
+        });
+        const potted = [0.5, 0.75, 1].some((power) => {
+          const session = new ShotSession(layout, {
+            toleranceDegrees: level.toleranceDegrees,
+            cloth: SLOWEST_CLOTH,
+          });
+          session.aimTo(idealAimAngle(layout));
+          session.beginCharge();
+          session.setPower(power);
+          session.release();
+          for (let i = 0; i < 60 * 40 && session.phase === 'simulating'; i++) session.advance(1 / 60);
+          return session.evaluate()?.pottedTarget === true;
+        });
+        expect(potted, `level ${level.id} seed ${seed} cannot be potted on slow cloth`).toBe(true);
       }
     }
   });

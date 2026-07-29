@@ -27,6 +27,7 @@ npm run preview    # http://127.0.0.1:4173
 | hold `Space` | charge power, release to strike |
 | `V` | switch between behind-the-cue and overhead |
 | `.` | cycle full / half / quarter speed |
+| `C` | cycle fast / normal / slow cloth |
 | `R` | retry the same layout |
 | `N` | next shot |
 | `1`–`7` | jump to a level |
@@ -87,10 +88,26 @@ straight-ins tells you nothing about thin cuts.
 
 ## The physics is idealised
 
-Centre-ball hits only — no english, no draw, no swerve. No throw between balls.
-Cushions rebound with a fixed restitution and no spin coupling. Balls slide,
-then roll, with published typical friction values rather than measurements of a
-specific table.
+Centre-ball hits only — no english, no draw, no swerve. No throw between balls,
+and cushions impart no sidespin. Balls slide, then roll, with published typical
+friction values rather than measurements of a specific table.
+
+Cushions *do* couple top and bottom spin, because that is what makes a rail
+behave like a rail: the nose sits above the ball's centre, so the impulse also
+torques the ball. A rolling ball hit square comes off at 0.65 of its speed and
+settles at 0.50 once it has skidded out of its now-backwards roll — both
+published figures, from one coefficient.
+
+Cloth speed is a setting (`C`) with three presets inside the published
+0.005-0.015 range for rolling resistance, so you can match your own table
+rather than accept a guess.
+
+**Known deviation:** after a rolling cue ball hits an object ball square, the
+object should travel 6.5-8x farther than the cue ball; here it travels 5.25x, so
+the cue ball drifts a little too far. The cause is that ball-to-ball collisions
+are frictionless. Modelling that friction would introduce throw, which would
+break the ghost-ball line-of-centres model this trainer teaches and scores
+against — so it is deliberate, not an oversight.
 
 This matters, and the app says so on screen. Everything the guides teach is
 consistent with what the simulation does — which is why there is no static 90°

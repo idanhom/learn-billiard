@@ -9,7 +9,7 @@
  * key during the roll-out cannot restrike or re-aim.
  */
 
-import { MAX_CUE_SPEED, MIN_CUE_SPEED } from '../constants';
+import { type ClothPreset, DEFAULT_CLOTH, MAX_CUE_SPEED, MIN_CUE_SPEED } from '../constants';
 import {
   type AimError,
   type CutSide,
@@ -47,6 +47,7 @@ export const MAX_CATCHUP_TICKS = 30;
 export interface ShotSessionOptions {
   /** Aim deviation, in degrees, that still counts as a qualifying shot. */
   readonly toleranceDegrees?: number;
+  readonly cloth?: ClothPreset;
 }
 
 export interface ShotOutcome {
@@ -89,10 +90,12 @@ export class ShotSession {
   #events: SimEvent[] = [];
   #outcome: ShotOutcome | undefined;
   #settled = false;
+  #cloth: ClothPreset;
 
   constructor(layout: ShotLayout, options: ShotSessionOptions = {}) {
     this.layout = layout;
     this.toleranceDegrees = options.toleranceDegrees ?? 2;
+    this.#cloth = options.cloth ?? DEFAULT_CLOTH;
     this.#aimAngle = idealAimAngle(layout);
     this.#balls = [
       createBall(CUE_BALL_ID, layout.cue),
@@ -104,6 +107,21 @@ export class ShotSession {
 
   get phase(): ShotPhase {
     return this.#phase;
+  }
+
+  get cloth(): ClothPreset {
+    return this.#cloth;
+  }
+
+  /**
+   * Change the cloth under the current shot. Allowed while lining up so the
+   * shot you fire is played on the cloth you can see named; refused once the
+   * balls are moving, because changing the table mid-roll is not a thing.
+   */
+  setCloth(cloth: ClothPreset): boolean {
+    if (this.#phase !== 'aiming' && this.#phase !== 'charging') return false;
+    this.#cloth = cloth;
+    return true;
   }
 
   get aimAngle(): number {
@@ -222,7 +240,7 @@ export class ShotSession {
     let ticks = 0;
     while (this.#accumulator >= TICK && ticks < MAX_CATCHUP_TICKS) {
       this.#previousBalls = this.#balls.map(cloneBall);
-      const step = stepWorld(this.#balls, TICK);
+      const step = stepWorld(this.#balls, TICK, this.#cloth);
       this.#balls = step.balls;
       for (const event of step.events) {
         this.#events.push({ ...event, time: event.time + this.#elapsed });

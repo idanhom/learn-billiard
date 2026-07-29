@@ -64,6 +64,12 @@ export interface ShotLayoutQuery {
   readonly pocket: Pocket;
   /** Centres of every other ball on the table. */
   readonly obstacles: readonly Vec2[];
+  /**
+   * Cloth to judge power against. Defaults to the normal cloth so ordinary
+   * analysis is unaffected; the shot generator passes the slowest, so a layout
+   * it produces stays makeable whichever cloth the player picks.
+   */
+  readonly rollingFriction?: number;
 }
 
 export interface ShotAnalysis {
@@ -171,17 +177,27 @@ export function objectSpeedAfterCut(cueSpeed: number, cut: number): number {
  * 5/7 of its launch speed. Roll phase: plain quadratic decay under rolling
  * resistance.
  */
-export function stoppingDistance(speed: number): number {
+export function stoppingDistance(
+  speed: number,
+  rollingFriction: number = ROLLING_FRICTION,
+): number {
   if (speed <= 0) return 0;
   const slide = (12 * speed * speed) / (49 * SLIDING_FRICTION * GRAVITY);
   const rollSpeed = (5 * speed) / 7;
-  const roll = (rollSpeed * rollSpeed) / (2 * ROLLING_FRICTION * GRAVITY);
+  const roll = (rollSpeed * rollSpeed) / (2 * rollingFriction * GRAVITY);
   return slide + roll;
 }
 
 /** Can any legal stroke drive the object ball to the pocket at this cut? */
-export function isPowerFeasible(cut: number, objectToPocket: number): boolean {
-  return stoppingDistance(objectSpeedAfterCut(MAX_CUE_SPEED, cut)) >= objectToPocket * POWER_MARGIN;
+export function isPowerFeasible(
+  cut: number,
+  objectToPocket: number,
+  rollingFriction: number = ROLLING_FRICTION,
+): boolean {
+  return (
+    stoppingDistance(objectSpeedAfterCut(MAX_CUE_SPEED, cut), rollingFriction) >=
+    objectToPocket * POWER_MARGIN
+  );
 }
 
 export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
@@ -197,7 +213,7 @@ export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
   if (cut > MAX_CUT_ANGLE) blockers.push('cut-too-steep');
   if (!isPathClear(cue, ghostCenter, obstacles)) blockers.push('cue-path-blocked');
   if (!isPathClear(object, target, obstacles)) blockers.push('object-path-blocked');
-  if (!isPowerFeasible(cut, objectToPocket)) blockers.push('underpowered');
+  if (!isPowerFeasible(cut, objectToPocket, query.rollingFriction)) blockers.push('underpowered');
 
   return {
     ghostCenter,

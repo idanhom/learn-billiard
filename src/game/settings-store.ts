@@ -9,6 +9,7 @@
  * key, separate lifetime.
  */
 
+import { CLOTH_PRESET_IDS, type ClothPreset, DEFAULT_CLOTH } from '../constants';
 import type { StorageLike } from './progress-store';
 
 export const SETTINGS_VERSION = 1;
@@ -26,6 +27,11 @@ export type TimeScale = (typeof TIME_SCALES)[number];
 
 export interface Settings {
   readonly timeScale: TimeScale;
+  /**
+   * Which cloth to play on. Only the preset id is stored — the coefficient it
+   * maps to is physics, and lives in `constants`.
+   */
+  readonly cloth: ClothPreset;
 }
 
 export interface SettingsStore {
@@ -34,7 +40,7 @@ export interface SettingsStore {
 }
 
 export function defaultSettings(): Settings {
-  return { timeScale: TIME_SCALES[0] };
+  return { timeScale: TIME_SCALES[0], cloth: DEFAULT_CLOTH };
 }
 
 /** Next speed in the cycle; an unrecognised value restarts at full speed. */
@@ -44,12 +50,29 @@ export function nextTimeScale(current: number): TimeScale {
   return TIME_SCALES[(index + 1) % TIME_SCALES.length]!;
 }
 
+/** Next cloth in the cycle; an unrecognised value restarts at the default. */
+export function nextCloth(current: ClothPreset): ClothPreset {
+  const index = CLOTH_PRESET_IDS.indexOf(current);
+  if (index === -1) return DEFAULT_CLOTH;
+  return CLOTH_PRESET_IDS[(index + 1) % CLOTH_PRESET_IDS.length]!;
+}
+
 export function validateSettings(raw: unknown): Settings | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
   const record = raw as Record<string, unknown>;
   if (record.version !== SETTINGS_VERSION) return undefined;
   if (!TIME_SCALES.includes(record.timeScale as TimeScale)) return undefined;
-  return { timeScale: record.timeScale as TimeScale };
+
+  // A record written before cloth existed is not a corrupt record. Absence gets
+  // the default; a value that is present but nonsense still rejects the lot,
+  // because that is the case where we cannot tell what was meant.
+  let cloth: ClothPreset = DEFAULT_CLOTH;
+  if (record.cloth !== undefined) {
+    if (!CLOTH_PRESET_IDS.includes(record.cloth as ClothPreset)) return undefined;
+    cloth = record.cloth as ClothPreset;
+  }
+
+  return { timeScale: record.timeScale as TimeScale, cloth };
 }
 
 export function createSettingsStore(

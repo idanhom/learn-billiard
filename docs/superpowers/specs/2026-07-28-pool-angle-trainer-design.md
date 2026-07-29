@@ -6,7 +6,7 @@ The user plays 8-ball and wants to learn aiming: cue stick → cue ball → obje
 
 Confirmed decisions: focused aiming trainer (not full 8-ball rules) · ghost-ball teaching with progressively fading guides · center-ball hits only, no english · behind-cue camera with overhead toggle · curriculum of drill levels · Three.js + custom TypeScript physics + Vite.
 
-Rev 2 incorporates external review. Key changes: analytic `ShotGeometry` is the authority for aiming truth and progression is scored on **aim error, not pots** (pots confound power/pocket tuning with aiming skill); the static 90° tangent guide is **dropped from MVP** (inconsistent with restitution < 1 and cue-ball follow — it would teach what the sim contradicts); collision handling uses **earliest-time-of-impact event ordering** covering cushions and pockets, not just ball-ball sweeps; one `TableGeometry` model is the single source of truth for physics, generator, and meshes; the shot lifecycle is an idempotent state machine; persistence is versioned behind an interface. The physics model is explicitly labeled **ideal (no ball-ball throw, simplified cushions)** in-app.
+Rev 2 incorporates external review. Key changes: analytic `ShotGeometry` is the authority for aiming truth and progression is scored on **aim error, not pots** (pots confound power/pocket tuning with aiming skill); the static 90° tangent guide is **dropped from MVP** (inconsistent with restitution < 1 and cue-ball follow — it would teach what the sim contradicts); collision handling uses **earliest-time-of-impact event ordering** covering cushions and pockets, not just ball-ball sweeps; one `TableGeometry` model is the single source of truth for physics, generator, and meshes; the shot lifecycle is an idempotent state machine; persistence is versioned behind an interface. The physics model is explicitly labeled **ideal (no english, no ball-ball throw, no cushion-induced sidespin)** in-app.
 
 ## Design
 
@@ -35,7 +35,13 @@ Progression and feedback use ShotGeometry; the physics sim decides only what phy
 - Fixed tick 1/240 s. Within each tick: compute earliest time-of-impact among ball-ball, ball-cushion-segment, and pocket-capture events; advance to it; resolve; repeat on remaining time with a hard iteration cap (~8). Max cue speed capped. Initial-overlap resolved by positional correction before integration.
 - Ball state: position, velocity, roll spin. Cue strike = pure sliding; sliding friction (μ≈0.2) until slip reaches zero, then rolling resistance (μ≈0.01). Produces natural follow on the cue ball — which is *why* the static tangent guide is out.
 - Ball-ball: impulse along line of centers, e ≈ 0.95 (straight hit transfers 97.5% of normal velocity — tests assert this, not "full transfer"). No throw; labeled ideal.
-- Cushion: normal restitution ≈ 0.75 + tangential speed retention factor ≈ 0.85. Declared simplified (no spin coupling).
+- Cushion: point impulse applied 0.27R above the ball's centre (WPA nose height), using the contact-point velocity and rotational effective mass, so a rail is passive at every spin state. Contact restitution 0.54 reproduces both published figures — a square rolling rebound at 0.65, settling to 0.50 after the skid. Tangential retention 0.95; no cushion-induced sidespin.
+
+  *Revised after play testing.* The original model reflected the ball's roll along with its velocity, so a rail returned 2.25× too much kinetic energy on a square rolling contact and the table felt like ice. An intermediate fix that computed the impulse from the centre velocity was rejected: it created 58% energy for a ball whose roll opposed its motion.
+
+- Cloth: rolling resistance is a player setting — fast 0.007, normal 0.010, slow 0.014, all inside the published 0.005–0.015. Generation validates power feasibility against the slowest so layouts stay makeable at any setting.
+
+- **Known deviation:** object/cue travel ratio after a square full hit is 5.25×; published is 6.5–8×. The cause is frictionless ball-ball collisions. Modelling that friction would introduce throw and break the ghost-ball model `ShotGeometry` teaches against, so it is deliberate.
 - Rest: velocity zero-clamp below threshold, all balls at rest for a dwell of N ticks → settled; potted balls excluded; hard max sim duration (~20 s) as a failsafe.
 
 ### Guides (teaching system)

@@ -6,13 +6,14 @@
  * renderer interpolates between the last two physics states.
  */
 
+import type { ClothPreset } from './constants';
 import { fullness as fullnessOf } from './geometry/shot';
 import { pocketById } from './geometry/table';
 import { add, angleOf, fromAngle } from './geometry/vec2';
 import { Campaign } from './game/campaign';
 import { attachInput } from './game/input';
 import { browserStorage, createProgressStore } from './game/progress-store';
-import { createSettingsStore, nextTimeScale } from './game/settings-store';
+import { createSettingsStore, nextCloth, nextTimeScale } from './game/settings-store';
 import { ShotHistory } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
 import { ADVANCE_REQUIRED } from './game/tiers';
@@ -22,6 +23,13 @@ import { Hud } from './ui/hud';
 
 /** Seconds of held Space to reach full power. */
 const CHARGE_SECONDS = 1.1;
+
+/** How the cloth presets read to a player. */
+const CLOTH_LABELS: Record<ClothPreset, string> = {
+  fast: 'Fast',
+  normal: 'Normal',
+  slow: 'Slow',
+};
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const hudRoot = document.getElementById('hud') as HTMLElement;
@@ -43,11 +51,14 @@ const hud = new Hud(hudRoot, {
 const settingsStore = createSettingsStore(browserStorage());
 const history = new ShotHistory();
 
+// Load one complete settings object before anything reads a preference, so the
+// first session is built on the cloth the player actually chose.
+let settings = settingsStore.load();
+
 let session = newSession();
 let chargeSeconds = 0;
 let evaluations = 0;
 let notice = campaign.notice;
-let timeScale = settingsStore.load().timeScale;
 /** Fixed for the life of a layout, so there is no reason to re-derive it per frame. */
 let objectBallNumber = ballNumberFor(session.layout.id);
 
@@ -57,13 +68,32 @@ let objectBallNumber = ballNumberFor(session.layout.id);
  * as long, not a different one.
  */
 function cycleSpeed(): void {
-  timeScale = nextTimeScale(timeScale);
-  settingsStore.save({ timeScale });
+  // Spread the whole settings object: `save` replaces it, so writing one field
+  // on its own would quietly discard the other.
+  settings = { ...settings, timeScale: nextTimeScale(settings.timeScale) };
+  settingsStore.save(settings);
+  const { timeScale } = settings;
   notice = timeScale === 1 ? 'Full speed.' : `Slow motion: ${timeScale === 0.5 ? 'half' : 'quarter'} speed.`;
 }
 
+/**
+ * Cloth changes apply to the shot being lined up, not just the next one — the
+ * point is to feel the difference immediately. Refused mid-roll, like every
+ * other command that would change the table under a moving ball.
+ */
+function cycleCloth(): void {
+  if (session.phase === 'simulating') return;
+  settings = { ...settings, cloth: nextCloth(settings.cloth) };
+  settingsStore.save(settings);
+  session.setCloth(settings.cloth);
+  notice = `${CLOTH_LABELS[settings.cloth]} cloth.`;
+}
+
 function newSession(): ShotSession {
-  return new ShotSession(campaign.layout, { toleranceDegrees: campaign.toleranceDegrees });
+  return new ShotSession(campaign.layout, {
+    toleranceDegrees: campaign.toleranceDegrees,
+    cloth: settings.cloth,
+  });
 }
 
 function startShot(): void {
@@ -139,6 +169,7 @@ attachInput(canvas, {
   onNext: nextShot,
   onSelectLevel: selectLevel,
   onCycleSpeed: cycleSpeed,
+  onCycleCloth: cycleCloth,
 });
 
 window.addEventListener('resize', () => scene.resize());
@@ -163,7 +194,7 @@ function frame(now: number): void {
     session.setPower(Math.min(1, chargeSeconds / CHARGE_SECONDS));
   }
 
-  session.advance(dt * timeScale);
+  session.advance(dt * settings.timeScale);
   if (session.phase === 'settled') {
     const outcome = session.evaluate();
     if (outcome) recordOutcome(outcome);
@@ -231,7 +262,9 @@ function frame(now: number): void {
     history: history.entries,
     cutTendency: history.cutTendency,
     straightTendency: history.straightTendency,
-    timeScale,
+    timeScale: settings.timeScale,
+    cloth: settings.cloth,
+    clothLabel: CLOTH_LABELS[settings.cloth],
   });
 
   const cost = performance.now() - startedAt;
@@ -259,13 +292,14 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     next: nextShot,
     selectLevel,
     cycleSpeed,
+    cycleCloth,
     setSpeed: (scale: number) => {
-      while (timeScale !== scale) {
-        const before = timeScale;
+      while (settings.timeScale !== scale) {
+        const before = settings.timeScale;
         cycleSpeed();
-        if (timeScale === before) break;
+        if (settings.timeScale === before) break;
       }
-      return timeScale;
+      return settings.timeScale;
     },
     resetProgress: () => {
       campaign.resetProgress();
@@ -285,7 +319,8 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     state: () => ({
       phase: session.phase,
       aimAngle: session.aimAngle,
-      timeScale,
+      timeScale: settings.timeScale,
+      cloth: settings.cloth,
       cutTendency: history.cutTendency,
       straightTendency: history.straightTendency,
       historyLength: history.entries.length,

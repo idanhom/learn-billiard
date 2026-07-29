@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import type { StorageLike } from '../../src/game/progress-store';
+import { CLOTH_PRESET_IDS, clothRollingFriction } from '../../src/constants';
 import {
   SETTINGS_KEY,
   TIME_SCALES,
   createSettingsStore,
   defaultSettings,
+  nextCloth,
   nextTimeScale,
   validateSettings,
 } from '../../src/game/settings-store';
@@ -44,9 +46,61 @@ describe('the speed setting', () => {
   });
 });
 
+describe('the cloth setting', () => {
+  test('offers fast, normal and slow, all inside the published range', () => {
+    expect(CLOTH_PRESET_IDS).toEqual(['fast', 'normal', 'slow']);
+    for (const id of CLOTH_PRESET_IDS) {
+      const mu = clothRollingFriction(id);
+      expect(mu).toBeGreaterThanOrEqual(0.005);
+      expect(mu).toBeLessThanOrEqual(0.015);
+    }
+  });
+
+  test('slower cloth means more rolling resistance', () => {
+    expect(clothRollingFriction('fast')).toBeLessThan(clothRollingFriction('normal'));
+    expect(clothRollingFriction('normal')).toBeLessThan(clothRollingFriction('slow'));
+  });
+
+  test('starts on normal', () => {
+    expect(defaultSettings().cloth).toBe('normal');
+  });
+
+  test('cycles through the cloths and wraps round', () => {
+    expect(nextCloth('fast')).toBe('normal');
+    expect(nextCloth('normal')).toBe('slow');
+    expect(nextCloth('slow')).toBe('fast');
+  });
+
+  test('cycling from an unrecognised cloth lands back on the default', () => {
+    expect(nextCloth('velvet' as never)).toBe('normal');
+  });
+});
+
 describe('validation', () => {
   test('accepts a known speed', () => {
-    expect(validateSettings({ version: 1, timeScale: 0.5 })).toEqual({ timeScale: 0.5 });
+    expect(validateSettings({ version: 1, timeScale: 0.5, cloth: 'slow' })).toEqual({
+      timeScale: 0.5,
+      cloth: 'slow',
+    });
+  });
+
+  /**
+   * Records written before cloth existed are still perfectly good records. A
+   * missing preference is absence, not corruption — resetting someone's
+   * remembered playback speed because a newer field is not there would be
+   * gratuitous.
+   */
+  test('an older record without a cloth loads as normal, keeping its time scale', () => {
+    expect(validateSettings({ version: 1, timeScale: 0.25 })).toEqual({
+      timeScale: 0.25,
+      cloth: 'normal',
+    });
+  });
+
+  test('but a cloth that is not on the list is rejected outright', () => {
+    expect(validateSettings({ version: 1, timeScale: 1, cloth: 'ice' })).toBeUndefined();
+    expect(validateSettings({ version: 1, timeScale: 1, cloth: 7 })).toBeUndefined();
+    expect(validateSettings({ version: 1, timeScale: 1, cloth: null })).toBeUndefined();
   });
 
   test('rejects a speed that is not on the list', () => {
@@ -70,8 +124,39 @@ describe('the store', () => {
   test('round-trips a setting', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.25 });
-    expect(createSettingsStore(storage).load().timeScale).toBe(0.25);
+    store.save({ timeScale: 0.25, cloth: 'slow' });
+    const loaded = createSettingsStore(storage).load();
+    expect(loaded.timeScale).toBe(0.25);
+    expect(loaded.cloth).toBe('slow');
+  });
+
+  /**
+   * `save` writes the whole object, so a caller that changes one setting must
+   * hand back the other one too. These pin that, because the failure mode is
+   * silent: change the cloth, lose your slow motion.
+   */
+  test('changing the cloth leaves the time scale alone', () => {
+    const storage = new FakeStorage();
+    const store = createSettingsStore(storage);
+    store.save({ timeScale: 0.5, cloth: 'normal' });
+    const current = store.load();
+    store.save({ ...current, cloth: 'fast' });
+    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast' });
+  });
+
+  test('changing the time scale leaves the cloth alone', () => {
+    const storage = new FakeStorage();
+    const store = createSettingsStore(storage);
+    store.save({ timeScale: 1, cloth: 'slow' });
+    const current = store.load();
+    store.save({ ...current, timeScale: 0.25 });
+    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow' });
+  });
+
+  test('a record saved before cloth existed keeps its remembered speed', () => {
+    const storage = new FakeStorage();
+    storage.items.set(SETTINGS_KEY, JSON.stringify({ version: 1, timeScale: 0.5 }));
+    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal' });
   });
 
   test('an empty store is full speed', () => {
@@ -94,12 +179,12 @@ describe('the store', () => {
   test('a storage that refuses to write does not throw', () => {
     const storage = new FakeStorage();
     storage.failOnWrite = true;
-    expect(() => createSettingsStore(storage).save({ timeScale: 0.5 })).not.toThrow();
+    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal' })).not.toThrow();
   });
 
   test('works with no storage at all', () => {
     const store = createSettingsStore(undefined);
     expect(store.load()).toEqual(defaultSettings());
-    expect(() => store.save({ timeScale: 0.5 })).not.toThrow();
+    expect(() => store.save({ timeScale: 0.5, cloth: 'normal' })).not.toThrow();
   });
 });

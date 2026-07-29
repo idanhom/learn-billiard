@@ -15,10 +15,12 @@
  */
 
 import {
+  type ClothPreset,
+  DEFAULT_CLOTH,
   GRAVITY,
   REST_SPEED,
-  ROLLING_FRICTION,
   SLIDING_FRICTION,
+  clothRollingFriction,
 } from '../constants';
 import {
   BALL_RADIUS,
@@ -82,6 +84,9 @@ export interface SimulateOptions {
   readonly dt?: number;
   readonly maxDuration?: number;
   readonly dwellTicks?: number;
+  /** Cloth to play on. Passed, never read from a module global — the tests rely
+   * on this simulation being a pure function of its inputs. */
+  readonly cloth?: ClothPreset;
   readonly onTick?: (time: number, balls: readonly Ball[]) => void;
 }
 
@@ -119,7 +124,11 @@ interface Candidate {
   readonly apply: (balls: Ball[], at: number, events: SimEvent[]) => void;
 }
 
-export function stepWorld(balls: readonly Ball[], dt: number = TICK): StepResult {
+export function stepWorld(
+  balls: readonly Ball[],
+  dt: number = TICK,
+  cloth: ClothPreset = DEFAULT_CLOTH,
+): StepResult {
   const work = balls.map(cloneBall);
   const events: SimEvent[] = [];
 
@@ -142,8 +151,9 @@ export function stepWorld(balls: readonly Ball[], dt: number = TICK): StepResult
 
   captureEscapees(work, elapsed, events);
 
+  const rollingFriction = clothRollingFriction(cloth);
   for (const ball of work) {
-    if (!ball.potted) applyFriction(ball, dt);
+    if (!ball.potted) applyFriction(ball, dt, rollingFriction);
   }
 
   return { balls: work, events };
@@ -156,6 +166,7 @@ export function simulateToRest(
   const dt = options.dt ?? TICK;
   const maxDuration = options.maxDuration ?? MAX_SHOT_DURATION;
   const dwellTicks = options.dwellTicks ?? REST_DWELL_TICKS;
+  const cloth = options.cloth ?? DEFAULT_CLOTH;
 
   let current = balls.map(cloneBall);
   const events: SimEvent[] = [];
@@ -163,7 +174,7 @@ export function simulateToRest(
   let dwell = 0;
 
   while (time < maxDuration - TIME_EPSILON) {
-    const step = stepWorld(current, dt);
+    const step = stepWorld(current, dt, cloth);
     current = step.balls;
     for (const event of step.events) {
       events.push({ ...event, time: event.time + time });
@@ -304,7 +315,7 @@ function pot(ball: Ball, pocket: PocketId): void {
  * ball does not leave along the tangent, so drawing that line would teach the
  * player something the simulation contradicts.
  */
-function applyFriction(ball: Ball, dt: number): void {
+function applyFriction(ball: Ball, dt: number, rollingFriction: number): void {
   let remaining = dt;
 
   const slip = sub(ball.vel, ball.roll);
@@ -323,7 +334,7 @@ function applyFriction(ball: Ball, dt: number): void {
   if (remaining > 0) {
     const speed = len(ball.vel);
     if (speed > 0) {
-      const shed = ROLLING_FRICTION * GRAVITY * remaining;
+      const shed = rollingFriction * GRAVITY * remaining;
       const next = Math.max(0, speed - shed);
       ball.vel = next === 0 ? ZERO : scale(ball.vel, next / speed);
     }

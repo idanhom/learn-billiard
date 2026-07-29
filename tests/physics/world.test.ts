@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_CUE_SPEED } from '../../src/constants';
+import {
+  CLOTH_PRESET_IDS,
+  type ClothPreset,
+  MAX_CUE_SPEED,
+  clothRollingFriction,
+} from '../../src/constants';
 import { stoppingDistance } from '../../src/geometry/shot';
 import { BALL_RADIUS, TABLE, isInLegalBounds, pocketById } from '../../src/geometry/table';
 import { type Vec2, add, fromAngle, len, scale, sub, vec } from '../../src/geometry/vec2';
@@ -175,6 +180,47 @@ describe('cushions', () => {
       expect(contained, `escaped from ${JSON.stringify(pos)} at ${JSON.stringify(vel)}`).toBe(true);
       expect(Number.isFinite(ball.pos.x) && Number.isFinite(ball.pos.y)).toBe(true);
     }
+  });
+});
+
+describe('cloth speed', () => {
+  test('slower cloth stops a ball sooner', () => {
+    const travel = (cloth: ClothPreset) => {
+      const start = vec(-0.9, 0);
+      const { balls } = simulateToRest([createBall(0, start, vec(0.45, 0))], { cloth });
+      return balls[0]!.pos.x - start.x;
+    };
+    expect(travel('slow')).toBeLessThan(travel('normal'));
+    expect(travel('normal')).toBeLessThan(travel('fast'));
+  });
+
+  /**
+   * The guard that keeps the analytic model and the simulation in step. It has
+   * to hold for every cloth, not just the default — the generator reasons about
+   * makeability using the closed form, and plays out using the solver.
+   */
+  test('the simulation matches the closed form on every cloth', () => {
+    for (const cloth of CLOTH_PRESET_IDS) {
+      const rollingFriction = clothRollingFriction(cloth);
+      for (const speed of [0.3, 0.45, 0.6]) {
+        const start = vec(-0.9, 0);
+        const predicted = stoppingDistance(speed, rollingFriction);
+        if (predicted > 1.0) continue; // would reach the far cushion
+        const { balls } = simulateToRest([createBall(0, start, vec(speed, 0))], { cloth });
+        const travelled = balls[0]!.pos.x - start.x;
+        expect(
+          Math.abs(travelled - predicted) / predicted,
+          `${cloth} at ${speed} m/s`,
+        ).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  test('defaults to the normal cloth when none is asked for', () => {
+    const start = vec(-0.9, 0);
+    const withDefault = simulateToRest([createBall(0, start, vec(0.45, 0))]);
+    const explicit = simulateToRest([createBall(0, start, vec(0.45, 0))], { cloth: 'normal' });
+    expect(withDefault.balls[0]!.pos.x).toBeCloseTo(explicit.balls[0]!.pos.x, 12);
   });
 });
 
