@@ -2,7 +2,9 @@ import { describe, expect, test } from 'vitest';
 import {
   CLOTH_PRESET_IDS,
   type ClothPreset,
+  GRAVITY,
   MAX_CUE_SPEED,
+  SLIDING_FRICTION,
   clothRollingFriction,
 } from '../../src/constants';
 import { angleBetween, spinBy } from '../../src/geometry/quat';
@@ -487,6 +489,43 @@ describe('which way a ball is facing', () => {
     const settled = result.balls[0]!.spin;
     const again = stepWorld(result.balls).balls[0]!.spin;
     expect(again).toBe(settled);
+  });
+});
+
+/**
+ * Constructed fixtures. No shot in the app produces either state — a ball-ball
+ * impulse leaves `roll` untouched and same-signed with `vel`, a square rail
+ * leaves vel = -0.654v against roll = -0.117v, which is a skid rather than a
+ * reversal, and `release()` always launches at roll = 0. A sweep of 3780
+ * generated shots over every cloth and power finds not one difference across
+ * this change. It is a latent defect and a prerequisite for tip offset, fixed
+ * on its own terms.
+ */
+describe('a ball that is stationary but still spinning', () => {
+  test('is carried back the way its spin points, not frozen where it stands', () => {
+    const start = createBall(0, vec(0, 0), vec(0.025, 0), vec(-1, 0));
+    const result = simulateToRest([start]);
+
+    // (5v + 2r)/7 = -0.268 m/s of rolling speed has to go somewhere: 1.8 cm of
+    // it spent slowing the creep forward, then 14.6 cm of roll back.
+    expect(result.settled).toBe(true);
+    expect(result.balls[0]!.pos.x).toBeCloseTo(-0.164, 2);
+  });
+
+  test('still runs on forward when the spin agrees with the motion', () => {
+    const result = simulateToRest([createBall(0, vec(0, 0), vec(0.025, 0), vec(1, 0))]);
+    expect(result.balls[0]!.pos.x).toBeCloseTo(0.211, 2);
+  });
+
+  test('is not called settled the tick its velocity passes through zero', () => {
+    // One tick of sliding friction is exactly what this velocity is worth, so
+    // the step lands on vel.x === 0 with roll.x still at -0.98.
+    const start = createBall(0, vec(0, 0), vec(SLIDING_FRICTION * GRAVITY * TICK, 0), vec(-1, 0));
+    const { balls } = stepWorld([start]);
+
+    expect(balls[0]!.vel.x).toBe(0);
+    expect(balls[0]!.roll.x).toBeLessThan(-0.9);
+    expect(allAtRest(balls)).toBe(false);
   });
 });
 

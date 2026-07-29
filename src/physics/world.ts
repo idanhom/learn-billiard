@@ -125,8 +125,23 @@ export function cloneBall(ball: Ball): Ball {
   return copy;
 }
 
+/**
+ * A shot is over when nothing is moving AND nothing is still spinning.
+ *
+ * Velocity alone is not enough: a ball whose centre velocity passes through
+ * zero while it still carries roll is mid-reversal, not stopped, and the cloth
+ * is about to send it back the other way. That state is one tick away from
+ * reachable — vel.x = SLIDING_FRICTION * GRAVITY * TICK with roll.x = -1 steps
+ * to exactly vel.x = 0 with roll.x = -0.98 — and calling the shot there would
+ * settle it in the middle of the move.
+ *
+ * No hang: once the slip closes `applyFriction` sets roll = vel, so the two
+ * reach zero together, and REST_DWELL_TICKS / MAX_SHOT_DURATION still backstop.
+ */
 export function allAtRest(balls: readonly Ball[]): boolean {
-  return balls.every((b) => b.potted || (b.vel.x === 0 && b.vel.y === 0));
+  return balls.every(
+    (b) => b.potted || (b.vel.x === 0 && b.vel.y === 0 && b.roll.x === 0 && b.roll.y === 0),
+  );
 }
 
 interface Candidate {
@@ -359,7 +374,11 @@ function applyFriction(ball: Ball, dt: number, rollingFriction: number): void {
     ball.roll = ball.vel;
   }
 
-  if (len(ball.vel) < REST_SPEED) {
+  // Both, not just the centre velocity. A ball creeping forward at 0.025 m/s
+  // with roll at -1.0 has a rolling speed of (5v + 2r)/7 = -0.27 m/s and is
+  // about to come back 16 cm; clamping on velocity alone would delete the spin
+  // and freeze it where it stands.
+  if (len(ball.vel) < REST_SPEED && len(ball.roll) < REST_SPEED) {
     ball.vel = ZERO;
     ball.roll = ZERO;
   }
