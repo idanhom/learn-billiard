@@ -62,24 +62,28 @@ about 0.47 m/s; the longest shot in the curriculum, level 6's 1.4 m pot, needs
 here sits in the bottom fifth of the bar and the rest of it is for shots that
 never come up.
 
-So the bar is a curve — `speed = 0.35 + 4.15 × power^2.4` — set so an ordinary
+So the bar is a curve — `speed = 0.35 + 4.15 × power^1.7` — set so an ordinary
 pot lands near 40%:
 
 | power | launch | band |
 |---:|---:|---|
-| 20% | 0.44 m/s | soft touch |
-| 30% | 0.58 m/s | slow |
-| 40% | 0.81 m/s | slow |
-| 50% | 1.14 m/s | medium |
-| 70% | 2.11 m/s | fast |
+| 20% | 0.62 m/s | slow |
+| 30% | 0.89 m/s | slow |
+| 40% | 1.22 m/s | medium |
+| 50% | 1.63 m/s | medium |
+| 70% | 2.61 m/s | fast |
 | 100% | 4.50 m/s | power |
 
 Measured over 200 generated layouts per level, the stroke each one asks for now
-runs from 32% on a straight-in to 86% on the worst thin cut, with the median
-climbing 40% → 41% → 43% → 48% → 63% as the cut angle opens up. What pushes you
+runs from 32% on a straight-in to 94% on the worst thin cut, with the median
+climbing 39% → 41% → 43% → 49% → 65% as the cut angle opens up. What pushes you
 up the meter is the *cut*, which is worth feeling: a thin cut throws away
 `cos(θ)` of the speed at contact, so a 70° cut needs roughly three times the
 stroke of a straight-in over the same distance.
+
+The exponent follows the cloth rather than taste: it is whatever puts that
+typical pot at 40%, and it has to be re-derived if the rolling resistance
+moves.
 
 The range itself is unchanged — a level-5 cut at 80° genuinely needs ~3.5 m/s,
 and shot generation uses that ceiling to decide a layout is makeable at all.
@@ -147,14 +151,21 @@ torques the ball. A rolling ball hit square comes off at 0.65 of its speed and
 settles at 0.50 once it has skidded out of its now-backwards roll — both
 published figures, from one coefficient.
 
-Cloth speed is a setting (`C`) with three presets inside the published
-0.005-0.015 range for rolling resistance, so you can match your own table
-rather than accept a guess.
+Cloth speed is a setting (`C`), so you can match your own table rather than
+accept a guess. The three presets are **not** taken from the 0.005-0.015
+rolling-resistance range usually quoted for billiard cloth. That range, taken
+literally, makes a ball far too slippery to be a ball: at 0.01 a roll that just
+crosses the table takes six seconds and a lag takes ten, both about twice what
+a real table does. So they are calibrated against the clock instead — a table
+length of free roll in 4.7 s, 4.0 s and 3.4 s on fast, normal and slow.
+
+That is a number you can check in ten seconds. Roll a ball the length of your
+table so it just dies at the far cushion, and time it.
 
 **Known deviation:** after a rolling cue ball hits an object ball square, the
-object should travel 6.5-8x farther than the cue ball; here it travels 5.25x, so
+object should travel 6.5-8x farther than the cue ball; here it travels 5.2x, so
 the cue ball drifts a little too far. The cause is that ball-to-ball collisions
-are frictionless. Modelling that friction would introduce throw, which would
+are frictionless. It is a ratio, so the cloth setting does not change it. Modelling that friction would introduce throw, which would
 break the ghost-ball line-of-centres model this trainer teaches and scores
 against — so it is deliberate, not an oversight.
 

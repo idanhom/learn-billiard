@@ -130,12 +130,24 @@ describe('cushions', () => {
   test('cost a glancing ball far less than a square one', () => {
     const square = rollingBall(0, vec(0.4, -0.2), vec(0, 1.4));
     const glancing = rollingBall(0, vec(-0.6, 0.2), vec(1.35, 0.36)); // ~15 degrees
-    const afterSquare = stepUntil([square], (e) => e.some((x) => x.type === 'cushion')).balls[0]!;
-    const afterGlancing = stepUntil([glancing], (e) => e.some((x) => x.type === 'cushion')).balls[0]!;
-    expect(rollingSpeedOf(afterGlancing) / 1.4).toBeGreaterThan(
-      rollingSpeedOf(afterSquare) / 1.4,
-    );
-    expect(rollingSpeedOf(afterGlancing) / 1.4).toBeGreaterThan(0.85);
+    const hitSquare = stepUntil([square], (e) => e.some((x) => x.type === 'cushion'));
+    const hitGlancing = stepUntil([glancing], (e) => e.some((x) => x.type === 'cushion'));
+
+    // Measured against the speed AT the rail, not at launch: the two run-ups
+    // differ in length, and the cloth's share of the loss is not the cushion's.
+    const kept = (hit: typeof hitSquare): number =>
+      rollingSpeedOf(hit.balls[0]!) / rollingSpeedOf(hit.before[0]!);
+
+    expect(kept(hitGlancing)).toBeGreaterThan(kept(hitSquare));
+    expect(kept(hitGlancing)).toBeGreaterThan(0.85);
+
+    // The square rebound is the pair of published figures the contact
+    // restitution was chosen to reproduce, and they are two moments of the
+    // same event: 0.65 of the incoming speed straight off the rail, settling
+    // to 0.50 once the ball has skidded out of its now-backwards roll.
+    const straightOff = len(hitSquare.balls[0]!.vel) / len(hitSquare.before[0]!.vel);
+    expect(straightOff).toBeCloseTo(0.65, 2);
+    expect(kept(hitSquare)).toBeCloseTo(0.5, 2);
   });
 
   /**
@@ -249,7 +261,10 @@ describe('pockets', () => {
 
   test('a potted ball stops taking part in the simulation', () => {
     const pocket = pocketById('top-middle');
-    const cue = createBall(0, vec(0, 0.2), vec(0, 1.2));
+    // Rolling, not sliding. The cue ball has to follow through the space the
+    // bystander vacated to prove the point, and a full hit leaves a sliding
+    // ball with almost nothing — it is the roll that carries it in.
+    const cue = rollingBall(0, vec(0, 0.2), vec(0, 1.2));
     const bystander = createBall(1, vec(0, 0.4));
     const result = simulateToRest([cue, bystander]);
     expect(result.balls[0]!.potted).toBe(true);
@@ -287,8 +302,17 @@ describe('ball on ball', () => {
 
     const result = simulateToRest(atImpact);
     // The roll drives it forward again — this is why there is no tangent guide.
-    expect(result.balls[0]!.pos.x).toBeGreaterThan(atImpact[0]!.pos.x + 0.01);
-    expect(result.balls[1]!.pos.x).toBeGreaterThan(result.balls[0]!.pos.x + 0.5);
+    const cueTravel = result.balls[0]!.pos.x - atImpact[0]!.pos.x;
+    const objectTravel = result.balls[1]!.pos.x - atImpact[1]!.pos.x;
+    expect(cueTravel).toBeGreaterThan(0.01);
+
+    // As a ratio, not a distance: how far each ball runs depends on the cloth,
+    // how much further the object ball runs does not. Published tables put this
+    // at 6.5-8x and frictionless ball-to-ball collisions put it at 5.2x — the
+    // deviation the README owns up to. Guard the number so it cannot drift
+    // without someone noticing.
+    expect(objectTravel / cueTravel).toBeGreaterThan(5);
+    expect(objectTravel / cueTravel).toBeLessThan(5.5);
   });
 
   test('a half-ball hit sends the object ball off at thirty degrees', () => {

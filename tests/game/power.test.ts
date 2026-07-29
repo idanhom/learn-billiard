@@ -89,7 +89,10 @@ describe('the power curve', () => {
   test('the curve is what puts it there — a linear meter would not', () => {
     const speed = cueSpeedForPower(recommendedPower(shot(0.6, 0.5))!);
     const linear = (speed - MIN_CUE_SPEED) / (MAX_CUE_SPEED - MIN_CUE_SPEED);
-    expect(linear).toBeLessThan(0.15);
+    // Same stroke, same range, read off a straight line: the bottom quarter of
+    // the bar, with the other three quarters spent on shots nobody plays here.
+    expect(linear).toBeLessThan(0.25);
+    expect(recommendedPower(shot(0.6, 0.5))!).toBeGreaterThan(linear * 1.75);
   });
 });
 

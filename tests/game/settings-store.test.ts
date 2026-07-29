@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import type { StorageLike } from '../../src/game/progress-store';
-import { CLOTH_PRESET_IDS, clothRollingFriction } from '../../src/constants';
+import {
+  CLOTH_PRESET_IDS,
+  GRAVITY,
+  SLIDING_FRICTION,
+  clothRollingFriction,
+} from '../../src/constants';
+import { speedForStoppingDistance } from '../../src/geometry/shot';
+import { TABLE } from '../../src/geometry/table';
 import {
   SETTINGS_KEY,
   TIME_SCALES,
@@ -47,12 +54,22 @@ describe('the speed setting', () => {
 });
 
 describe('the cloth setting', () => {
-  test('offers fast, normal and slow, all inside the published range', () => {
+  /**
+   * Not the 0.005-0.015 coefficient range usually quoted: taken literally that
+   * range makes a ball far too slippery to be a ball, and these are calibrated
+   * against how long a roll actually takes instead. A table length of free
+   * roll has to land between three and five seconds on every preset — quick
+   * enough to be a table, slow enough to be cloth.
+   */
+  test('offers fast, normal and slow, and every one rolls like a table', () => {
     expect(CLOTH_PRESET_IDS).toEqual(['fast', 'normal', 'slow']);
     for (const id of CLOTH_PRESET_IDS) {
       const mu = clothRollingFriction(id);
-      expect(mu).toBeGreaterThanOrEqual(0.005);
-      expect(mu).toBeLessThanOrEqual(0.015);
+      const launch = speedForStoppingDistance(TABLE.playLength, mu);
+      const slide = launch / (3.5 * SLIDING_FRICTION * GRAVITY);
+      const roll = (5 * launch) / 7 / (mu * GRAVITY);
+      expect(slide + roll, `${id} takes too long to cross the table`).toBeLessThan(5);
+      expect(slide + roll, `${id} crosses the table too briskly`).toBeGreaterThan(3);
     }
   });
 

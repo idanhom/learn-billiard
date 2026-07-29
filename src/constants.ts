@@ -15,22 +15,34 @@ export const GRAVITY = 9.81;
 /** Sliding (kinetic) friction between ball and cloth, before the ball rolls. */
 export const SLIDING_FRICTION = 0.2;
 
-/** Rolling resistance once the contact point has stopped slipping. */
-export const ROLLING_FRICTION = 0.01;
+/**
+ * Rolling resistance once the contact point has stopped slipping.
+ *
+ * Set from how long a ball takes to die, NOT from the 0.005-0.015 coefficient
+ * range usually quoted for billiard cloth. That range, taken literally, makes
+ * a ball far too slippery to be a ball: at 0.01 a lag — five metres down the
+ * table and back — takes ten seconds, and a roll that just crosses the table
+ * takes six. Both are about twice what a real table does.
+ *
+ * So these are calibrated against the clock instead. At 0.025 a table length
+ * of free roll takes 4.0 s and a lag 6.3 s, which is what a table looks like.
+ * If yours differs, that is what the cloth setting is for.
+ */
+export const ROLLING_FRICTION = 0.025;
 
 /**
  * Cloth speed, as rolling resistance. Real cloth varies table to table — a
- * fast new cloth against a slow worn one — and the published range is
- * 0.005-0.015, so picking one number for everybody is a guess. All three of
- * these sit inside that range.
+ * fast new cloth against a slow worn one — so picking one number for everybody
+ * is a guess. These keep the 0.7x / 1x / 1.4x spread around normal, which is
+ * roughly a second either side on a table-length roll: 4.7 s, 4.0 s, 3.4 s.
  *
  * Only the coefficient lives here. What the player picked is a preference, and
  * belongs in the settings store; physics must not import from game.
  */
 export const CLOTH_PRESETS = {
-  fast: { rollingFriction: 0.007 },
+  fast: { rollingFriction: 0.018 },
   normal: { rollingFriction: ROLLING_FRICTION },
-  slow: { rollingFriction: 0.014 },
+  slow: { rollingFriction: 0.035 },
 } as const;
 
 export type ClothPreset = keyof typeof CLOTH_PRESETS;
@@ -86,9 +98,9 @@ export const MAX_CUE_SPEED = 4.5;
 
 /**
  * Softest stroke that still counts as a stroke — a touch shot, which carries
- * the cue ball about a third of a metre on normal cloth. Deliberately below
- * the speed any pot in this curriculum asks for, so the bottom of the meter is
- * somewhere you can go wrong rather than a floor that is already enough.
+ * the cue ball only 14 cm on normal cloth. Deliberately below the speed any
+ * pot in this curriculum asks for, so the bottom of the meter is somewhere you
+ * can go wrong rather than a floor that is already enough.
  */
 export const MIN_CUE_SPEED = 0.35;
 
@@ -97,12 +109,15 @@ export const MIN_CUE_SPEED = 0.35;
  *
  * Not a feel knob. The range 0.35-4.5 m/s is right — a level-5 thin cut throws
  * away cos(80 degrees) of its speed at contact and genuinely needs ~3.5 m/s —
- * but spread linearly it puts every ordinary pot inside the bottom fifth of
+ * but spread linearly it puts every ordinary pot inside the bottom quarter of
  * the bar. The exponent is set so a typical pot (0.6 m to the pocket, 0.5 m of
  * cue-ball travel, normal cloth) lands near 40%, which puts the real shots
- * across 30-90% of the travel instead of 0-20%.
+ * across 40-95% of the travel instead of 0-25%.
+ *
+ * It follows the cloth: it was 2.4 when the cloth was half as resistant, and
+ * has to be re-derived from that typical pot whenever ROLLING_FRICTION moves.
  */
-export const POWER_CURVE_EXPONENT = 2.4;
+export const POWER_CURVE_EXPONENT = 1.7;
 
 /**
  * How far past the pocket the recommended power would carry the object ball,
