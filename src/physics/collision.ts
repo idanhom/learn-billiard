@@ -7,6 +7,7 @@
  */
 
 import {
+  BALL_CONTACT_FRICTION,
   BALL_RESTITUTION,
   CUSHION_CONTACT_HEIGHT_RATIO,
   CUSHION_CONTACT_RESTITUTION,
@@ -17,6 +18,9 @@ import { type Vec2, add, dot, normalize, scale, sub, vec } from '../geometry/vec
 
 /** Guards against re-detecting a contact that was just resolved. */
 const TOUCHING_EPSILON = 1e-9;
+
+/** Below this the surfaces are not sliding across each other at all. */
+const SLIP_EPSILON = 1e-12;
 
 /**
  * Smallest root of |d + t*dv| = radius, restricted to [0, maxTime] and to
@@ -133,20 +137,48 @@ function capTOI(
 export interface PairImpulse {
   readonly velA: Vec2;
   readonly velB: Vec2;
+  readonly rollA: Vec2;
+  readonly rollB: Vec2;
 }
 
 /**
- * Equal-mass impulse along the line of centres.
+ * Equal-mass impulse along the line of centres, plus contact friction.
  *
- * Frictionless: the tangential components pass through untouched, which is why
- * a struck ball always leaves along the line of centres and the cue ball keeps
- * its sideways drift. Ball-to-ball throw is not modelled — the app says so.
+ * The normal impulse is unchanged and the tangential VELOCITY components still
+ * pass through untouched, which is why a struck ball leaves exactly along the
+ * line of centres and the cue ball keeps its sideways drift. Ball-to-ball
+ * throw is still not modelled — the app says so.
+ *
+ * What contact friction does change is the spin, and the direction is the part
+ * worth reading twice. The two contact faces sit on opposite sides of their
+ * respective centres, so they MESH LIKE GEARS: a ball rolling forward has its
+ * leading face moving downward, that face drags the object ball's trailing face
+ * down with it, and a trailing face moving down is BACKSPIN. So follow
+ * transfers as a touch of draw, exactly as left english transfers as right
+ * english. Both rolls decrease along `n`; the quantity conserved is their
+ * DIFFERENCE, not their sum.
+ *
+ * That makes the vertical slip the SUM `(rollA + rollB)·n`, and `|W|/5` the
+ * impulse that zeros it — the surfaces mesh, and the cap belongs there rather
+ * than on the total friction impulse. Passive by construction: the roll energy
+ * changes by `(m/5)(-5*Pv*W + 12.5*Pv^2)`, negative for every `|Pv| < 2|W|/5`,
+ * and the cap is half of that.
+ *
+ * Only the vertical share of the friction is applied. The horizontal share, the
+ * one the cut angle produces, is precisely throw. Declining it costs
+ * `mu*sin(theta)` of deflection — about 1.7 degrees at half-ball, inside the
+ * 1-2 degrees the trainer scores against.
+ *
+ * The vertical LINEAR impulse is discarded rather than applied: it would drive
+ * the balls into or out of the cloth, and the table absorbs it.
  */
 export function resolveBallPair(
   posA: Vec2,
   velA: Vec2,
+  rollA: Vec2,
   posB: Vec2,
   velB: Vec2,
+  rollB: Vec2,
 ): PairImpulse | undefined {
   const n = normalize(sub(posB, posA));
   if (n.x === 0 && n.y === 0) return undefined;
@@ -156,9 +188,26 @@ export function resolveBallPair(
 
   // Equal masses: the exchanged normal speed is (1+e)/2 of the closing speed.
   const exchange = (-(1 + BALL_RESTITUTION) * closing) / 2;
+
+  const vertical = dot(add(rollA, rollB), n);
+  const horizontal = dot(sub(velA, velB), vec(-n.y, n.x));
+  const slip = Math.hypot(vertical, horizontal);
+
+  // A dead-straight stun contact — no roll on either ball, no cut — slips
+  // nowhere. Unguarded the share below is 0*(0/0), which is NaN, and it would
+  // poison both rolls from there on.
+  let torque = vec(0, 0);
+  if (slip > SLIP_EPSILON) {
+    const share = (BALL_CONTACT_FRICTION * exchange * Math.abs(vertical)) / slip;
+    const applied = Math.sign(vertical) * Math.min(share, Math.abs(vertical) / 5);
+    torque = scale(n, 2.5 * applied);
+  }
+
   return {
     velA: sub(velA, scale(n, exchange)),
     velB: add(velB, scale(n, exchange)),
+    rollA: sub(rollA, torque),
+    rollB: sub(rollB, torque),
   };
 }
 

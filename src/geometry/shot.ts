@@ -9,11 +9,14 @@
  */
 
 import {
+  BALL_CONTACT_FRICTION,
   GRAVITY,
   MAX_CUE_SPEED,
   NORMAL_TRANSFER,
   ROLLING_FRICTION,
   SLIDING_FRICTION,
+  TERMINAL_ROLL_BOOST,
+  TERMINAL_ROLL_SPEED,
 } from '../constants';
 import { BALL_RADIUS, type Pocket, isInLegalBounds } from './table';
 import {
@@ -170,57 +173,141 @@ export function objectSpeedAfterCut(cueSpeed: number, cut: number): number {
 }
 
 /**
- * Distance a ball covers before stopping, starting from a pure slide.
+ * Roll the object ball carries away from a contact with a ROLLING cue ball, as
+ * a fraction of its own launch speed.
  *
- * Slide phase: the ball decelerates at mu_s*g while its roll spins up at
- * (5/2)*mu_s*g, so the slip closes at (7/2)*mu_s*g and the ball is rolling at
- * 5/7 of its launch speed. Roll phase: plain quadratic decay under rolling
- * resistance.
+ * Negative, and that sign is the whole point. Contact friction gears the two
+ * balls together — their contact faces sit on opposite sides of their
+ * respective centres, so they mesh like teeth — and a cue ball with topspin
+ * therefore lays a little BACKSPIN on the object ball, not follow. This is the
+ * published direction: left english transfers as right english, and follow
+ * transfers as a touch of draw.
+ *
+ * Free of restitution, because the friction impulse and the object ball's
+ * launch speed both scale with the normal impulse and it cancels.
+ */
+export function objectRollFraction(cut: number): number {
+  return -2.5 * BALL_CONTACT_FRICTION * Math.max(0, Math.cos(cut));
+}
+
+/**
+ * The slide phase: how far a ball goes before its contact point stops slipping,
+ * and how fast it is rolling when that happens.
+ *
+ * `rollFraction` (k) is the ball's roll velocity at launch as a fraction of its
+ * launch speed — 0 for a struck ball, negative for one that came off a contact
+ * with backspin, above 1 for one over-rolling, which is what the cue ball does
+ * after a square hit. The slip closes at (7/2)*mu_s*g whichever way it points,
+ * so one pair of formulae covers all three cases: the ball leaves the slide at
+ * v*(2.5 + k)/3.5, the familiar 5v/7 at k = 0, and covers
+ * v^2*|1 - k|*(6 + k) / (24.5*mu_s*g) getting there.
+ */
+function slidePhase(
+  speed: number,
+  rollFraction: number,
+): { readonly exitSpeed: number; readonly distance: number } {
+  return {
+    exitSpeed: (speed * (2.5 + rollFraction)) / 3.5,
+    distance:
+      (speed * speed * Math.abs(1 - rollFraction) * (6 + rollFraction)) /
+      (24.5 * SLIDING_FRICTION * GRAVITY),
+  };
+}
+
+/**
+ * How far a ball already rolling at `speed` goes before it stops.
+ *
+ * Two constant decelerations, not one: `TERMINAL_ROLL_SPEED` is a knee below
+ * which rolling resistance is `TERMINAL_ROLL_BOOST` times larger, so a slow
+ * ball dies rather than trailing off. Above the knee this is the plain
+ * quadratic MINUS a fixed offset — the distance the doubled resistance saves —
+ * which is what keeps the inverse a single square root.
+ */
+function rollPhaseDistance(speed: number, rollingFriction: number): number {
+  if (speed <= 0) return 0;
+  const decel = rollingFriction * GRAVITY;
+  if (speed <= TERMINAL_ROLL_SPEED) return (speed * speed) / (2 * TERMINAL_ROLL_BOOST * decel);
+  return (speed * speed) / (2 * decel) - terminalOffset(rollingFriction);
+}
+
+/** What the knee takes off every roll-out that reaches it: K^2/(2*mu_r*g)*(1 - 1/B). */
+function terminalOffset(rollingFriction: number): number {
+  return (
+    (TERMINAL_ROLL_SPEED * TERMINAL_ROLL_SPEED * (1 - 1 / TERMINAL_ROLL_BOOST)) /
+    (2 * rollingFriction * GRAVITY)
+  );
+}
+
+/** Launch speed at which a ball leaves its slide exactly at the knee. */
+function kneeLaunchSpeed(rollFraction: number): number {
+  return (3.5 * TERMINAL_ROLL_SPEED) / Math.max(1e-9, 2.5 + rollFraction);
+}
+
+/**
+ * Distance a ball covers before stopping.
+ *
+ * Slide phase then roll phase; `rollFraction` says what the ball was doing at
+ * launch (see `slidePhase`) and defaults to a pure slide.
  */
 export function stoppingDistance(
   speed: number,
   rollingFriction: number = ROLLING_FRICTION,
+  rollFraction = 0,
 ): number {
   if (speed <= 0) return 0;
-  const slide = (12 * speed * speed) / (49 * SLIDING_FRICTION * GRAVITY);
-  const rollSpeed = (5 * speed) / 7;
-  const roll = (rollSpeed * rollSpeed) / (2 * rollingFriction * GRAVITY);
-  return slide + roll;
+  const slide = slidePhase(speed, rollFraction);
+  return slide.distance + rollPhaseDistance(slide.exitSpeed, rollingFriction);
 }
 
 /**
  * Launch speed whose roll-out ends after exactly `distance`: the inverse of
  * `stoppingDistance`.
  *
- * `stoppingDistance` is exactly quadratic in speed — both phases are — so its
- * value at unit speed is the whole coefficient, and inverting it is one square
- * root. Deriving it that way rather than restating the algebra is what keeps
- * the two functions exact inverses if either ever changes.
+ * Both phases are quadratic in launch speed, so `stoppingDistance` is
+ * `C*v^2 - offset` with a different C on each side of the knee. Reading each C
+ * back OUT of `stoppingDistance` at a speed known to be on the branch in
+ * question — rather than restating the algebra here — is what keeps the two
+ * functions exact inverses if either ever changes.
  */
 export function speedForStoppingDistance(
   distance: number,
   rollingFriction: number = ROLLING_FRICTION,
+  rollFraction = 0,
 ): number {
   if (distance <= 0) return 0;
-  return Math.sqrt(distance / stoppingDistance(1, rollingFriction));
+
+  const knee = kneeLaunchSpeed(rollFraction);
+  const offset = terminalOffset(rollingFriction);
+
+  const above = 2 * knee;
+  const coefficient = (stoppingDistance(above, rollingFriction, rollFraction) + offset) / above ** 2;
+  const speed = Math.sqrt((distance + offset) / coefficient);
+  if (speed >= knee) return speed;
+
+  // Too slow to ever leave the knee: the whole roll phase runs boosted.
+  const below = knee / 2;
+  const slowCoefficient = stoppingDistance(below, rollingFriction, rollFraction) / below ** 2;
+  return Math.sqrt(distance / slowCoefficient);
 }
 
 /**
  * Launch speed that still has `arrivalSpeed` left after travelling `distance`.
  *
+ * A ball that is ROLLING when it arrives would carry that speed a further
+ * `rollPhaseDistance(arrivalSpeed)` if left alone, so the launch we want is
+ * simply the one that stops after `distance` plus that — which folds the knee
+ * in for free, wherever it falls on the trip.
+ *
  * Piecewise, because the ball may not have finished sliding when it arrives.
- * Rolling on arrival, the slide phase is spent and the roll phase makes up the
- * rest:
- *
- *   v0^2 = (va^2 + 2*mu_r*g*d) / (25/49 + 24*mu_r/(49*mu_s))
- *
- * Still sliding, the whole trip decelerates at mu_s*g:
+ * Still sliding, the whole trip decelerates at mu_s*g and the knee never comes
+ * into it:
  *
  *   v0^2 = va^2 + 2*mu_s*g*d
  *
  * Take the rolling answer first and fall back when the distance turns out to
  * be shorter than that launch's own slide phase. The two agree exactly at the
- * boundary, where va is 5/7 of v0.
+ * boundary, where va is 5/7 of v0. The cue ball launches at roll 0 — the cue
+ * gives it speed, not spin — so no roll fraction here.
  */
 export function launchSpeedFor(
   arrivalSpeed: number,
@@ -230,23 +317,34 @@ export function launchSpeedFor(
   const arrival = Math.max(0, arrivalSpeed);
   if (distance <= 0) return arrival;
 
-  const rolling =
-    (arrival * arrival + 2 * rollingFriction * GRAVITY * distance) /
-    (25 / 49 + (24 * rollingFriction) / (49 * SLIDING_FRICTION));
-  const slidePhase = (12 * rolling) / (49 * SLIDING_FRICTION * GRAVITY);
-  if (slidePhase <= distance) return Math.sqrt(rolling);
+  const rolling = speedForStoppingDistance(
+    distance + rollPhaseDistance(arrival, rollingFriction),
+    rollingFriction,
+  );
+  if (slidePhase(rolling, 0).distance <= distance) return rolling;
 
   return Math.sqrt(arrival * arrival + 2 * SLIDING_FRICTION * GRAVITY * distance);
 }
 
-/** Can any legal stroke drive the object ball to the pocket at this cut? */
+/**
+ * Can any legal stroke drive the object ball to the pocket at this cut?
+ *
+ * Takes the backspin the contact leaves on the object ball. Ignoring it
+ * overstates the ball's reach by about 9% on a full hit, and overstating is the
+ * unsafe direction — it declares feasible a layout that is not, which is the
+ * one thing `POWER_MARGIN` exists to prevent.
+ */
 export function isPowerFeasible(
   cut: number,
   objectToPocket: number,
   rollingFriction: number = ROLLING_FRICTION,
 ): boolean {
   return (
-    stoppingDistance(objectSpeedAfterCut(MAX_CUE_SPEED, cut), rollingFriction) >=
+    stoppingDistance(
+      objectSpeedAfterCut(MAX_CUE_SPEED, cut),
+      rollingFriction,
+      objectRollFraction(cut),
+    ) >=
     objectToPocket * POWER_MARGIN
   );
 }

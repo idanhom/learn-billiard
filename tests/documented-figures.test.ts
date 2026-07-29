@@ -10,32 +10,17 @@
 
 import { describe, expect, test } from 'vitest';
 import {
-  GRAVITY,
   MAX_CUE_SPEED,
   MIN_CUE_SPEED,
   POWER_CURVE_EXPONENT,
   ROLLING_FRICTION,
-  SLIDING_FRICTION,
   clothRollingFriction,
 } from '../src/constants';
 import { cueSpeedForPower, recommendedPower } from '../src/game/power';
-import { analyseShot, speedForStoppingDistance } from '../src/geometry/shot';
+import { analyseShot } from '../src/geometry/shot';
 import { BALL_RADIUS, PLAY_LENGTH, pocketById } from '../src/geometry/table';
 import { normalize, scale, sub, vec } from '../src/geometry/vec2';
-
-/** Seconds for a struck ball to cover `distance` and die exactly at the end. */
-function rollOutSeconds(distance: number, rollingFriction: number): number {
-  const launch = speedForStoppingDistance(distance, rollingFriction);
-  const slide = launch / (3.5 * SLIDING_FRICTION * GRAVITY);
-  const roll = (5 * launch) / 7 / (rollingFriction * GRAVITY);
-  return slide + roll;
-}
-
-/** How long the last `speed` of a rolling ball lasts, and how far it drifts. */
-function terminalDrift(speed: number, rollingFriction: number): { seconds: number; metres: number } {
-  const decel = rollingFriction * GRAVITY;
-  return { seconds: speed / decel, metres: (speed * speed) / (2 * decel) };
-}
+import { rollOutSeconds, terminalDrift } from './support/roll-time';
 
 const linearMeter = (speed: number): number =>
   (speed - MIN_CUE_SPEED) / (MAX_CUE_SPEED - MIN_CUE_SPEED);
@@ -47,28 +32,32 @@ describe('the cloth timings quoted for each preset', () => {
     expect(rollOutSeconds(PLAY_LENGTH, clothRollingFriction('slow'))).toBeCloseTo(3.4, 1);
   });
 
-  test('down the table and back takes 5.6 seconds on normal cloth', () => {
-    expect(rollOutSeconds(2 * PLAY_LENGTH, ROLLING_FRICTION)).toBeCloseTo(5.6, 1);
+  test('down the table and back takes 5.7 seconds on normal cloth', () => {
+    expect(rollOutSeconds(2 * PLAY_LENGTH, ROLLING_FRICTION)).toBeCloseTo(5.7, 1);
   });
 
   /**
    * The published 0.005-0.015 band, at Alciatore's measured 0.01. This is the
    * number this repo departs from, and the size of the departure is the whole
    * argument for departing.
+   *
+   * The comparison is not quite like for like and the prose says so: the
+   * terminal knee applies on both sides, and the published model has no knee at
+   * all. Taking it out of the published side would widen the gap, not close it.
    */
-  test('at the published 0.01 both take about 1.6x as long', () => {
-    expect(rollOutSeconds(PLAY_LENGTH, 0.01)).toBeCloseTo(6.3, 1);
-    expect(rollOutSeconds(2 * PLAY_LENGTH, 0.01)).toBeCloseTo(9.0, 1);
+  test('at the published 0.01 both take about 1.45x as long', () => {
+    expect(rollOutSeconds(PLAY_LENGTH, 0.01)).toBeCloseTo(5.8, 1);
+    expect(rollOutSeconds(2 * PLAY_LENGTH, 0.01)).toBeCloseTo(8.4, 1);
   });
 
   test('and the ball takes far longer to die at the end of its roll', () => {
     const published = terminalDrift(0.2, 0.01);
-    expect(published.seconds).toBeCloseTo(2.0, 1);
-    expect(published.metres).toBeCloseTo(0.2, 2);
+    expect(published.seconds).toBeCloseTo(1.4, 1);
+    expect(published.metres).toBeCloseTo(0.17, 2);
 
     const here = terminalDrift(0.2, ROLLING_FRICTION);
-    expect(here.seconds).toBeCloseTo(0.8, 1);
-    expect(here.metres).toBeCloseTo(0.08, 2);
+    expect(here.seconds).toBeCloseTo(0.65, 2);
+    expect(here.metres).toBeCloseTo(0.076, 3);
   });
 });
 
@@ -106,14 +95,14 @@ describe('the power meter', () => {
     expect(longest.objectToPocket).toBeCloseTo(1.4, 2);
   });
 
-  test('an ordinary pot is a 1.23 m/s stroke, the longest one 1.96', () => {
-    expect(strokeFor(typical)).toBeCloseTo(1.23, 2);
-    expect(strokeFor(longest)).toBeCloseTo(1.96, 2);
+  test('an ordinary pot is a 1.22 m/s stroke, the longest one 1.93', () => {
+    expect(strokeFor(typical)).toBeCloseTo(1.22, 2);
+    expect(strokeFor(longest)).toBeCloseTo(1.93, 2);
   });
 
-  test('which a linear bar would crush into its bottom quarter, at 21% and 39%', () => {
+  test('which a linear bar would crush into its bottom quarter, at 21% and 38%', () => {
     expect(linearMeter(strokeFor(typical))).toBeCloseTo(0.21, 2);
-    expect(linearMeter(strokeFor(longest))).toBeCloseTo(0.39, 2);
+    expect(linearMeter(strokeFor(longest))).toBeCloseTo(0.38, 2);
   });
 
   /**
@@ -131,16 +120,17 @@ describe('the power meter', () => {
 
   /**
    * The exponent is not chosen, it is solved for: power^n = the typical pot's
-   * fraction of the linear range, at power = 0.4. So it moves with the cloth,
-   * and the comment on POWER_CURVE_EXPONENT names where it would land if the
-   * cloth ever went back to the published value.
+   * fraction of the linear range, at power = 0.4. So it moves with the cloth
+   * AND with the contact model — the object ball's backspin raises the speed
+   * the same pot asks for — and the comment on POWER_CURVE_EXPONENT names where
+   * it would land if the cloth ever went back to the published value.
    */
-  test('the exponent is 1.69 for this cloth and would be 2.364 at mu = 0.010', () => {
+  test('the exponent is 1.70 for this cloth and would be 2.251 at mu = 0.010', () => {
     const exponentFor = (rollingFriction: number): number => {
       const stroke = cueSpeedForPower(recommendedPower(typical, rollingFriction)!);
       return Math.log(linearMeter(stroke)) / Math.log(0.4);
     };
     expect(exponentFor(ROLLING_FRICTION)).toBeCloseTo(POWER_CURVE_EXPONENT, 1);
-    expect(exponentFor(0.01)).toBeCloseTo(2.364, 3);
+    expect(exponentFor(0.01)).toBeCloseTo(2.251, 3);
   });
 });

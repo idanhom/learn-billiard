@@ -1,13 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import type { StorageLike } from '../../src/game/progress-store';
-import {
-  CLOTH_PRESET_IDS,
-  GRAVITY,
-  SLIDING_FRICTION,
-  clothRollingFriction,
-} from '../../src/constants';
-import { speedForStoppingDistance } from '../../src/geometry/shot';
+import { CLOTH_PRESET_IDS, clothRollingFriction } from '../../src/constants';
 import { TABLE } from '../../src/geometry/table';
+import { rollOutSeconds } from '../support/roll-time';
 import {
   SETTINGS_KEY,
   TIME_SCALES,
@@ -64,12 +59,9 @@ describe('the cloth setting', () => {
   test('offers fast, normal and slow, and every one rolls like a table', () => {
     expect(CLOTH_PRESET_IDS).toEqual(['fast', 'normal', 'slow']);
     for (const id of CLOTH_PRESET_IDS) {
-      const mu = clothRollingFriction(id);
-      const launch = speedForStoppingDistance(TABLE.playLength, mu);
-      const slide = launch / (3.5 * SLIDING_FRICTION * GRAVITY);
-      const roll = (5 * launch) / 7 / (mu * GRAVITY);
-      expect(slide + roll, `${id} takes too long to cross the table`).toBeLessThan(5);
-      expect(slide + roll, `${id} crosses the table too briskly`).toBeGreaterThan(3);
+      const seconds = rollOutSeconds(TABLE.playLength, clothRollingFriction(id));
+      expect(seconds, `${id} takes too long to cross the table`).toBeLessThan(5);
+      expect(seconds, `${id} crosses the table too briskly`).toBeGreaterThan(3);
     }
   });
 

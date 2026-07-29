@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { BALL_RESTITUTION } from '../../src/constants';
+import { BALL_CONTACT_FRICTION, BALL_RESTITUTION } from '../../src/constants';
 import { BALL_RADIUS } from '../../src/geometry/table';
 import { type Vec2, add, angleOf, dot, len, lenSq, normalize, scale, vec } from '../../src/geometry/vec2';
 import {
@@ -11,6 +11,18 @@ import {
 } from '../../src/physics/collision';
 
 const D = 2 * BALL_RADIUS;
+
+/** A ball with no spin of its own. */
+const STILL = vec(0, 0);
+
+/** Deterministic pseudo-random source so the invariant sweeps are reproducible. */
+function lcg(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
 const toDeg = (r: number) => (r * 180) / Math.PI;
 
 describe('ball-ball time of impact', () => {
@@ -79,7 +91,7 @@ describe('pocket entry time', () => {
 
 describe('ball-ball resolution', () => {
   test('a dead straight hit transfers 97.5 percent of the speed at e = 0.95', () => {
-    const r = resolveBallPair(vec(0, 0), vec(2, 0), vec(D, 0), vec(0, 0));
+    const r = resolveBallPair(vec(0, 0), vec(2, 0), STILL, vec(D, 0), vec(0, 0), STILL);
     expect(r).toBeDefined();
     expect(r!.velB.x).toBeCloseTo(2 * ((1 + BALL_RESTITUTION) / 2), 12);
     expect(r!.velA.x).toBeCloseTo(2 * (1 - (1 + BALL_RESTITUTION) / 2), 12);
@@ -91,7 +103,7 @@ describe('ball-ball resolution', () => {
     for (const offsetFraction of [0, 0.25, 0.5, 0.75]) {
       const offset = D * offsetFraction;
       const posB = vec(Math.sqrt(D * D - offset * offset), offset);
-      const r = resolveBallPair(vec(0, 0), vec(2, 0), posB, vec(0, 0));
+      const r = resolveBallPair(vec(0, 0), vec(2, 0), STILL, posB, vec(0, 0), STILL);
       const lineOfCentres = normalize(posB);
       expect(toDeg(angleOf(normalize(r!.velB)))).toBeCloseTo(toDeg(angleOf(lineOfCentres)), 9);
     }
@@ -100,14 +112,14 @@ describe('ball-ball resolution', () => {
   test('a half-ball hit sends the object ball off at thirty degrees', () => {
     // Perpendicular offset of one radius: half the object ball is covered.
     const posB = vec(Math.sqrt(D * D - BALL_RADIUS * BALL_RADIUS), BALL_RADIUS);
-    const r = resolveBallPair(vec(0, 0), vec(2, 0), posB, vec(0, 0));
+    const r = resolveBallPair(vec(0, 0), vec(2, 0), STILL, posB, vec(0, 0), STILL);
     expect(toDeg(angleOf(r!.velB))).toBeCloseTo(30, 9);
   });
 
   test('momentum along the line of centres is conserved', () => {
     const posB = vec(Math.sqrt(D * D - 0.02 * 0.02), 0.02);
     const velA = vec(2, 0.3);
-    const r = resolveBallPair(vec(0, 0), velA, posB, vec(0, 0));
+    const r = resolveBallPair(vec(0, 0), velA, STILL, posB, vec(0, 0), STILL);
     const n = normalize(posB);
     const before = velA.x * n.x + velA.y * n.y;
     const after = r!.velA.x * n.x + r!.velA.y * n.y + (r!.velB.x * n.x + r!.velB.y * n.y);
@@ -116,12 +128,127 @@ describe('ball-ball resolution', () => {
 
   test('the cue ball keeps its tangential component untouched', () => {
     const posB = vec(0, D);
-    const r = resolveBallPair(vec(0, 0), vec(1, 1), posB, vec(0, 0));
+    const r = resolveBallPair(vec(0, 0), vec(1, 1), STILL, posB, vec(0, 0), STILL);
     expect(r!.velA.x).toBeCloseTo(1, 12);
   });
 
   test('is undefined when the balls are separating', () => {
-    expect(resolveBallPair(vec(0, 0), vec(-1, 0), vec(D, 0), vec(0, 0))).toBeUndefined();
+    expect(resolveBallPair(vec(0, 0), vec(-1, 0), STILL, vec(D, 0), vec(0, 0), STILL)).toBeUndefined();
+  });
+});
+
+describe('contact friction', () => {
+  /** Rolling ball into a still one, dead straight along +x. */
+  const squareHit = (speed: number) =>
+    resolveBallPair(vec(0, 0), vec(speed, 0), vec(speed, 0), vec(D, 0), vec(0, 0), vec(0, 0))!;
+
+  /**
+   * The sign, pinned. This is the assertion that would have caught the first
+   * draft of this model, which had the object ball picking up follow.
+   *
+   * The two contact faces sit on opposite sides of their centres and mesh like
+   * gear teeth, so a cue ball rolling FORWARD lays BACKSPIN on the object ball.
+   * Published billiards physics agrees: spin transfers reversed, which is why
+   * left english arrives as right english.
+   */
+  test('leaves the object ball spinning against its own direction of travel', () => {
+    const r = squareHit(2);
+    expect(r.velB.x).toBeGreaterThan(0);
+    expect(r.rollB.x).toBeLessThan(0);
+    expect(dot(r.rollB, r.velB)).toBeLessThan(0);
+  });
+
+  test('by exactly the closed form the analytic layer assumes', () => {
+    const r = squareHit(2);
+    expect(r.rollB.x / r.velB.x).toBeCloseTo(-2.5 * BALL_CONTACT_FRICTION, 12);
+  });
+
+  test('takes topspin off the cue ball at the same time', () => {
+    const r = squareHit(2);
+    expect(r.rollA.x).toBeLessThan(2);
+    expect(r.rollA.x).toBeGreaterThan(0);
+  });
+
+  /**
+   * Both balls are torqued the SAME way, so it is the difference of the rolls
+   * that survives, not the sum. Getting this backwards is the same error as
+   * getting the sign backwards — it is the same fact stated twice.
+   */
+  test('conserves the difference of the rolls along the line of centres', () => {
+    for (const offsetFraction of [0, 0.3, 0.6, 0.9]) {
+      const offset = D * offsetFraction;
+      const posB = vec(Math.sqrt(D * D - offset * offset), offset);
+      const n = normalize(posB);
+      const rollA = vec(1.7, -0.4);
+      const rollB = vec(0.2, 0.9);
+      const r = resolveBallPair(vec(0, 0), vec(2, 0.1), rollA, posB, vec(0, 0), rollB)!;
+      expect(dot(r.rollA, n) - dot(r.rollB, n)).toBeCloseTo(dot(rollA, n) - dot(rollB, n), 12);
+    }
+  });
+
+  /**
+   * Passive by construction, in the same spirit as the cushion model: the
+   * contact can only take roll energy out. The linear energy cannot rise
+   * either — the friction's linear impulse is discarded, not applied.
+   */
+  test('never adds roll energy, at any spin state or cut angle', () => {
+    const random = lcg(20260729);
+    for (let i = 0; i < 500; i++) {
+      const offset = D * random() * 0.99;
+      const posB = vec(Math.sqrt(D * D - offset * offset), offset);
+      const velA = vec(0.2 + 4 * random(), 2 * random() - 1);
+      const rollA = vec(4 * random() - 2, 4 * random() - 2);
+      const rollB = vec(4 * random() - 2, 4 * random() - 2);
+      const r = resolveBallPair(vec(0, 0), velA, rollA, posB, vec(0, 0), rollB);
+      if (!r) continue;
+      const before = lenSq(rollA) + lenSq(rollB);
+      const after = lenSq(r.rollA) + lenSq(r.rollB);
+      expect(after).toBeLessThanOrEqual(before + 1e-12);
+    }
+  });
+
+  /**
+   * Only the vertical share is applied, so the horizontal share — which is
+   * exactly throw — never reaches the object ball. The trainer scores aim to
+   * within a degree or two against the ghost-ball line, so this has to stay
+   * exact rather than merely small.
+   */
+  test('produces no throw: the object ball still leaves along the line of centres', () => {
+    for (const offsetFraction of [0.1, 0.4, 0.7, 0.95]) {
+      const offset = D * offsetFraction;
+      const posB = vec(Math.sqrt(D * D - offset * offset), offset);
+      const r = resolveBallPair(vec(0, 0), vec(2, 0), vec(2, 0), posB, vec(0, 0), vec(0, 0))!;
+      expect(toDeg(angleOf(normalize(r.velB)))).toBeCloseTo(toDeg(angleOf(normalize(posB))), 9);
+    }
+  });
+
+  /**
+   * A dead-straight contact between a still-sliding cue ball and a still object
+   * ball slips nowhere at all: no roll on either, no cut. Unguarded the
+   * friction share is 0*(0/0), and the NaN would poison both rolls from there
+   * on and never wash out.
+   */
+  test('a straight stun contact resolves without dividing by zero', () => {
+    const r = resolveBallPair(vec(0, 0), vec(2, 0), STILL, vec(D, 0), vec(0, 0), STILL)!;
+    for (const v of [r.velA, r.velB, r.rollA, r.rollB]) {
+      expect(Number.isFinite(v.x) && Number.isFinite(v.y)).toBe(true);
+    }
+    expect(r.rollA).toEqual(STILL);
+    expect(r.rollB).toEqual(STILL);
+  });
+
+  /**
+   * The cap is on the APPLIED vertical share, not on the total friction
+   * impulse: |W|/5 is precisely the impulse that zeroes the vertical slip, so
+   * when it binds the surfaces come out meshed and not reversed.
+   */
+  test('caps the applied share at the impulse that meshes the surfaces', () => {
+    const rollA = vec(0.001, 0);
+    const r = resolveBallPair(vec(0, 0), vec(10, 0.01), rollA, vec(D, 0), vec(0, 0), STILL)!;
+    const n = vec(1, 0);
+    // Uncapped, Coulomb would have taken far more than this.
+    expect(BALL_CONTACT_FRICTION * 0.975 * 10).toBeGreaterThan(Math.abs(rollA.x) / 5);
+    expect(dot(add(r.rollA, r.rollB), n)).toBeCloseTo(0, 12);
   });
 });
 

@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import {
+  BALL_CONTACT_FRICTION,
   type ClothPreset,
   CLOTH_PRESET_IDS,
   GRAVITY,
   MAX_CUE_SPEED,
+  ROLLING_FRICTION,
   SLIDING_FRICTION,
   clothRollingFriction,
 } from '../../src/constants';
@@ -18,6 +20,7 @@ import {
   idealAimDirection,
   isPathClear,
   launchSpeedFor,
+  objectRollFraction,
   objectSpeedAfterCut,
   speedForStoppingDistance,
   stoppingDistance,
@@ -218,11 +221,49 @@ describe('speed and roll-out', () => {
     expect(objectSpeedAfterCut(2, deg(90))).toBeCloseTo(0, 9);
   });
 
-  test('stopping distance grows with the square of speed', () => {
+  /**
+   * Not quite the square, and the terminal knee is why: above it the roll-out
+   * is `C*v^2 - offset`, where the offset is the distance the doubled
+   * resistance saves at the very end. Every ball fast enough to reach the knee
+   * pays the same fixed bite, so doubling the speed slightly more than
+   * quadruples the run.
+   */
+  test('stopping distance grows with the square of speed, less a fixed terminal bite', () => {
     const d1 = stoppingDistance(1);
     const d2 = stoppingDistance(2);
-    expect(d2 / d1).toBeCloseTo(4, 6);
+    const d3 = stoppingDistance(3);
+    expect(d2 / d1).toBeGreaterThan(4);
+    expect(d2 / d1).toBeLessThan(4.05);
+
+    // Recover the offset from two speeds and check it predicts a third exactly.
+    const offset = (d2 - 4 * d1) / 3;
+    expect(offset).toBeGreaterThan(0);
+    expect(d3).toBeCloseTo(9 * (d1 + offset) - offset, 12);
     expect(stoppingDistance(0)).toBe(0);
+  });
+
+  test('and is exactly quadratic below the knee, where the boost applies throughout', () => {
+    // Both of these leave the slide below TERMINAL_ROLL_SPEED, so there is no
+    // crossing to split and the offset never enters.
+    expect(stoppingDistance(0.1) / stoppingDistance(0.05)).toBeCloseTo(4, 9);
+  });
+
+  /**
+   * The sign that the whole contact model turns on: a rolling cue ball gears
+   * BACKSPIN onto the object ball, so its roll fraction is negative and its run
+   * is shorter than a pure slide's, not longer.
+   */
+  test('the object ball comes off a contact with backspin, which shortens its run', () => {
+    expect(objectRollFraction(0)).toBeLessThan(0);
+    expect(objectRollFraction(0)).toBeCloseTo(-2.5 * BALL_CONTACT_FRICTION, 12);
+    expect(stoppingDistance(1, ROLLING_FRICTION, objectRollFraction(0))).toBeLessThan(
+      stoppingDistance(1, ROLLING_FRICTION, 0),
+    );
+  });
+
+  test('and less of it the thinner the cut, vanishing at a right angle', () => {
+    expect(Math.abs(objectRollFraction(deg(60)))).toBeLessThan(Math.abs(objectRollFraction(0)));
+    expect(objectRollFraction(deg(90))).toBeCloseTo(0, 12);
   });
 
   test('a firm stroke can send an object ball the length of the table', () => {
@@ -244,6 +285,41 @@ describe('inverting the roll-out', () => {
           speed,
           9,
         );
+      }
+    }
+  });
+
+  /**
+   * The knee puts a second branch in both functions, and a ball that never
+   * reaches the knee is on the far side of it. Straddle the crossing
+   * deliberately — the two have to remain exact inverses across it, not merely
+   * on the long shots where the crossing is a rounding error.
+   */
+  test('and stays an exact inverse across the terminal knee', () => {
+    for (const friction of CLOTH_PRESET_IDS.map(clothRollingFriction)) {
+      for (const speed of [0.02, 0.08, 0.15, 0.167, 0.168, 0.169, 0.25, 0.6]) {
+        expect(speedForStoppingDistance(stoppingDistance(speed, friction), friction)).toBeCloseTo(
+          speed,
+          9,
+        );
+      }
+    }
+  });
+
+  /**
+   * And with the object ball's backspin in it, which is the form
+   * `recommendedPower` actually calls.
+   */
+  test('and inverts just as exactly with a negative roll fraction', () => {
+    const k = objectRollFraction(0);
+    for (const friction of CLOTH_PRESET_IDS.map(clothRollingFriction)) {
+      for (const speed of [0.05, 0.16, 0.3, 1, 3]) {
+        const distance = stoppingDistance(speed, friction, k);
+        expect(speedForStoppingDistance(distance, friction, k)).toBeCloseTo(speed, 9);
+      }
+      for (const distance of [0.01, 0.09, 0.4, 1.2, 2.5]) {
+        const speed = speedForStoppingDistance(distance, friction, k);
+        expect(stoppingDistance(speed, friction, k)).toBeCloseTo(distance, 9);
       }
     }
   });

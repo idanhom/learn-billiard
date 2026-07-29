@@ -5,6 +5,8 @@ import {
   GRAVITY,
   MAX_CUE_SPEED,
   SLIDING_FRICTION,
+  TERMINAL_ROLL_BOOST,
+  TERMINAL_ROLL_SPEED,
   clothRollingFriction,
 } from '../../src/constants';
 import { angleBetween, spinBy } from '../../src/geometry/quat';
@@ -34,6 +36,47 @@ function rollingBall(id: number, pos: Vec2, vel: Vec2): Ball {
 /** Speed a ball will settle at once the cloth has resolved its slip. */
 function rollingSpeedOf(ball: Ball): number {
   return len(add(scale(ball.vel, 5 / 7), scale(ball.roll, 2 / 7)));
+}
+
+/**
+ * A square hit from a ROLLING cue ball arriving at `arrival`, and how far each
+ * ball runs afterwards.
+ *
+ * The object ball's run is measured in the simulation wherever the table is
+ * long enough to hold it, and read from `stoppingDistance` — fed the ball's
+ * MEASURED post-contact velocity and roll, not an assumed one — when it is not.
+ * A 1.55 m/s contact sends the object ball 2.7 m and this table is 1.98 m long,
+ * so there is nowhere to measure it. The substitution is only as good as the
+ * agreement between the two, which this asserts on the way past at every speed
+ * that does fit.
+ */
+function squareHitRatio(arrival: number): {
+  impact: number;
+  cueTravel: number;
+  objectTravel: number;
+  ratio: number;
+} {
+  const object = createBall(1, vec(-0.9, 0));
+  const cue = rollingBall(0, vec(-0.9 - 2 * BALL_RADIUS - 0.001, 0), vec(arrival, 0));
+  const { balls: atImpact, before } = stepUntil([cue, object], (events) =>
+    events.some((e) => e.type === 'ball-ball'),
+  );
+
+  const result = simulateToRest(atImpact, { maxDuration: 40 });
+  const ranOut = result.events.some((e) => e.type === 'cushion' || e.type === 'pocket');
+  const cueTravel = result.balls[0]!.pos.x - atImpact[0]!.pos.x;
+  const simulated = result.balls[1]!.pos.x - atImpact[1]!.pos.x;
+
+  const struck = atImpact[1]!;
+  const analytic = stoppingDistance(
+    struck.vel.x,
+    clothRollingFriction('normal'),
+    struck.roll.x / struck.vel.x,
+  );
+  if (!ranOut) expect(Math.abs(simulated - analytic) / analytic).toBeLessThan(0.005);
+
+  const objectTravel = ranOut ? analytic : simulated;
+  return { impact: before[0]!.vel.x, cueTravel, objectTravel, ratio: objectTravel / cueTravel };
 }
 
 /** Deterministic pseudo-random source so property sweeps are reproducible. */
@@ -300,23 +343,52 @@ describe('ball on ball', () => {
     const { balls: atImpact } = stepUntil([cue, object], (events) =>
       events.some((e) => e.type === 'ball-ball'),
     );
-    // Almost stopped by the collision, but still carrying its roll.
+    // Almost stopped by the collision, but still carrying most of its roll —
+    // contact friction takes a share of it, not all of it.
     expect(atImpact[0]!.vel.x).toBeLessThan(0.1);
-    expect(atImpact[0]!.roll.x).toBeGreaterThan(0.4);
+    expect(atImpact[0]!.roll.x).toBeGreaterThan(0.3);
 
     const result = simulateToRest(atImpact);
     // The roll drives it forward again — this is why there is no tangent guide.
     const cueTravel = result.balls[0]!.pos.x - atImpact[0]!.pos.x;
     const objectTravel = result.balls[1]!.pos.x - atImpact[1]!.pos.x;
     expect(cueTravel).toBeGreaterThan(0.01);
+    expect(objectTravel).toBeGreaterThan(cueTravel);
+  });
 
-    // As a ratio, not a distance: how far each ball runs depends on the cloth,
-    // how much further the object ball runs does not. Published tables put this
-    // at 6.5-8x and frictionless ball-to-ball collisions put it at 5.2x — the
-    // deviation the README owns up to. Guard the number so it cannot drift
-    // without someone noticing.
-    expect(objectTravel / cueTravel).toBeGreaterThan(5);
-    expect(objectTravel / cueTravel).toBeLessThan(5.5);
+  /**
+   * The number this contact model exists to move, measured across the range of
+   * shots the curriculum actually asks for.
+   *
+   * Published tables put a square hit from a rolling cue ball at 6.5-8x, and
+   * frictionless collisions put it at 5.2x whatever the speed. With contact
+   * friction AND the terminal knee it lands in band from an ordinary pot
+   * upward, and runs high on the very softest shots — where the cue ball
+   * follows under 3 cm and nobody can see where it stopped. It is no longer
+   * scale-free, and `README.md` says so.
+   *
+   * Measured against the speed AT CONTACT, per `CLAUDE.md`: measuring a
+   * collision property against a launch speed folds in whatever the cloth took
+   * on the run-up.
+   */
+  test('sends the object ball 6.5-8x further than the cue ball, over ordinary pots', () => {
+    for (const [arrival, expected] of [
+      [0.787, 7.36],
+      [1.2, 6.77],
+      [1.55, 6.6],
+    ] as const) {
+      const { ratio, impact } = squareHitRatio(arrival);
+      expect(impact).toBeCloseTo(arrival, 2);
+      expect(ratio).toBeCloseTo(expected, 1);
+      expect(ratio).toBeGreaterThan(6.5);
+      expect(ratio).toBeLessThan(8);
+    }
+  });
+
+  test('and runs above the band on a touch shot, which is the cost of the knee', () => {
+    const { ratio } = squareHitRatio(0.5);
+    expect(ratio).toBeCloseTo(9.67, 1);
+    expect(ratio).toBeGreaterThan(8);
   });
 
   test('a half-ball hit sends the object ball off at thirty degrees', () => {
@@ -501,20 +573,75 @@ describe('which way a ball is facing', () => {
  * this change. It is a latent defect and a prerequisite for tip offset, fixed
  * on its own terms.
  */
+/**
+ * The unpublished half of this cloth model. See the constants: there is no
+ * measured value behind either number, only a judgement about how a ball ought
+ * to stop, so what these tests pin is that the code does what the comment says
+ * — not that the comment is right about real cloth.
+ */
+describe('the terminal roll knee', () => {
+  const plainDecel = clothRollingFriction('normal') * GRAVITY;
+
+  /** Deceleration over one tick of a ball already rolling at `speed`. */
+  function decelAt(speed: number): number {
+    const { balls } = stepWorld([rollingBall(0, vec(-0.5, 0), vec(speed, 0))]);
+    return (speed - len(balls[0]!.vel)) / TICK;
+  }
+
+  test('costs a slow ball twice the rolling resistance a quick one pays', () => {
+    expect(decelAt(0.5)).toBeCloseTo(plainDecel, 6);
+    expect(decelAt(TERMINAL_ROLL_SPEED / 2)).toBeCloseTo(TERMINAL_ROLL_BOOST * plainDecel, 6);
+  });
+
+  /**
+   * Split at the crossing rather than integrated at whichever rate the tick
+   * started in — otherwise the answer would depend on the tick length, and
+   * `src/geometry/shot.ts` inverts this analytically on the assumption that it
+   * does not.
+   */
+  test('splits a tick that straddles the knee, rather than picking one rate', () => {
+    const speed = TERMINAL_ROLL_SPEED + (plainDecel * TICK) / 2;
+    const { balls } = stepWorld([rollingBall(0, vec(-0.5, 0), vec(speed, 0))]);
+    const expected = TERMINAL_ROLL_SPEED - (TERMINAL_ROLL_BOOST * plainDecel * TICK) / 2;
+    expect(len(balls[0]!.vel)).toBeCloseTo(expected, 9);
+  });
+
+  test('and cuts a soft shot short, by the amount the analytic layer predicts', () => {
+    // Slow enough that the roll phase lives almost entirely under the knee.
+    const speed = 0.2;
+    const start = vec(-0.5, 0);
+    const { balls } = simulateToRest([createBall(0, start, vec(speed, 0))]);
+    const travelled = balls[0]!.pos.x - start.x;
+    const predicted = stoppingDistance(speed);
+
+    // 2%, not the 1% a firm shot gets: the whole run is 3.6 cm, so a single
+    // tick of travel is a far larger share of it.
+    expect(Math.abs(travelled - predicted) / predicted).toBeLessThan(0.02);
+
+    // And the knee is doing real work — without the boost the same launch would
+    // coast about half as far again.
+    const unboosted =
+      predicted +
+      (TERMINAL_ROLL_SPEED * TERMINAL_ROLL_SPEED * (1 - 1 / TERMINAL_ROLL_BOOST)) /
+        (2 * clothRollingFriction('normal') * GRAVITY);
+    expect(unboosted / travelled).toBeGreaterThan(1.4);
+  });
+});
+
 describe('a ball that is stationary but still spinning', () => {
   test('is carried back the way its spin points, not frozen where it stands', () => {
     const start = createBall(0, vec(0, 0), vec(0.025, 0), vec(-1, 0));
     const result = simulateToRest([start]);
 
     // (5v + 2r)/7 = -0.268 m/s of rolling speed has to go somewhere: 1.8 cm of
-    // it spent slowing the creep forward, then 14.6 cm of roll back.
+    // it spent slowing the creep forward, then 15.0 cm of roll back.
     expect(result.settled).toBe(true);
-    expect(result.balls[0]!.pos.x).toBeCloseTo(-0.164, 2);
+    expect(result.balls[0]!.pos.x).toBeCloseTo(-0.168, 2);
   });
 
   test('still runs on forward when the spin agrees with the motion', () => {
     const result = simulateToRest([createBall(0, vec(0, 0), vec(0.025, 0), vec(1, 0))]);
-    expect(result.balls[0]!.pos.x).toBeCloseTo(0.211, 2);
+    expect(result.balls[0]!.pos.x).toBeCloseTo(0.220, 2);
   });
 
   test('is not called settled the tick its velocity passes through zero', () => {

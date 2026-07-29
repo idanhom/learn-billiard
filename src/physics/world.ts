@@ -20,6 +20,8 @@ import {
   GRAVITY,
   REST_SPEED,
   SLIDING_FRICTION,
+  TERMINAL_ROLL_BOOST,
+  TERMINAL_ROLL_SPEED,
   clothRollingFriction,
 } from '../constants';
 import {
@@ -267,10 +269,15 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
         apply: (world, at, events) => {
           const x = world[i]!;
           const y = world[j]!;
-          const impulse = resolveBallPair(x.pos, x.vel, y.pos, y.vel);
+          const impulse = resolveBallPair(x.pos, x.vel, x.roll, y.pos, y.vel, y.roll);
           if (!impulse) return;
           x.vel = impulse.velA;
           y.vel = impulse.velB;
+          // Contact friction gears the two together: a rolling cue ball hands
+          // over some of its topspin as BACKSPIN, which both shortens its own
+          // follow and makes the object ball skid before it rolls.
+          x.roll = impulse.rollA;
+          y.roll = impulse.rollB;
           events.push({ type: 'ball-ball', time: at, a: x.id, b: y.id });
         },
       });
@@ -367,8 +374,7 @@ function applyFriction(ball: Ball, dt: number, rollingFriction: number): void {
   if (remaining > 0) {
     const speed = len(ball.vel);
     if (speed > 0) {
-      const shed = rollingFriction * GRAVITY * remaining;
-      const next = Math.max(0, speed - shed);
+      const next = rolledDown(speed, remaining, rollingFriction);
       ball.vel = next === 0 ? ZERO : scale(ball.vel, next / speed);
     }
     ball.roll = ball.vel;
@@ -376,12 +382,39 @@ function applyFriction(ball: Ball, dt: number, rollingFriction: number): void {
 
   // Both, not just the centre velocity. A ball creeping forward at 0.025 m/s
   // with roll at -1.0 has a rolling speed of (5v + 2r)/7 = -0.27 m/s and is
-  // about to come back 16 cm; clamping on velocity alone would delete the spin
+  // about to come back 17 cm; clamping on velocity alone would delete the spin
   // and freeze it where it stands.
   if (len(ball.vel) < REST_SPEED && len(ball.roll) < REST_SPEED) {
     ball.vel = ZERO;
     ball.roll = ZERO;
   }
+}
+
+/**
+ * Speed left after `dt` of rolling resistance, with the terminal knee.
+ *
+ * Two constant decelerations rather than one: below `TERMINAL_ROLL_SPEED` the
+ * cloth takes `TERMINAL_ROLL_BOOST` times as much, so a ball that has nearly
+ * run out dies instead of trailing off over most of a second. The crossing is
+ * split exactly rather than integrated at whichever rate the tick started in,
+ * so the result does not depend on the tick length — `src/geometry/shot.ts`
+ * inverts this analytically and the two have to agree.
+ *
+ * Unpublished, unlike everything around it. See the constants.
+ */
+function rolledDown(speed: number, dt: number, rollingFriction: number): number {
+  const decel = rollingFriction * GRAVITY;
+  let left = speed;
+  let time = dt;
+
+  if (left > TERMINAL_ROLL_SPEED) {
+    const toKnee = (left - TERMINAL_ROLL_SPEED) / decel;
+    if (toKnee >= time) return left - decel * time;
+    left = TERMINAL_ROLL_SPEED;
+    time -= toKnee;
+  }
+
+  return Math.max(0, left - decel * TERMINAL_ROLL_BOOST * time);
 }
 
 /** Convenience for callers that only need a snapshot of positions. */

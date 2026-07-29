@@ -20,7 +20,12 @@ import {
   POWER_CURVE_EXPONENT,
   ROLLING_FRICTION,
 } from '../constants';
-import { type ShotAnalysis, launchSpeedFor, speedForStoppingDistance } from '../geometry/shot';
+import {
+  type ShotAnalysis,
+  launchSpeedFor,
+  objectRollFraction,
+  speedForStoppingDistance,
+} from '../geometry/shot';
 
 /**
  * How a stroke reads out loud. The boundaries follow the published shot-speed
@@ -69,6 +74,12 @@ export function powerForCueSpeed(speed: number): number {
  *
  * Takes the cloth it is played on, unlike shot generation, which validates
  * against the slowest cloth on offer. This is advice for the table you are on.
+ *
+ * The object ball is assumed to leave the contact with the backspin a ROLLING
+ * cue ball gears onto it, while the simulation resolves whatever spin the cue
+ * ball actually had. On a very short shot the cue ball is still sliding, so it
+ * transfers less backspin than assumed and the object ball runs slightly long.
+ * That is the safe direction: `DROP_MARGIN` already aims past the pocket.
  */
 export function recommendedPower(
   analysis: ShotAnalysis,
@@ -80,6 +91,7 @@ export function recommendedPower(
   const objectSpeed = speedForStoppingDistance(
     analysis.objectToPocket * DROP_MARGIN,
     rollingFriction,
+    objectRollFraction(analysis.cutAngle),
   );
   const launch = launchSpeedFor(objectSpeed / transfer, analysis.cueToGhost, rollingFriction);
   if (!Number.isFinite(launch) || launch > MAX_CUE_SPEED) return null;

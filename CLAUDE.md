@@ -41,17 +41,30 @@ The physical constants are not independent knobs, and several carry derived
 values that go stale silently:
 
 - `ROLLING_FRICTION` / `CLOTH_PRESETS` are set from **how long a roll takes**
-  (a table length of free roll in 4.7 / 4.0 / 3.4 s), and normal cloth at 0.025
-  sits two and a half times above the published 0.005-0.015 band and above
-  Alciatore's measured 0.01. That is a deliberate departure, not a measurement,
-  and it has never been checked against a real table. Say so; do not restate it
-  as though the literature were wrong. If you move it, re-time it.
-- `POWER_CURVE_EXPONENT` follows the cloth. It is whatever puts a typical pot
-  (0.6 m to the pocket, 0.5 m of cue-ball travel, normal cloth) near 40% of the
-  meter, and must be re-derived whenever the rolling resistance moves.
-- Both feed shot generation through `isPowerFeasible`, and the recommended
-  power through `src/game/power.ts`. After changing either, re-measure the
-  per-level power spread and the template-fallback rate before trusting them.
+  (a table length of free roll in 4.7 / 4.0 / 3.4 s), and normal cloth at 0.022
+  sits over twice the published 0.005-0.015 band and above Alciatore's measured
+  0.01. That is a deliberate departure, not a measurement, and it has never been
+  checked against a real table. Say so; do not restate it as though the
+  literature were wrong. If you move it, re-time it — the timing formula is
+  piecewise now and lives in `tests/support/roll-time.ts`, in one place on
+  purpose.
+- `TERMINAL_ROLL_SPEED` / `TERMINAL_ROLL_BOOST` have **no published value at
+  all**, unlike everything else in that file. Never cite them. They also carry
+  `ROLLING_FRICTION` with them: the knee does part of the job the plain
+  coefficient used to, which is why it came down from 0.025.
+- `BALL_CONTACT_FRICTION` is published-typical (0.03-0.08, at the middle) and
+  should stay that way. If holding the object/cue travel ratio inside 6.5-8x
+  ever needs it dragged off that range, the collision model has a structural
+  error rather than a calibration one. That is exactly how an inverted
+  spin-transfer sign was caught: it needed 0.045.
+- `POWER_CURVE_EXPONENT` follows the cloth AND the contact model — the object
+  ball's backspin changes the speed a pot asks for. It is whatever puts a
+  typical pot (0.6 m to the pocket, 0.5 m of cue-ball travel, normal cloth) near
+  40% of the meter, and must be re-derived whenever either moves.
+- All of these feed shot generation through `isPowerFeasible`, and the
+  recommended power through `src/game/power.ts`. After changing any, re-measure
+  the per-level power spread and the template-fallback rate before trusting
+  them.
 
 When a number in a comment or in `README.md` states a measured figure, it is a
 claim someone can check. Re-measure it rather than leaving it, and if a value
