@@ -23,7 +23,12 @@ export function fromWorld(x: number, z: number): Vec2 {
 
 /** Table-plane heading (radians, CCW from +x) as a world-space direction. */
 export function headingToWorld(angle: number): Vector3 {
-  return new Vector3(Math.cos(angle), 0, -Math.sin(angle));
+  return writeHeading(new Vector3(), angle);
+}
+
+/** As `headingToWorld`, but into an existing vector — for per-frame callers. */
+export function writeHeading(target: Vector3, angle: number): Vector3 {
+  return target.set(Math.cos(angle), 0, -Math.sin(angle));
 }
 
 /**

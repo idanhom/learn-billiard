@@ -41,7 +41,7 @@ and wrong-pocket drops are all reported, but they don't drive progression.
 Three qualifying shots out of the last five take away one layer of guides:
 
 0. aim line, ghost ball, path to the pocket, and the live thick/thin readout
-1. the path to the pocket goes
+1. the path to the pocket and the live thick/thin readout go
 2. the ghost ball goes
 3. everything goes — you read the angle yourself
 

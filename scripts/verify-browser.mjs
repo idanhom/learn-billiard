@@ -197,10 +197,13 @@ check('resetting progress returns to level 1', afterReset.levelId === 1 && after
 // software", not as the real frame rate.
 await page.evaluate(() => window.__debug.selectLevel(1));
 await sleep(300);
-await page.evaluate(() => {
+const perfShotFired = await page.evaluate(() => {
   window.__debug.aimIdeal();
-  window.__debug.fire(1);
+  return window.__debug.fire(1);
 });
+// Without this the sample would be taken over a static table, and every budget
+// check below would pass for the wrong reason.
+if (!perfShotFired) throw new Error('the debug hook refused to fire the frame-cost shot');
 
 // Measure the work done inside a frame, not the gap between frames: headless
 // Chromium throttles the animation callback to roughly 10 Hz, which says
@@ -213,15 +216,37 @@ console.log(
   `      per-frame work over ${perf.samples} frames: mean ${perf.mean.toFixed(2)} ms, ` +
     `worst ${perf.worst.toFixed(2)} ms (software rendering, so a pessimistic floor)`,
 );
-check('a frame of work fits inside a 60 fps budget', perf.mean < 16.6, `mean ${perf.mean.toFixed(2)} ms`);
-check('no single frame blows the budget', perf.worst < 100, `worst ${perf.worst.toFixed(2)} ms`);
-check('the loop actually ran while sampling', perf.samples > 10, `samples=${perf.samples}`);
+// Sample count first: an empty sample reports a mean of zero, which would sail
+// through both budgets below.
+const sampled = perf.samples > 10;
+check('the loop actually ran while sampling', sampled, `samples=${perf.samples}`);
+check(
+  'a frame of work fits inside a 60 fps budget',
+  sampled && perf.mean < 16.6,
+  `mean ${perf.mean.toFixed(2)} ms`,
+);
+check('no single frame blows the budget', sampled && perf.worst < 100, `worst ${perf.worst.toFixed(2)} ms`);
 
-const pixelRatio = await page.evaluate(() => {
+// On a page whose device pixel ratio is already 1 the cap is untestable — the
+// backing store matches the CSS box whether or not the renderer clamps. So ask
+// for a scale factor above the cap and check the cap bites.
+const dprPage = await browser.newPage({ viewport: { width: 800, height: 600 }, deviceScaleFactor: 3 });
+dprPage.on('console', (message) => {
+  if (message.type() === 'error') consoleErrors.push(message.text());
+});
+dprPage.on('pageerror', (error) => consoleErrors.push(String(error)));
+await dprPage.goto(PAGE_URL, { waitUntil: 'load' });
+await sleep(900);
+const pixelRatio = await dprPage.evaluate(() => {
   const canvas = document.getElementById('game');
   return canvas.width / canvas.getBoundingClientRect().width;
 });
-check('device pixel ratio is capped for the Pi', pixelRatio <= 1.5 + 1e-6, `ratio ${pixelRatio}`);
+await dprPage.close();
+check(
+  'device pixel ratio is capped for the Pi',
+  pixelRatio > 1 && pixelRatio <= 1.5 + 1e-6,
+  `ratio ${pixelRatio} at a device scale factor of 3`,
+);
 
 // A clean aiming shot of a half-ball cut, guides up, numbered object ball.
 // From a fresh load, so no stale notice or report is left on screen.

@@ -42,6 +42,8 @@ let session = newSession();
 let chargeSeconds = 0;
 let evaluations = 0;
 let notice = campaign.notice;
+/** Fixed for the life of a layout, so there is no reason to re-derive it per frame. */
+let objectBallNumber = ballNumberFor(session.layout.id);
 
 function newSession(): ShotSession {
   return new ShotSession(campaign.layout, { toleranceDegrees: campaign.toleranceDegrees });
@@ -49,6 +51,7 @@ function newSession(): ShotSession {
 
 function startShot(): void {
   session = newSession();
+  objectBallNumber = ballNumberFor(session.layout.id);
   chargeSeconds = 0;
 }
 
@@ -145,19 +148,21 @@ function frame(now: number): void {
   }
 
   const analysis = session.analysis;
-  const pocket = pocketById(session.layout.targetPocket);
   // Guides are for aiming. Once the cue is away they are just clutter over the
-  // thing the player should be watching.
+  // thing the player should be watching — and there is no point placing lines
+  // nobody can see, so the update goes with the visibility.
   const aiming = session.phase === 'aiming' || session.phase === 'charging';
   scene.guides.setVisible(aiming);
-  scene.guides.update({
-    visibility: campaign.guides,
-    cue: session.cueBall.pos,
-    aimEnd: add(session.cueBall.pos, fromAngle(session.aimAngle, analysis.cueToGhost)),
-    ghost: analysis.ghostCenter,
-    object: session.objectBall.pos,
-    pocket: pocket.center,
-  });
+  if (aiming) {
+    scene.guides.update({
+      visibility: campaign.guides,
+      cue: session.cueBall.pos,
+      aimEnd: add(session.cueBall.pos, fromAngle(session.aimAngle, analysis.cueToGhost)),
+      ghost: analysis.ghostCenter,
+      object: session.objectBall.pos,
+      pocket: pocketById(session.layout.targetPocket).center,
+    });
+  }
 
   scene.render({
     balls: session.balls,
@@ -165,9 +170,10 @@ function frame(now: number): void {
     alpha: session.alpha,
     aimAngle: session.aimAngle,
     power: session.power,
-    showCue: session.phase === 'aiming' || session.phase === 'charging',
-    objectBallNumber: ballNumberFor(session.layout.id),
+    showCue: aiming,
+    objectBallNumber,
     shotLength: analysis.cueToGhost + analysis.objectToPocket,
+    dt,
   });
 
   const stats = campaign.stats;

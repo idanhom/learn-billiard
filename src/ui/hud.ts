@@ -61,7 +61,14 @@ export class Hud {
   readonly #notice: HTMLElement;
   readonly #actions: HudActions;
 
+  // Last markup written to each panel. `update` runs every frame but the
+  // readouts change far less often, and an innerHTML write on a
+  // backdrop-filtered panel is not free on a Pi.
   #renderedLevels = '';
+  #renderedStatus = '';
+  #renderedShot = '';
+  #renderedReport = '';
+  #reportShown = false;
 
   constructor(root: HTMLElement, actions: HudActions) {
     root.innerHTML = '';
@@ -111,9 +118,17 @@ export class Hud {
     this.#powerFill.style.width = `${Math.round(state.power * 100)}%`;
 
     if (state.outcome) {
-      this.#report.style.display = '';
-      this.#report.innerHTML = renderReport(state.outcome, state.exam);
-    } else {
+      const html = renderReport(state.outcome, state.exam);
+      if (html !== this.#renderedReport) {
+        this.#renderedReport = html;
+        this.#report.innerHTML = html;
+      }
+      if (!this.#reportShown) {
+        this.#reportShown = true;
+        this.#report.style.display = '';
+      }
+    } else if (this.#reportShown) {
+      this.#reportShown = false;
       this.#report.style.display = 'none';
     }
 
@@ -135,19 +150,23 @@ export class Hud {
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
       : `${state.windowQualified}/${state.windowNeeded} toward the next tier &middot; within ${state.toleranceDegrees}&deg;`;
 
-    this.#status.innerHTML =
+    const html =
       `<div class="hud-label">${escape(state.levelName)}</div>` +
       `<div class="hud-big">${heading}</div>` +
       `<div class="hud-sub">${line}</div>` +
       `<div class="hud-sub">${state.qualified}/${state.attempts} on aim &middot; ` +
       `${state.potted} potted &middot; ${escape(state.view)} view</div>`;
+    if (html === this.#renderedStatus) return;
+    this.#renderedStatus = html;
+    this.#status.innerHTML = html;
   }
 
   #renderShot(state: HudState): void {
     if (!state.guides.readout) {
-      this.#shot.innerHTML =
+      this.#writeShot(
         '<div class="hud-label">This shot</div><div class="hud-big">no guides</div>' +
-        '<div class="hud-sub">read the angle yourself</div>';
+          '<div class="hud-sub">read the angle yourself</div>',
+      );
       return;
     }
 
@@ -158,11 +177,18 @@ export class Hud {
         ? 'on the line'
         : `${state.liveAimError.degrees.toFixed(2)}&deg; ${state.liveAimError.kind}`;
 
-    this.#shot.innerHTML =
+    this.#writeShot(
       '<div class="hud-label">This shot</div>' +
-      `<div class="hud-big">${cut}&deg; ${side}</div>` +
-      `<div class="hud-sub">${(state.fullness * 100).toFixed(0)}% full ball</div>` +
-      (state.guides.liveAimError ? `<div class="hud-sub hud-live">${live}</div>` : '');
+        `<div class="hud-big">${cut}&deg; ${side}</div>` +
+        `<div class="hud-sub">${(state.fullness * 100).toFixed(0)}% full ball</div>` +
+        (state.guides.liveAimError ? `<div class="hud-sub hud-live">${live}</div>` : ''),
+    );
+  }
+
+  #writeShot(html: string): void {
+    if (html === this.#renderedShot) return;
+    this.#renderedShot = html;
+    this.#shot.innerHTML = html;
   }
 
   #renderLevels(state: HudState): void {

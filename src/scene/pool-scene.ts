@@ -25,8 +25,8 @@ import {
 import { BALL_RADIUS } from '../geometry/table';
 import { type Vec2, lerp as lerpVec, vec } from '../geometry/vec2';
 import type { Ball } from '../physics/world';
-import { CUE_BALL_NUMBER, ballTexture } from './ball-textures';
-import { fromWorld, headingToRotationY, headingToWorld, toWorld, writeWorld } from './coords';
+import { CUE_BALL_NUMBER, ballTexture, companionBallNumber } from './ball-textures';
+import { fromWorld, headingToRotationY, writeHeading, writeWorld } from './coords';
 import { Guides } from './guides';
 import { buildTable } from './table-mesh';
 
@@ -43,8 +43,12 @@ const VIEW_MIN_BACK = 0.62;
 const VIEW_BACK_PER_METRE = 0.22;
 const VIEW_MIN_HEIGHT = 0.38;
 const VIEW_HEIGHT_PER_METRE = 0.16;
-/** Fraction of the remaining gap the camera closes each frame. */
-const VIEW_SMOOTHING = 0.22;
+/**
+ * Rate at which the camera closes the remaining gap, per second. Applied
+ * through `1 - exp(-rate * dt)` rather than as a fixed fraction per frame, so
+ * the ease takes the same wall-clock time on a Pi at 30 fps as at 60.
+ */
+const VIEW_SMOOTHING_RATE = 15;
 
 export interface RenderState {
   readonly balls: readonly Ball[];
@@ -57,6 +61,8 @@ export interface RenderState {
   readonly objectBallNumber: number;
   /** How far ahead the shot reaches, used to frame the behind-cue camera. */
   readonly shotLength: number;
+  /** Seconds since the last rendered frame, for frame-rate-independent easing. */
+  readonly dt: number;
 }
 
 export class PoolScene {
@@ -76,6 +82,9 @@ export class PoolScene {
   readonly #cameraTarget = new Vector3();
   readonly #desiredPosition = new Vector3();
   readonly #desiredTarget = new Vector3();
+  /** Scratch, reused every frame by the cue and camera placement. */
+  readonly #origin = new Vector3();
+  readonly #direction = new Vector3();
 
   #view: CameraView = 'behind';
   #viewSettled = false;
@@ -178,7 +187,13 @@ export class PoolScene {
         this.#ballMeshes.set(ball.id, mesh);
       }
 
-      const wanted = ball.id === 0 ? CUE_BALL_NUMBER : state.objectBallNumber;
+      // Ball 0 is the cue ball, ball 1 the object ball, and anything after it
+      // an obstacle — which needs a number of its own, or the table reads as a
+      // row of identical balls.
+      const wanted =
+        ball.id === 0
+          ? CUE_BALL_NUMBER
+          : companionBallNumber(state.objectBallNumber, ball.id - 1);
       if (this.#ballNumbers.get(ball.id) !== wanted) {
         this.#ballNumbers.set(ball.id, wanted);
         const material = mesh.material as MeshStandardMaterial;
@@ -207,9 +222,9 @@ export class PoolScene {
   #placeCue(cuePos: Vec2, state: RenderState): void {
     this.#cue.visible = state.showCue;
     if (!state.showCue) return;
-    const direction = headingToWorld(state.aimAngle);
+    const direction = writeHeading(this.#direction, state.aimAngle);
     const back = CUE_GAP + BALL_RADIUS + state.power * CUE_MAX_PULLBACK;
-    const origin = toWorld(cuePos, BALL_RADIUS);
+    const origin = writeWorld(this.#origin, cuePos, BALL_RADIUS);
     this.#cue.position.copy(origin).addScaledVector(direction, -back);
     this.#cue.rotation.y = headingToRotationY(state.aimAngle);
   }
@@ -223,8 +238,8 @@ export class PoolScene {
       return;
     }
 
-    const direction = headingToWorld(state.aimAngle);
-    const origin = toWorld(cuePos, 0);
+    const direction = writeHeading(this.#direction, state.aimAngle);
+    const origin = writeWorld(this.#origin, cuePos, 0);
     const reach = Math.max(0, state.shotLength);
 
     this.#desiredPosition
@@ -240,8 +255,9 @@ export class PoolScene {
     // Ease toward the framing rather than snapping, so fine aim adjustments
     // do not jolt the whole view.
     if (this.#viewSettled) {
-      this.#cameraTarget.lerp(this.#desiredTarget, VIEW_SMOOTHING);
-      this.#camera.position.lerp(this.#desiredPosition, VIEW_SMOOTHING);
+      const t = 1 - Math.exp(-VIEW_SMOOTHING_RATE * Math.max(0, state.dt));
+      this.#cameraTarget.lerp(this.#desiredTarget, t);
+      this.#camera.position.lerp(this.#desiredPosition, t);
     } else {
       this.#cameraTarget.copy(this.#desiredTarget);
       this.#camera.position.copy(this.#desiredPosition);

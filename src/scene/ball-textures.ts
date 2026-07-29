@@ -26,9 +26,24 @@ const SUIT_COLORS = [
 const CUE_COLOR = '#f5f3ec';
 const EIGHT_COLOR = '#151515';
 
+/** Solids 1-7, the 8-ball, then stripes 9-15 repeating the same seven colours. */
+const SUIT_CYCLE = SUIT_COLORS.length + 1;
+
 const cache = new Map<number, Texture>();
 
 export const CUE_BALL_NUMBER = 0;
+export const HIGHEST_BALL_NUMBER = 15;
+
+/**
+ * The cloth colour of a ball, ignoring the stripe. 9 repeats 1 and 15 repeats
+ * 7, with the 8-ball sitting between the two suits — so the cycle is eight
+ * long, not seven.
+ */
+export function ballColor(ballNumber: number): string {
+  if (ballNumber === CUE_BALL_NUMBER) return CUE_COLOR;
+  if (ballNumber === 8) return EIGHT_COLOR;
+  return SUIT_COLORS[(ballNumber - 1) % SUIT_CYCLE] ?? EIGHT_COLOR;
+}
 
 /** 1-15, or 0 for the cue ball. Cached, so repeated shots cost nothing. */
 export function ballTexture(ballNumber: number): Texture | undefined {
@@ -58,8 +73,7 @@ function paintBall(ctx: CanvasRenderingContext2D, ballNumber: number): void {
   }
 
   const striped = ballNumber > 8;
-  const color =
-    ballNumber === 8 ? EIGHT_COLOR : SUIT_COLORS[(ballNumber - 1) % SUIT_COLORS.length]!;
+  const color = ballColor(ballNumber);
 
   if (striped) {
     // White poles with a coloured band around the equator.
@@ -106,5 +120,14 @@ export function ballNumberFor(layoutId: string): number {
   for (let i = 0; i < layoutId.length; i++) {
     hash = (Math.imul(hash, 31) + layoutId.charCodeAt(i)) | 0;
   }
-  return (Math.abs(hash) % 15) + 1;
+  return (Math.abs(hash) % HIGHEST_BALL_NUMBER) + 1;
+}
+
+/**
+ * Numbers for the rest of the balls on the table. Index 0 is the object ball
+ * itself; every obstacle after it takes the next number along, so no two balls
+ * in a layout look alike.
+ */
+export function companionBallNumber(objectBallNumber: number, index: number): number {
+  return ((objectBallNumber - 1 + index) % HIGHEST_BALL_NUMBER) + 1;
 }

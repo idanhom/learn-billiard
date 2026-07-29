@@ -128,6 +128,16 @@ body {
   text-align: center;
 }
 
+/*
+ * The power meter is centred and 246px wide, so its left edge sits at
+ * 50% - 123px. Cap the controls panel short of that, at any viewport width,
+ * rather than trusting the text to stay narrow — the panel is painted after
+ * the meter and would otherwise cover it.
+ */
+#hud-help {
+  max-width: min(360px, calc(50% - 149px));
+}
+
 #hud-notice {
   max-width: 460px;
   text-align: center;
