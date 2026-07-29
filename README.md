@@ -51,6 +51,54 @@ duration by nothing at all.
 The setting is remembered between sessions, stored separately from your
 progress so a bad preference can never cost you a level.
 
+## Power
+
+The meter is not linear, and that is the point.
+
+A cue can send a ball anywhere from a touch shot to a break, but almost nothing
+in this trainer wants a break. A 0.6 m pot needs the object ball leaving at
+about 0.47 m/s; the longest shot in the curriculum, level 6's 1.4 m pot, needs
+0.74 m/s. Spread linearly across 0.35–4.5 m/s, every shot you will ever play
+here sits in the bottom fifth of the bar and the rest of it is for shots that
+never come up.
+
+So the bar is a curve — `speed = 0.35 + 4.15 × power^2.4` — set so an ordinary
+pot lands near 40%:
+
+| power | launch | band |
+|---:|---:|---|
+| 20% | 0.44 m/s | soft touch |
+| 30% | 0.58 m/s | slow |
+| 40% | 0.81 m/s | slow |
+| 50% | 1.14 m/s | medium |
+| 70% | 2.11 m/s | fast |
+| 100% | 4.50 m/s | power |
+
+Measured over 200 generated layouts per level, the stroke each one asks for now
+runs from 32% on a straight-in to 86% on the worst thin cut, with the median
+climbing 40% → 41% → 43% → 48% → 63% as the cut angle opens up. What pushes you
+up the meter is the *cut*, which is worth feeling: a thin cut throws away
+`cos(θ)` of the speed at contact, so a 70° cut needs roughly three times the
+stroke of a straight-in over the same distance.
+
+The range itself is unchanged — a level-5 cut at 80° genuinely needs ~3.5 m/s,
+and shot generation uses that ceiling to decide a layout is makeable at all.
+
+Under the meter, always, is what you just charged, in the same units and the
+same words a real table uses: `0.81 m/s · slow`. That is a speedometer, not an
+answer, so it stays on at every tier and through the exam.
+
+The **tick on the bar** is the answer — the stroke that would leave the object
+ball dying in the pocket, computed for the cloth you are actually on. So it is
+a guide, and it comes away with the ghost ball at tier 1. It is absent when no
+legal stroke can make the ball, rather than pinned at 100% implying one can.
+
+It answers for the object ball, not for the cue ball. On a thin cut the cue
+ball keeps nearly all its speed, and about one level-5 layout in a hundred
+sends it off two cushions and back into the object ball before that ball has
+finished creeping in. The stroke was right; the cue ball spoiled it. That is
+the part of the game this trainer does not teach.
+
 ## How it scores you
 
 **On your aim, not on whether the ball goes in.** A pot depends on power and on
@@ -61,8 +109,9 @@ and wrong-pocket drops are all reported, but they don't drive progression.
 
 Three qualifying shots out of the last five take away one layer of guides:
 
-0. aim line, ghost ball, path to the pocket, and the live thick/thin readout
-1. the path to the pocket and the live thick/thin readout go
+0. aim line, ghost ball, path to the pocket, the live thick/thin readout, and
+   the target mark on the power meter
+1. the path to the pocket, the live thick/thin readout and the power mark go
 2. the ghost ball goes
 3. everything goes — you read the angle yourself
 

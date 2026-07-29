@@ -32,6 +32,13 @@ export interface GuideVisibility {
    * the ghost ball it is describing.
    */
   readonly liveAimError: boolean;
+  /**
+   * The marker on the power meter showing the stroke that would drop the ball
+   * in. Like the live aim error, it hands over the answer rather than helping
+   * you find it, so it belongs with the ghost ball at tier 0. The speed
+   * readout beside it is not a guide and never goes away.
+   */
+  readonly powerHint: boolean;
 }
 
 export interface RecordResult {
@@ -40,10 +47,10 @@ export interface RecordResult {
 }
 
 const GUIDES: Record<Tier, GuideVisibility> = {
-  0: { aimLine: true, ghostBall: true, objectPath: true, readout: true, liveAimError: true },
-  1: { aimLine: true, ghostBall: true, objectPath: false, readout: true, liveAimError: false },
-  2: { aimLine: true, ghostBall: false, objectPath: false, readout: true, liveAimError: false },
-  3: { aimLine: false, ghostBall: false, objectPath: false, readout: false, liveAimError: false },
+  0: { aimLine: true, ghostBall: true, objectPath: true, readout: true, liveAimError: true, powerHint: true },
+  1: { aimLine: true, ghostBall: true, objectPath: false, readout: true, liveAimError: false, powerHint: false },
+  2: { aimLine: true, ghostBall: false, objectPath: false, readout: true, liveAimError: false, powerHint: false },
+  3: { aimLine: false, ghostBall: false, objectPath: false, readout: false, liveAimError: false, powerHint: false },
 };
 
 export class TierTracker {

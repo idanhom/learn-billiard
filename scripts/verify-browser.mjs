@@ -64,6 +64,18 @@ page.on('pageerror', (error) => consoleErrors.push(String(error)));
 
 const state = () => page.evaluate(() => window.__debug.state());
 
+/** What the power meter is showing: the speed readout, and the target tick. */
+const meter = () =>
+  page.evaluate(() => {
+    const marker = document.querySelector('.hud-meter-marker');
+    const speed = document.querySelector('.hud-speed');
+    return {
+      markerShown: Boolean(marker) && marker.style.display !== 'none',
+      markerLeft: marker ? marker.style.left : null,
+      speed: speed ? speed.textContent : null,
+    };
+  });
+
 /**
  * Reset first: an evaluated shot refuses to be re-aimed or re-struck, which is
  * the point of the guard, so the layout has to be reset before firing again.
@@ -96,6 +108,24 @@ check('starts in the aiming phase', initial.phase === 'aiming', initial.phase);
 check('starts on level 1 at tier 0', initial.levelId === 1 && initial.tier === 0);
 check('starts with every guide showing', initial.guides.objectPath && initial.guides.ghostBall);
 check('a fresh start carries no recovery notice', initial.notice === null, String(initial.notice));
+
+// The power meter says what it is doing, and marks what the shot asks for.
+const meterAtTierZero = await meter();
+check(
+  'the meter reads out the stroke in m/s and a named band',
+  /^\d+\.\d\d m\/s · (soft touch|slow|medium|fast|power)$/.test(meterAtTierZero.speed ?? ''),
+  String(meterAtTierZero.speed),
+);
+check(
+  'the target mark is drawn at tier 0',
+  meterAtTierZero.markerShown,
+  `left=${meterAtTierZero.markerLeft}`,
+);
+check(
+  'and it sits where the recommendation says',
+  Math.abs(Number.parseFloat(meterAtTierZero.markerLeft) - initial.recommendedPower * 100) < 0.05,
+  `${meterAtTierZero.markerLeft} vs ${(initial.recommendedPower * 100).toFixed(1)}%`,
+);
 
 await page.evaluate(() => window.__debug.setView('behind'));
 await sleep(300);
@@ -140,6 +170,16 @@ await playPerfect({ fresh: true });
 const tierTwo = await state();
 check('another three advance again', tierTwo.tier === 2, `tier=${tierTwo.tier}`);
 check('the ghost ball is withdrawn at tier 2', tierTwo.guides.ghostBall === false);
+
+// The target mark goes with the ghost ball; the speed readout is not a guide
+// and stays on.
+const meterAtTierTwo = await meter();
+check('the target mark is withdrawn with the ghost ball', meterAtTierTwo.markerShown === false);
+check(
+  'the speed readout survives, because it is not a guide',
+  /m\/s/.test(meterAtTierTwo.speed ?? ''),
+  String(meterAtTierTwo.speed),
+);
 await page.screenshot({ path: `${OUT}tier-2.png` });
 
 // Progress survives a reload.
@@ -382,6 +422,61 @@ check(
   `${calibrated.cutTendency?.degrees?.toFixed(3)} deg over ${calibrated.cutTendency?.samples} of 3`,
 );
 await page.screenshot({ path: `${OUT}calibration-history.png` });
+
+/*
+ * The mark is advice, so it has to be right: aimed perfectly and struck at the
+ * power it names, the ball goes in. Across levels, so it holds for thin cuts
+ * and long ones as well as easy ones.
+ *
+ * Judged in aggregate, and not to the last shot, because of one known way an
+ * honest recommendation still misses: on a thin cut the cue ball keeps almost
+ * all of its speed, and roughly one level-5 layout in a hundred sends it off
+ * two cushions and back into the object ball a second and a half later, before
+ * the ball has finished creeping into the pocket. That is the cue-ball path,
+ * not the power, and it is the same thing this trainer says on screen it does
+ * not teach. The seeded sweep in tests/game/power.test.ts is the strict one.
+ */
+const potShots = [];
+for (const levelId of [1, 3, 5, 6]) {
+  await page.evaluate((id) => window.__debug.selectLevel(id), levelId);
+  await sleep(300);
+  for (let shot = 0; shot < 3; shot++) {
+    const power = await page.evaluate((first) => {
+      if (first) window.__debug.retry();
+      else window.__debug.next();
+      window.__debug.aimIdeal();
+      const recommended = window.__debug.state().recommendedPower;
+      if (recommended === null) return null;
+      window.__debug.fire(recommended);
+      return recommended;
+    }, shot === 0);
+    if (power === null) {
+      potShots.push({ levelId, power: null, potted: false });
+      continue;
+    }
+    await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, {
+      timeout: 60000,
+    });
+    potShots.push({
+      levelId,
+      power,
+      potted: (await state()).outcome?.pottedTarget === true,
+    });
+  }
+}
+const pottedCount = potShots.filter((s) => s.potted).length;
+check(
+  'the recommended power is never absent on a layout the generator produced',
+  potShots.every((s) => s.power !== null),
+);
+check(
+  'firing at the recommended power pots',
+  pottedCount >= potShots.length - 1,
+  `${pottedCount}/${potShots.length} — ` +
+    potShots
+      .map((s) => `L${s.levelId} ${s.power === null ? 'none' : `${(s.power * 100).toFixed(0)}%`}${s.potted ? '' : ' MISS'}`)
+      .join(', '),
+);
 
 // A clean aiming shot of a half-ball cut, guides up, numbered object ball.
 // From a fresh load, so no stale notice or report is left on screen.

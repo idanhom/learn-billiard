@@ -113,16 +113,23 @@ describe('tier tracker', () => {
 describe('guide visibility follows the tier', () => {
   test('every tier shows less than the one before it', () => {
     const seen = [0, 1, 2, 3].map((tier) => new TierTracker({ tier: tier as 0, completed: false }).guides);
-    expect(seen[0]).toEqual({ aimLine: true, ghostBall: true, objectPath: true, readout: true, liveAimError: true });
-    expect(seen[1]).toEqual({ aimLine: true, ghostBall: true, objectPath: false, readout: true, liveAimError: false });
-    expect(seen[2]).toEqual({ aimLine: true, ghostBall: false, objectPath: false, readout: true, liveAimError: false });
-    expect(seen[3]).toEqual({ aimLine: false, ghostBall: false, objectPath: false, readout: false, liveAimError: false });
+    expect(seen[0]).toEqual({ aimLine: true, ghostBall: true, objectPath: true, readout: true, liveAimError: true, powerHint: true });
+    expect(seen[1]).toEqual({ aimLine: true, ghostBall: true, objectPath: false, readout: true, liveAimError: false, powerHint: false });
+    expect(seen[2]).toEqual({ aimLine: true, ghostBall: false, objectPath: false, readout: true, liveAimError: false, powerHint: false });
+    expect(seen[3]).toEqual({ aimLine: false, ghostBall: false, objectPath: false, readout: false, liveAimError: false, powerHint: false });
   });
 
   test('the live aim-error readout is a tier-0 guide, not a permanent fixture', () => {
     expect(new TierTracker({ tier: 0, completed: false }).guides.liveAimError).toBe(true);
     for (const tier of [1, 2, 3] as const) {
       expect(new TierTracker({ tier, completed: false }).guides.liveAimError).toBe(false);
+    }
+  });
+
+  test('the power marker is a tier-0 guide too — it hands over the stroke', () => {
+    expect(new TierTracker({ tier: 0, completed: false }).guides.powerHint).toBe(true);
+    for (const tier of [1, 2, 3] as const) {
+      expect(new TierTracker({ tier, completed: false }).guides.powerHint).toBe(false);
     }
   });
 });

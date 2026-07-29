@@ -12,6 +12,7 @@ import { pocketById } from './geometry/table';
 import { add, angleOf, fromAngle } from './geometry/vec2';
 import { Campaign } from './game/campaign';
 import { attachInput } from './game/input';
+import { speedBand } from './game/power';
 import { browserStorage, createProgressStore } from './game/progress-store';
 import { createSettingsStore, nextCloth, nextTimeScale } from './game/settings-store';
 import { ShotHistory } from './game/shot-history';
@@ -233,6 +234,9 @@ function frame(now: number): void {
   hud.update({
     phase: session.phase,
     power: session.power,
+    cueSpeed: session.cueSpeed,
+    speedBand: speedBand(session.cueSpeed),
+    recommendedPower: session.recommendedPower,
     cutAngleDegrees: (analysis.cutAngle * 180) / Math.PI,
     cutSide: analysis.cutSide,
     fullness: fullnessOf(analysis.cutAngle),
@@ -319,6 +323,9 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     state: () => ({
       phase: session.phase,
       aimAngle: session.aimAngle,
+      power: session.power,
+      cueSpeed: session.cueSpeed,
+      recommendedPower: session.recommendedPower,
       timeScale: settings.timeScale,
       cloth: settings.cloth,
       cutTendency: history.cutTendency,

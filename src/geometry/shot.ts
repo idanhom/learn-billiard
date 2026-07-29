@@ -188,6 +188,57 @@ export function stoppingDistance(
   return slide + roll;
 }
 
+/**
+ * Launch speed whose roll-out ends after exactly `distance`: the inverse of
+ * `stoppingDistance`.
+ *
+ * `stoppingDistance` is exactly quadratic in speed — both phases are — so its
+ * value at unit speed is the whole coefficient, and inverting it is one square
+ * root. Deriving it that way rather than restating the algebra is what keeps
+ * the two functions exact inverses if either ever changes.
+ */
+export function speedForStoppingDistance(
+  distance: number,
+  rollingFriction: number = ROLLING_FRICTION,
+): number {
+  if (distance <= 0) return 0;
+  return Math.sqrt(distance / stoppingDistance(1, rollingFriction));
+}
+
+/**
+ * Launch speed that still has `arrivalSpeed` left after travelling `distance`.
+ *
+ * Piecewise, because the ball may not have finished sliding when it arrives.
+ * Rolling on arrival, the slide phase is spent and the roll phase makes up the
+ * rest:
+ *
+ *   v0^2 = (va^2 + 2*mu_r*g*d) / (25/49 + 24*mu_r/(49*mu_s))
+ *
+ * Still sliding, the whole trip decelerates at mu_s*g:
+ *
+ *   v0^2 = va^2 + 2*mu_s*g*d
+ *
+ * Take the rolling answer first and fall back when the distance turns out to
+ * be shorter than that launch's own slide phase. The two agree exactly at the
+ * boundary, where va is 5/7 of v0.
+ */
+export function launchSpeedFor(
+  arrivalSpeed: number,
+  distance: number,
+  rollingFriction: number = ROLLING_FRICTION,
+): number {
+  const arrival = Math.max(0, arrivalSpeed);
+  if (distance <= 0) return arrival;
+
+  const rolling =
+    (arrival * arrival + 2 * rollingFriction * GRAVITY * distance) /
+    (25 / 49 + (24 * rollingFriction) / (49 * SLIDING_FRICTION));
+  const slidePhase = (12 * rolling) / (49 * SLIDING_FRICTION * GRAVITY);
+  if (slidePhase <= distance) return Math.sqrt(rolling);
+
+  return Math.sqrt(arrival * arrival + 2 * SLIDING_FRICTION * GRAVITY * distance);
+}
+
 /** Can any legal stroke drive the object ball to the pocket at this cut? */
 export function isPowerFeasible(
   cut: number,

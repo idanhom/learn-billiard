@@ -95,18 +95,39 @@ body {
 }
 
 .hud-meter {
+  position: relative;
   width: 220px;
   height: 10px;
   border-radius: 5px;
   background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
 }
 
+/*
+ * The fill rounds its own corners rather than being clipped by the track, so
+ * the track can let the target marker stand proud of it top and bottom — a
+ * tick you can see against the fill is worth more than one buried inside it.
+ */
 .hud-meter-fill {
   height: 100%;
   width: 0;
+  border-radius: 5px;
   background: linear-gradient(90deg, var(--accent), var(--warn));
   transition: width 60ms linear;
+}
+
+.hud-meter-marker {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.hud-speed {
+  margin-top: 5px;
 }
 
 .hud-verdict {

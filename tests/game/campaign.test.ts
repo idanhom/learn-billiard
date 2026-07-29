@@ -166,6 +166,7 @@ describe('the exam', () => {
       objectPath: false,
       readout: false,
       liveAimError: false,
+      powerHint: false,
     });
   });
 

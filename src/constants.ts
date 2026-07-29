@@ -84,8 +84,32 @@ export const NORMAL_TRANSFER = (1 + BALL_RESTITUTION) / 2;
 /** Hardest legal stroke. Caps the tunnelling risk as well as the difficulty. */
 export const MAX_CUE_SPEED = 4.5;
 
-/** Softest stroke that still counts as a stroke. */
-export const MIN_CUE_SPEED = 0.6;
+/**
+ * Softest stroke that still counts as a stroke — a touch shot, which carries
+ * the cue ball about a third of a metre on normal cloth. Deliberately below
+ * the speed any pot in this curriculum asks for, so the bottom of the meter is
+ * somewhere you can go wrong rather than a floor that is already enough.
+ */
+export const MIN_CUE_SPEED = 0.35;
+
+/**
+ * Shape of the power meter: speed is MIN + (MAX - MIN) * power^this.
+ *
+ * Not a feel knob. The range 0.35-4.5 m/s is right — a level-5 thin cut throws
+ * away cos(80 degrees) of its speed at contact and genuinely needs ~3.5 m/s —
+ * but spread linearly it puts every ordinary pot inside the bottom fifth of
+ * the bar. The exponent is set so a typical pot (0.6 m to the pocket, 0.5 m of
+ * cue-ball travel, normal cloth) lands near 40%, which puts the real shots
+ * across 30-90% of the travel instead of 0-20%.
+ */
+export const POWER_CURVE_EXPONENT = 2.4;
+
+/**
+ * How far past the pocket the recommended power would carry the object ball,
+ * as a multiple of the distance to it. Enough that the ball drops rather than
+ * dying on the lip, not so much that the advice stops being a touch shot.
+ */
+export const DROP_MARGIN = 1.15;
 
 /** Below this speed a ball is treated as stopped. */
 export const REST_SPEED = 5e-3;

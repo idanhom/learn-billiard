@@ -4,6 +4,7 @@ import { idealAimDirection } from '../../src/geometry/shot';
 import { pocketById } from '../../src/geometry/table';
 import { angleOf, len, vec } from '../../src/geometry/vec2';
 import { ShotSession } from '../../src/game/shot-session';
+import { cueSpeedForPower } from '../../src/game/power';
 import { CUT_30_DRILL, STRAIGHT_IN_DRILL, layoutWithCut } from '../../src/game/drills';
 
 const deg = (d: number) => (d * Math.PI) / 180;
@@ -107,8 +108,37 @@ describe('shot lifecycle', () => {
     session.setPower(0.5);
     session.release();
     const speed = len(session.cueBall.vel);
-    expect(speed).toBeCloseTo(MIN_CUE_SPEED + 0.5 * (MAX_CUE_SPEED - MIN_CUE_SPEED), 9);
+    expect(speed).toBeCloseTo(cueSpeedForPower(0.5), 9);
     expect(angleOf(session.cueBall.vel)).toBeCloseTo(0, 9);
+  });
+
+  test('the meter spans the whole legal range of strokes, ends included', () => {
+    const speedAt = (power: number): number => {
+      const session = new ShotSession(STRAIGHT_IN_DRILL);
+      session.beginCharge();
+      session.setPower(power);
+      session.release();
+      return len(session.cueBall.vel);
+    };
+    expect(speedAt(0)).toBeCloseTo(MIN_CUE_SPEED, 9);
+    expect(speedAt(1)).toBeCloseTo(MAX_CUE_SPEED, 9);
+    // Strictly increasing, so every reading is a different stroke.
+    let previous = speedAt(0);
+    for (let power = 0.05; power <= 1.000001; power += 0.05) {
+      const speed = speedAt(power);
+      expect(speed).toBeGreaterThan(previous);
+      previous = speed;
+    }
+  });
+
+  test('the charged speed is readable before the cue is away', () => {
+    const session = new ShotSession(STRAIGHT_IN_DRILL);
+    expect(session.cueSpeed).toBeCloseTo(MIN_CUE_SPEED, 9);
+    session.beginCharge();
+    session.setPower(0.65);
+    expect(session.cueSpeed).toBeCloseTo(cueSpeedForPower(0.65), 12);
+    session.release();
+    expect(len(session.cueBall.vel)).toBeCloseTo(session.cueSpeed, 12);
   });
 
   test('the cue ball is launched sliding, with no roll of its own', () => {
@@ -166,10 +196,13 @@ describe('the outcome contract', () => {
   });
 
   test('progression is scored on aim, not on the pot', () => {
-    // Inside tolerance but struck far too softly to reach the pocket.
-    const outcome = play(STRAIGHT_IN_DRILL, deg(0.5), 0, 2);
-    expect(outcome!.pottedTarget).toBe(false);
+    // Inside tolerance, and struck hard enough to reach the object ball, but
+    // nowhere near hard enough to send it to the pocket: 0.58 m/s leaves it
+    // stopping around half a metre short. Not the softest possible stroke —
+    // that one no longer reaches at all, which would be testing something else.
+    const outcome = play(STRAIGHT_IN_DRILL, deg(0.5), 0.3, 2);
     expect(outcome!.contacted).toBe(true);
+    expect(outcome!.pottedTarget).toBe(false);
     expect(outcome!.qualifying).toBe(true);
   });
 
@@ -209,7 +242,11 @@ describe('the outcome contract', () => {
   test('a potted shot has a miss distance inside the pocket', () => {
     const potted = play(STRAIGHT_IN_DRILL, 0, 0.5, 2);
     const capture = pocketById(STRAIGHT_IN_DRILL.targetPocket).captureRadius;
-    expect(potted!.missDistance).toBeLessThanOrEqual(capture);
+    // The solver freezes a potted ball at the instant its centre crosses the
+    // capture circle, so this lands exactly on the radius and which side of it
+    // the last bit lands is pure floating point.
+    expect(potted!.pottedTarget).toBe(true);
+    expect(potted!.missDistance).toBeLessThanOrEqual(capture + 1e-9);
   });
 
   test('describes the aim as thick or thin on a cut', () => {
@@ -246,8 +283,10 @@ describe('the outcome contract', () => {
   test('a pot in the wrong pocket is noted and does not count as the target pot', () => {
     const layout = { id: 'wrong-pocket', cue: vec(-0.4, 0.1), object: vec(0.1, 0.33), targetPocket: 'top-right' } as const;
     let found: ReturnType<ShotSession['evaluate']>;
+    // A firm stroke, not the usual half-meter one: the object ball has to still
+    // be moving when it arrives somewhere it was never aimed.
     for (let d = -40; d <= 40 && !found; d += 0.5) {
-      const outcome = play(layout, deg(d), 0.5, 2);
+      const outcome = play(layout, deg(d), 0.8, 2);
       if (outcome?.objectPocket && outcome.objectPocket !== layout.targetPocket) found = outcome;
     }
     expect(found, 'no aim in the sweep found another pocket').toBeDefined();

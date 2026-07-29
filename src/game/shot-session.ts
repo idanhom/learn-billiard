@@ -9,7 +9,7 @@
  * key during the roll-out cannot restrike or re-aim.
  */
 
-import { type ClothPreset, DEFAULT_CLOTH, MAX_CUE_SPEED, MIN_CUE_SPEED } from '../constants';
+import { type ClothPreset, DEFAULT_CLOTH, clothRollingFriction } from '../constants';
 import {
   type AimError,
   type CutSide,
@@ -33,6 +33,7 @@ import {
   stepWorld,
 } from '../physics/world';
 import { type ShotLayout, idealAimAngle } from './drills';
+import { cueSpeedForPower, recommendedPower as recommendedPowerFor } from './power';
 
 export type ShotPhase = 'aiming' | 'charging' | 'simulating' | 'settled' | 'evaluated';
 
@@ -132,6 +133,20 @@ export class ShotSession {
     return this.#power;
   }
 
+  /** What the meter is charged to, in metres per second. */
+  get cueSpeed(): number {
+    return cueSpeedForPower(this.#power);
+  }
+
+  /**
+   * Meter reading that would leave the object ball dying in the pocket, or
+   * null when no legal stroke will do it. Judged on the cloth in play, since
+   * it is advice about this table rather than about the layout.
+   */
+  get recommendedPower(): number | null {
+    return recommendedPowerFor(this.analysis, clothRollingFriction(this.#cloth));
+  }
+
   get balls(): readonly Ball[] {
     return this.#balls;
   }
@@ -223,9 +238,8 @@ export class ShotSession {
 
   release(): boolean {
     if (this.#phase !== 'charging') return false;
-    const speed = MIN_CUE_SPEED + this.#power * (MAX_CUE_SPEED - MIN_CUE_SPEED);
     // A cue strike is a pure slide: speed, and no roll of its own.
-    this.cueBall.vel = fromAngle(this.#aimAngle, speed);
+    this.cueBall.vel = fromAngle(this.#aimAngle, this.cueSpeed);
     this.cueBall.roll = vec(0, 0);
     this.#phase = 'simulating';
     this.#recordMissDistance();

@@ -60,6 +60,7 @@ const NO_GUIDES: GuideVisibility = {
   objectPath: false,
   readout: false,
   liveAimError: false,
+  powerHint: false,
 };
 
 export class Campaign {

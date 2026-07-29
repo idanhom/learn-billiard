@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_CUE_SPEED } from '../../src/constants';
+import {
+  type ClothPreset,
+  CLOTH_PRESET_IDS,
+  GRAVITY,
+  MAX_CUE_SPEED,
+  SLIDING_FRICTION,
+  clothRollingFriction,
+} from '../../src/constants';
 import { BALL_RADIUS, TABLE, pocketById } from '../../src/geometry/table';
 import {
   aimError,
@@ -10,13 +17,50 @@ import {
   ghostBallCenter,
   idealAimDirection,
   isPathClear,
+  launchSpeedFor,
   objectSpeedAfterCut,
+  speedForStoppingDistance,
   stoppingDistance,
 } from '../../src/geometry/shot';
-import { type Vec2, add, angleOf, fromAngle, normalize, rotate, scale, sub, vec } from '../../src/geometry/vec2';
+import { createBall, simulateToRest } from '../../src/physics/world';
+import { type Vec2, add, angleOf, fromAngle, len, normalize, rotate, scale, sub, vec } from '../../src/geometry/vec2';
 
 const deg = (d: number) => (d * Math.PI) / 180;
 const toDeg = (r: number) => (r * 180) / Math.PI;
+
+/**
+ * Roll one ball up the middle of the table and read its speed off at
+ * `distance`. The lane is the long axis at y = 0, which passes between the
+ * corner pockets and clear of the side ones, so nothing interferes.
+ *
+ * Tick boundaries rarely land exactly on the distance asked for, so the two
+ * that straddle it are interpolated — at 1/240 s a tick is a few millimetres.
+ */
+function speedAfterTravelling(launch: number, distance: number, cloth: ClothPreset): number {
+  const start = vec(-TABLE.playLength / 2 + 0.1, 0);
+  let previous = { travelled: 0, speed: launch };
+  let answer: number | undefined;
+
+  simulateToRest([createBall(0, start, vec(launch, 0))], {
+    cloth,
+    onTick: (_time, balls) => {
+      if (answer !== undefined) return;
+      const ball = balls[0]!;
+      const travelled = ball.pos.x - start.x;
+      const speed = len(ball.vel);
+      if (travelled >= distance) {
+        const span = travelled - previous.travelled;
+        const t = span === 0 ? 0 : (distance - previous.travelled) / span;
+        answer = previous.speed + t * (speed - previous.speed);
+        return;
+      }
+      previous = { travelled, speed };
+    },
+  });
+
+  if (answer === undefined) throw new Error(`the ball stopped short of ${distance} m`);
+  return answer;
+}
 
 /**
  * Build a layout with an exactly known cut angle: the cue ball sits `cueDist`
@@ -184,6 +228,73 @@ describe('speed and roll-out', () => {
   test('a firm stroke can send an object ball the length of the table', () => {
     const speed = objectSpeedAfterCut(MAX_CUE_SPEED, 0);
     expect(stoppingDistance(speed)).toBeGreaterThan(TABLE.playLength);
+  });
+});
+
+describe('inverting the roll-out', () => {
+  test('speedForStoppingDistance round-trips stoppingDistance, on every cloth', () => {
+    for (const preset of CLOTH_PRESET_IDS) {
+      const friction = clothRollingFriction(preset);
+      for (const distance of [0.05, 0.3, 0.771, 1.4, 2.5]) {
+        const speed = speedForStoppingDistance(distance, friction);
+        expect(stoppingDistance(speed, friction)).toBeCloseTo(distance, 9);
+      }
+      for (const speed of [0.2, 0.5, 1, 2.5, 4.5]) {
+        expect(speedForStoppingDistance(stoppingDistance(speed, friction), friction)).toBeCloseTo(
+          speed,
+          9,
+        );
+      }
+    }
+  });
+
+  test('a ball that is asked to travel nowhere needs no speed', () => {
+    expect(speedForStoppingDistance(0)).toBe(0);
+    expect(speedForStoppingDistance(-1)).toBe(0);
+  });
+
+  test('launchSpeedFor with nothing left at the end is the stopping-distance inverse', () => {
+    for (const distance of [0.2, 0.8, 1.6]) {
+      expect(launchSpeedFor(0, distance)).toBeCloseTo(speedForStoppingDistance(distance), 9);
+    }
+  });
+
+  test('it takes the sliding branch while the ball is still sliding', () => {
+    // 0.1 m is far shorter than the slide phase of a 2 m/s launch, so the whole
+    // trip decelerates at mu_s*g and the closed form is the simple one.
+    const sliding = Math.sqrt(4 + 2 * SLIDING_FRICTION * GRAVITY * 0.1);
+    expect(launchSpeedFor(2, 0.1)).toBeCloseTo(sliding, 12);
+    // Over a metre the ball is long since rolling, and the sliding form would
+    // be a wild overestimate — so the branch is doing real work.
+    expect(launchSpeedFor(0.5, 1)).toBeLessThan(Math.sqrt(0.25 + 2 * SLIDING_FRICTION * GRAVITY));
+  });
+
+  test('the two branches agree where they meet', () => {
+    // At the end of the slide phase the ball is rolling at 5/7 of its launch.
+    const launch = 1.5;
+    const slidePhase = (12 * launch * launch) / (49 * SLIDING_FRICTION * GRAVITY);
+    expect(launchSpeedFor((5 * launch) / 7, slidePhase)).toBeCloseTo(launch, 9);
+  });
+
+  /**
+   * The algebra above is only worth anything if the simulation agrees with it,
+   * so fire the computed launch speed at a real ball and read the speed off the
+   * table at the requested distance. Both branches, on the slow cloth as well
+   * as the normal one.
+   */
+  test('the simulation arrives at the requested speed, within one percent', () => {
+    for (const preset of CLOTH_PRESET_IDS) {
+      for (const [arrival, distance] of [
+        [2, 0.1], // still sliding
+        [1.2, 0.25], // still sliding
+        [0.5, 1], // rolling
+        [0.35, 1.5], // rolling
+      ] as const) {
+        const launch = launchSpeedFor(arrival, distance, clothRollingFriction(preset));
+        const measured = speedAfterTravelling(launch, distance, preset);
+        expect(Math.abs(measured - arrival) / arrival).toBeLessThan(0.01);
+      }
+    }
   });
 });
 

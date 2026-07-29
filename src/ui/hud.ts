@@ -23,6 +23,11 @@ export interface HudLevelEntry {
 export interface HudState {
   readonly phase: ShotPhase;
   readonly power: number;
+  /** Launch speed the meter currently stands for, in m/s. */
+  readonly cueSpeed: number;
+  readonly speedBand: string;
+  /** Meter reading that would drop the ball in, or null when none will. */
+  readonly recommendedPower: number | null;
   readonly cutAngleDegrees: number;
   readonly cutSide: CutSide;
   readonly fullness: number;
@@ -65,6 +70,8 @@ export class Hud {
   readonly #shot: HTMLElement;
   readonly #levels: HTMLElement;
   readonly #powerFill: HTMLElement;
+  readonly #powerMarker: HTMLElement;
+  readonly #powerSpeed: HTMLElement;
   readonly #report: HTMLElement;
   readonly #notice: HTMLElement;
   readonly #history: HTMLElement;
@@ -78,6 +85,8 @@ export class Hud {
   #renderedShot = '';
   #renderedReport = '';
   #renderedHistory = '';
+  #renderedSpeed = '';
+  #renderedMarker = '';
   #reportShown = false;
 
   constructor(root: HTMLElement, actions: HudActions) {
@@ -98,8 +107,14 @@ export class Hud {
 
     const power = panel(root, 'hud-power', 'bottom:18px; left:50%; transform:translateX(-50%);');
     power.innerHTML =
-      '<div class="hud-label">Power</div><div class="hud-meter"><div class="hud-meter-fill"></div></div>';
+      '<div class="hud-label">Power</div>' +
+      '<div class="hud-meter"><div class="hud-meter-fill"></div>' +
+      '<div class="hud-meter-marker"></div></div>' +
+      '<div class="hud-sub hud-speed"></div>';
     this.#powerFill = power.querySelector('.hud-meter-fill') as HTMLElement;
+    this.#powerMarker = power.querySelector('.hud-meter-marker') as HTMLElement;
+    this.#powerSpeed = power.querySelector('.hud-speed') as HTMLElement;
+    this.#powerMarker.style.display = 'none';
 
     const help = panel(root, 'hud-help', 'bottom:18px; left:14px;');
     help.innerHTML =
@@ -129,7 +144,7 @@ export class Hud {
     this.#renderShot(state);
     this.#renderLevels(state);
     this.#renderHistory(state);
-    this.#powerFill.style.width = `${Math.round(state.power * 100)}%`;
+    this.#renderPower(state);
 
     if (state.outcome) {
       const html = renderReport(state.outcome, state.exam);
@@ -151,6 +166,31 @@ export class Hud {
       this.#notice.style.display = '';
       this.#notice.innerHTML = `<div class="hud-sub">${escape(state.notice)} &middot; click to dismiss</div>`;
     }
+  }
+
+  /**
+   * The meter, and what it means.
+   *
+   * The speed line is a speedometer, not an answer: it says what the stroke
+   * you are winding up actually is, in the units and the vocabulary a real
+   * table uses. The marker beside it *is* the answer, which is why it is a
+   * guide and this line is not.
+   */
+  #renderPower(state: HudState): void {
+    this.#powerFill.style.width = `${Math.round(state.power * 100)}%`;
+
+    const speed = `${state.cueSpeed.toFixed(2)} m/s &middot; ${escape(state.speedBand)}`;
+    if (speed !== this.#renderedSpeed) {
+      this.#renderedSpeed = speed;
+      this.#powerSpeed.innerHTML = speed;
+    }
+
+    const hint = state.guides.powerHint ? state.recommendedPower : null;
+    const marker = hint === null ? '' : `${(hint * 100).toFixed(1)}%`;
+    if (marker === this.#renderedMarker) return;
+    this.#renderedMarker = marker;
+    this.#powerMarker.style.display = marker === '' ? 'none' : '';
+    if (marker !== '') this.#powerMarker.style.left = marker;
   }
 
   #renderStatus(state: HudState): void {
