@@ -214,3 +214,46 @@ body {
   color: var(--bad);
   border-color: rgba(224, 108, 117, 0.5);
 }
+
+#hud-history {
+  min-width: 190px;
+  max-width: 240px;
+}
+
+.hud-tendency {
+  color: var(--ink);
+}
+
+.hud-tendency b {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.hud-shot-list {
+  margin-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 5px;
+}
+
+.hud-shot-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+}
+
+.hud-shot-row.good {
+  color: var(--ink);
+}
+
+.hud-shot-mark {
+  margin-right: auto;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  opacity: 0.85;
+}

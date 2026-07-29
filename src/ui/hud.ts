@@ -10,6 +10,7 @@
 import type { AimError, CutSide } from '../geometry/shot';
 import type { ExamRun } from '../game/campaign';
 import type { ShotOutcome, ShotPhase } from '../game/shot-session';
+import type { HistoryEntry, Tendency } from '../game/shot-history';
 import type { GuideVisibility } from '../game/tiers';
 
 export interface HudLevelEntry {
@@ -43,6 +44,11 @@ export interface HudState {
   readonly notice: string | undefined;
   readonly view: string;
   readonly outcome: ShotOutcome | undefined;
+  /** Most recent first. */
+  readonly history: readonly HistoryEntry[];
+  readonly cutTendency: Tendency | null;
+  readonly straightTendency: Tendency | null;
+  readonly timeScale: number;
 }
 
 export interface HudActions {
@@ -59,6 +65,7 @@ export class Hud {
   readonly #powerFill: HTMLElement;
   readonly #report: HTMLElement;
   readonly #notice: HTMLElement;
+  readonly #history: HTMLElement;
   readonly #actions: HudActions;
 
   // Last markup written to each panel. `update` runs every frame but the
@@ -68,6 +75,7 @@ export class Hud {
   #renderedStatus = '';
   #renderedShot = '';
   #renderedReport = '';
+  #renderedHistory = '';
   #reportShown = false;
 
   constructor(root: HTMLElement, actions: HudActions) {
@@ -83,6 +91,8 @@ export class Hud {
     this.#report.style.display = 'none';
     this.#notice = panel(root, 'hud-notice', 'top:14px; left:50%; transform:translateX(-50%);');
     this.#notice.style.display = 'none';
+    this.#history = panel(root, 'hud-history', 'top:150px; right:14px; text-align:right;');
+    this.#history.style.display = 'none';
 
     const power = panel(root, 'hud-power', 'bottom:18px; left:50%; transform:translateX(-50%);');
     power.innerHTML =
@@ -92,8 +102,9 @@ export class Hud {
     const help = panel(root, 'hud-help', 'bottom:18px; left:14px;');
     help.innerHTML =
       '<div class="hud-label">Controls</div>' +
-      '<div class="hud-keys">Move mouse to aim &middot; <b>&larr;/&rarr;</b> fine aim &middot; ' +
-      'hold <b>Space</b> for power<br><b>V</b> camera &middot; <b>R</b> retry &middot; ' +
+      '<div class="hud-keys"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
+      '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
+      '<b>V</b> camera &middot; <b>.</b> slow motion &middot; <b>R</b> retry &middot; ' +
       '<b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level</div>' +
       // Say plainly what this simulation is not, so nothing learned here comes
       // as a surprise on a real table.
@@ -115,6 +126,7 @@ export class Hud {
     this.#renderStatus(state);
     this.#renderShot(state);
     this.#renderLevels(state);
+    this.#renderHistory(state);
     this.#powerFill.style.width = `${Math.round(state.power * 100)}%`;
 
     if (state.outcome) {
@@ -150,12 +162,14 @@ export class Hud {
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
       : `${state.windowQualified}/${state.windowNeeded} toward the next tier &middot; within ${state.toleranceDegrees}&deg;`;
 
+    const speed = state.timeScale === 1 ? '' : ` &middot; ${formatSpeed(state.timeScale)}`;
+
     const html =
       `<div class="hud-label">${escape(state.levelName)}</div>` +
       `<div class="hud-big">${heading}</div>` +
       `<div class="hud-sub">${line}</div>` +
       `<div class="hud-sub">${state.qualified}/${state.attempts} on aim &middot; ` +
-      `${state.potted} potted &middot; ${escape(state.view)} view</div>`;
+      `${state.potted} potted &middot; ${escape(state.view)} view${speed}</div>`;
     if (html === this.#renderedStatus) return;
     this.#renderedStatus = html;
     this.#status.innerHTML = html;
@@ -191,6 +205,48 @@ export class Hud {
     this.#shot.innerHTML = html;
   }
 
+  /**
+   * Recent shots and the bias in them. The per-shot list is the record; the
+   * tendency line is the part you can act on — one shot being thick is noise,
+   * being thick every time is something to correct for.
+   */
+  #renderHistory(state: HudState): void {
+    if (state.history.length === 0) {
+      if (this.#renderedHistory !== '') {
+        this.#renderedHistory = '';
+        this.#history.style.display = 'none';
+      }
+      return;
+    }
+
+    const rows = state.history
+      .slice(0, 8)
+      .map((entry) => {
+        const label = !entry.contacted
+          ? 'no contact'
+          : entry.aimError.kind === 'on-line'
+            ? 'on the line'
+            : `${entry.aimError.degrees.toFixed(2)}&deg; ${entry.aimError.kind}`;
+        const mark = entry.pottedTarget ? 'potted' : entry.qualifying ? 'on aim' : '';
+        return (
+          `<div class="hud-shot-row${entry.qualifying ? ' good' : ''}">` +
+          `<span class="hud-shot-mark">${mark}</span>${label}</div>`
+        );
+      })
+      .join('');
+
+    const html =
+      '<div class="hud-label">Recent shots</div>' +
+      tendencyLine('Cuts', state.cutTendency) +
+      tendencyLine('Straight in', state.straightTendency) +
+      `<div class="hud-shot-list">${rows}</div>`;
+
+    if (html === this.#renderedHistory) return;
+    this.#renderedHistory = html;
+    this.#history.innerHTML = html;
+    this.#history.style.display = '';
+  }
+
   #renderLevels(state: HudState): void {
     const key = state.levels.map((l) => `${l.id}${l.current ? 'c' : ''}${l.completed ? 'x' : ''}`).join();
     if (key === this.#renderedLevels) return;
@@ -216,6 +272,15 @@ export class Hud {
       this.#actions.onReset();
     });
   }
+}
+
+function tendencyLine(label: string, tendency: Tendency | null): string {
+  if (!tendency) return '';
+  const body =
+    tendency.kind === 'even'
+      ? 'no consistent bias'
+      : `<b>${tendency.degrees.toFixed(2)}&deg; ${tendency.kind}</b> on average`;
+  return `<div class="hud-sub hud-tendency">${label}: ${body} <span class="hud-note">(${tendency.samples})</span></div>`;
 }
 
 function renderReport(outcome: ShotOutcome, exam: ExamRun | undefined): string {
@@ -254,6 +319,12 @@ function renderReport(outcome: ShotOutcome, exam: ExamRun | undefined): string {
     (notes.length ? `<div class="hud-sub hud-note">${notes.join(' &middot; ')}</div>` : '') +
     '<div class="hud-sub hud-note">R to retry this layout &middot; N for the next one</div>'
   );
+}
+
+function formatSpeed(timeScale: number): string {
+  if (timeScale === 0.5) return 'half speed';
+  if (timeScale === 0.25) return 'quarter speed';
+  return `${timeScale}x speed`;
 }
 
 function panel(root: HTMLElement, id: string, style: string): HTMLElement {

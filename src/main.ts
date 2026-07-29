@@ -8,10 +8,12 @@
 
 import { fullness as fullnessOf } from './geometry/shot';
 import { pocketById } from './geometry/table';
-import { type Vec2, add, angleOf, fromAngle, sub } from './geometry/vec2';
+import { add, angleOf, fromAngle } from './geometry/vec2';
 import { Campaign } from './game/campaign';
 import { attachInput } from './game/input';
 import { browserStorage, createProgressStore } from './game/progress-store';
+import { createSettingsStore, nextTimeScale } from './game/settings-store';
+import { ShotHistory } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
 import { ADVANCE_REQUIRED } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
@@ -38,12 +40,27 @@ const hud = new Hud(hudRoot, {
   onSelectLevel: (id: number) => selectLevel(id),
 });
 
+const settingsStore = createSettingsStore(browserStorage());
+const history = new ShotHistory();
+
 let session = newSession();
 let chargeSeconds = 0;
 let evaluations = 0;
 let notice = campaign.notice;
+let timeScale = settingsStore.load().timeScale;
 /** Fixed for the life of a layout, so there is no reason to re-derive it per frame. */
 let objectBallNumber = ballNumberFor(session.layout.id);
+
+/**
+ * Slow motion scales how much simulated time a rendered frame may consume. The
+ * 1/240 s tick is untouched, so half speed is the same shot watched for twice
+ * as long, not a different one.
+ */
+function cycleSpeed(): void {
+  timeScale = nextTimeScale(timeScale);
+  settingsStore.save({ timeScale });
+  notice = timeScale === 1 ? 'Full speed.' : `Slow motion: ${timeScale === 0.5 ? 'half' : 'quarter'} speed.`;
+}
 
 function newSession(): ShotSession {
   return new ShotSession(campaign.layout, { toleranceDegrees: campaign.toleranceDegrees });
@@ -71,12 +88,22 @@ function selectLevel(id: number): void {
   if (session.phase === 'simulating') return;
   if (!campaign.selectLevel(id)) return;
   notice = undefined;
+  // A tendency measured on straight-ins says nothing about thin cuts, so the
+  // calibration starts afresh with the level.
+  history.clear();
   startShot();
   canvas.focus();
 }
 
 function recordOutcome(outcome: ShotOutcome): void {
   evaluations++;
+  history.record({
+    aimError: outcome.aimError,
+    qualifying: outcome.qualifying,
+    pottedTarget: outcome.pottedTarget,
+    contacted: outcome.contacted,
+    cutAngleDegrees: (outcome.cutAngle * 180) / Math.PI,
+  });
   const event = campaign.record(outcome);
   if (event.examFinished) {
     const { potted, total, personalBest } = event.examFinished;
@@ -90,13 +117,7 @@ function recordOutcome(outcome: ShotOutcome): void {
   }
 }
 
-attachInput(canvas, scene, {
-  onAimAt(point: Vec2) {
-    const cue = session.cueBall.pos;
-    const delta = sub(point, cue);
-    if (Math.hypot(delta.x, delta.y) < 1e-4) return;
-    session.aimTo(angleOf(delta));
-  },
+attachInput(canvas, {
   onNudgeAim(delta: number) {
     session.nudgeAim(delta);
   },
@@ -117,6 +138,7 @@ attachInput(canvas, scene, {
   onRetry: retry,
   onNext: nextShot,
   onSelectLevel: selectLevel,
+  onCycleSpeed: cycleSpeed,
 });
 
 window.addEventListener('resize', () => scene.resize());
@@ -141,7 +163,7 @@ function frame(now: number): void {
     session.setPower(Math.min(1, chargeSeconds / CHARGE_SECONDS));
   }
 
-  session.advance(dt);
+  session.advance(dt * timeScale);
   if (session.phase === 'settled') {
     const outcome = session.evaluate();
     if (outcome) recordOutcome(outcome);
@@ -206,6 +228,10 @@ function frame(now: number): void {
     notice,
     view: scene.view,
     outcome: session.outcome,
+    history: history.entries,
+    cutTendency: history.cutTendency,
+    straightTendency: history.straightTendency,
+    timeScale,
   });
 
   const cost = performance.now() - startedAt;
@@ -232,6 +258,15 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     retry,
     next: nextShot,
     selectLevel,
+    cycleSpeed,
+    setSpeed: (scale: number) => {
+      while (timeScale !== scale) {
+        const before = timeScale;
+        cycleSpeed();
+        if (timeScale === before) break;
+      }
+      return timeScale;
+    },
     resetProgress: () => {
       campaign.resetProgress();
       startShot();
@@ -249,6 +284,11 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     },
     state: () => ({
       phase: session.phase,
+      aimAngle: session.aimAngle,
+      timeScale,
+      cutTendency: history.cutTendency,
+      straightTendency: history.straightTendency,
+      historyLength: history.entries.length,
       shotId: session.layout.id,
       levelId: campaign.level.id,
       tier: campaign.tier,

@@ -14,11 +14,8 @@ import {
   Mesh,
   MeshStandardMaterial,
   PerspectiveCamera,
-  Plane,
-  Raycaster,
   Scene,
   SphereGeometry,
-  Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -26,7 +23,7 @@ import { BALL_RADIUS } from '../geometry/table';
 import { type Vec2, lerp as lerpVec, vec } from '../geometry/vec2';
 import type { Ball } from '../physics/world';
 import { CUE_BALL_NUMBER, ballTexture, companionBallNumber } from './ball-textures';
-import { fromWorld, headingToRotationY, writeHeading, writeWorld } from './coords';
+import { headingToRotationY, writeHeading, writeWorld } from './coords';
 import { Guides } from './guides';
 import { buildTable } from './table-mesh';
 
@@ -74,10 +71,6 @@ export class PoolScene {
   readonly #canvas: HTMLCanvasElement;
   readonly #ballMeshes = new Map<number, Mesh>();
   readonly #cue: Group;
-  readonly #raycaster = new Raycaster();
-  readonly #clothPlane = new Plane(new Vector3(0, 1, 0), 0);
-  readonly #pointer = new Vector2();
-  readonly #hit = new Vector3();
   readonly #ballNumbers = new Map<number, number>();
   readonly #cameraTarget = new Vector3();
   readonly #desiredPosition = new Vector3();
@@ -144,19 +137,6 @@ export class PoolScene {
     this.#renderer.setSize(width, height, false);
     this.#camera.aspect = width / height;
     this.#camera.updateProjectionMatrix();
-  }
-
-  /** Where a screen point lands on the cloth, or undefined if it misses the plane. */
-  pointerToTable(clientX: number, clientY: number): Vec2 | undefined {
-    const rect = this.#canvas.getBoundingClientRect();
-    this.#pointer.set(
-      ((clientX - rect.left) / rect.width) * 2 - 1,
-      -((clientY - rect.top) / rect.height) * 2 + 1,
-    );
-    this.#raycaster.setFromCamera(this.#pointer, this.#camera);
-    const hit = this.#raycaster.ray.intersectPlane(this.#clothPlane, this.#hit);
-    if (!hit) return undefined;
-    return fromWorld(hit.x, hit.z);
   }
 
   render(state: RenderState): void {

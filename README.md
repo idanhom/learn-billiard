@@ -22,13 +22,33 @@ npm run preview    # http://127.0.0.1:4173
 
 | | |
 |---|---|
-| Move the mouse | aim |
-| `←` / `→` | fine aim (hold `Shift` for coarse) |
+| drag with the left button | aim (hold `Shift` to fine-tune) |
+| `←` / `→` | nudge the aim (hold `Shift` for coarse) |
 | hold `Space` | charge power, release to strike |
 | `V` | switch between behind-the-cue and overhead |
+| `.` | cycle full / half / quarter speed |
 | `R` | retry the same layout |
 | `N` | next shot |
 | `1`–`7` | jump to a level |
+
+Aiming is by drag rather than by pointing at the cloth. Pointing reads well on
+paper, but behind the cue the camera sits low and close to the table, so a few
+pixels near the horizon sweep an enormous angle. A drag maps a fixed number of
+pixels to a fixed number of degrees no matter where the camera is. The rate is
+`AIM_DEGREES_PER_PIXEL` in `src/game/input.ts` — one constant, currently 0.08°,
+about 8° per 100px.
+
+## Slow motion
+
+The simulation runs on a fixed 1/240 s tick, and wall-clock time only decides
+*how many ticks a rendered frame is allowed to run*. So `.` changes how long you
+watch a shot for, not what the shot does — quarter speed replays identical
+physics, collision for collision. The browser verification asserts exactly this:
+the same shot at 1x and 0.25x differs in wall-clock by 4.7x and in simulated
+duration by nothing at all.
+
+The setting is remembered between sessions, stored separately from your
+progress so a bad preference can never cost you a level.
 
 ## How it scores you
 
@@ -48,6 +68,22 @@ Three qualifying shots out of the last five take away one layer of guides:
 A bad run never sends you backwards. Clearing tier 3 completes the level.
 
 Level 7 is the exam: no guides, no tiers, ten shots, scored on pots.
+
+## Calibrating yourself
+
+After every shot the report tells you how you missed — `1.24° thick`, or
+`left`/`right` on a straight-in, where thick and thin have no meaning.
+
+More useful is the **Recent shots** panel: the last twelve shots and, above
+them, the average. One shot being thick is noise; *consistently* hitting cuts
+0.9° thick is a bias you can carry to a real table and correct for. Cuts and
+straight-ins are averaged separately — a left bias on straight shots has nothing
+to do with a thick bias on cuts, and folding them together would cancel a real
+tendency against an unrelated one. Shots that miss the object ball entirely are
+excluded; they say nothing about how thick you are hitting them.
+
+The history clears when you change level, since a tendency measured on
+straight-ins tells you nothing about thin cuts.
 
 ## The physics is idealised
 

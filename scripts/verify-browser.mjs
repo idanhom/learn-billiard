@@ -248,6 +248,106 @@ check(
   `ratio ${pixelRatio} at a device scale factor of 3`,
 );
 
+// Aiming is by drag: moving the mouse with no button held must not move the cue.
+await page.evaluate(() => window.__debug.selectLevel(3));
+await sleep(400);
+const box = await page.locator('#game').boundingBox();
+const midX = box.x + box.width / 2;
+const midY = box.y + box.height / 2;
+
+const beforeHover = (await state()).aimAngle;
+await page.mouse.move(midX - 150, midY);
+await page.mouse.move(midX + 150, midY);
+await sleep(150);
+check('hovering does not move the aim', (await state()).aimAngle === beforeHover);
+
+const beforeDrag = (await state()).aimAngle;
+await page.mouse.move(midX, midY);
+await page.mouse.down();
+await page.mouse.move(midX + 100, midY, { steps: 10 });
+await page.mouse.up();
+await sleep(150);
+const afterDrag = (await state()).aimAngle;
+const draggedDegrees = ((afterDrag - beforeDrag) * 180) / Math.PI;
+// 100px right at 0.08 deg/px, clockwise (negative in a CCW-positive frame).
+check('dragging right swings the aim clockwise', draggedDegrees < 0, `${draggedDegrees.toFixed(2)} deg`);
+check(
+  'the drag rate is the configured degrees per pixel',
+  Math.abs(draggedDegrees + 8) < 0.5,
+  `${draggedDegrees.toFixed(2)} deg for 100px`,
+);
+
+// Slow motion: the same shot, watched for longer, with identical dynamics.
+async function timedShot(scale) {
+  await page.evaluate((s) => {
+    window.__debug.retry();
+    window.__debug.setSpeed(s);
+    window.__debug.aimIdeal();
+    window.__debug.fire(0.6);
+  }, scale);
+  const startedAt = Date.now();
+  await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, {
+    timeout: 60000,
+  });
+  const wall = Date.now() - startedAt;
+  const outcome = (await state()).outcome;
+  return { wall, outcome };
+}
+
+await page.evaluate(() => window.__debug.selectLevel(2));
+await sleep(300);
+const fullSpeed = await timedShot(1);
+const quarterSpeed = await timedShot(0.25);
+
+check(
+  'quarter speed really does take longer to play out',
+  quarterSpeed.wall > fullSpeed.wall * 2,
+  `${fullSpeed.wall}ms at 1x vs ${quarterSpeed.wall}ms at 0.25x`,
+);
+check(
+  'slowing it down does not change the physics',
+  quarterSpeed.outcome.pottedTarget === fullSpeed.outcome.pottedTarget &&
+    Math.abs(quarterSpeed.outcome.duration - fullSpeed.outcome.duration) < 1e-9,
+  `sim duration ${fullSpeed.outcome.duration}s both times`,
+);
+
+const speedPersisted = await page.evaluate(() => window.__debug.state().timeScale);
+check('the speed setting is live', speedPersisted === 0.25, String(speedPersisted));
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+check('the speed setting survives a reload', (await state()).timeScale === 0.25);
+await page.evaluate(() => window.__debug.setSpeed(1));
+
+// Shot history and the calibration tendency.
+await page.evaluate(() => window.__debug.selectLevel(3));
+await sleep(300);
+check('changing level clears the calibration history', (await state()).historyLength === 0);
+
+for (const offsetDegrees of [1.2, 1.6, 1.0]) {
+  await page.evaluate((d) => {
+    window.__debug.retry();
+    window.__debug.aimIdeal();
+    window.__debug.aimAt(window.__debug.state().aimAngle + (d * Math.PI) / 180);
+    window.__debug.fire(0.55);
+  }, offsetDegrees);
+  await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, {
+    timeout: 60000,
+  });
+}
+const calibrated = await state();
+check('the history records each shot', calibrated.historyLength === 3, `n=${calibrated.historyLength}`);
+check(
+  'a consistent bias is reported as a tendency',
+  calibrated.cutTendency?.kind === 'thick' || calibrated.cutTendency?.kind === 'thin',
+  JSON.stringify(calibrated.cutTendency),
+);
+check(
+  'the tendency averages the deviation',
+  Math.abs((calibrated.cutTendency?.degrees ?? 0) - 1.267) < 0.05,
+  `${calibrated.cutTendency?.degrees?.toFixed(3)} deg`,
+);
+await page.screenshot({ path: `${OUT}calibration-history.png` });
+
 // A clean aiming shot of a half-ball cut, guides up, numbered object ball.
 // From a fresh load, so no stale notice or report is left on screen.
 await page.evaluate(() => window.localStorage.clear());
