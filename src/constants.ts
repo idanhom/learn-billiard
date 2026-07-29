@@ -3,13 +3,15 @@
  *
  * Most of these are published typical values for cloth and phenolic-resin
  * balls, not measurements of a specific table. `ROLLING_FRICTION` is the
- * exception and says so at length: it sits two and a half times above the
- * published band, on purpose. The model is deliberately IDEAL: no english,
- * no ball-to-ball throw, and no cushion-induced sidespin. Cushions DO couple
- * top and bottom spin, because contact above the ball's centre is what makes a
- * rail behave like a rail. The app says what is and is not modelled on screen,
- * because a trainer that teaches geometry the sim then contradicts would be
- * worse than useless.
+ * exception and says so at length: it sits at 0.022, over twice the published
+ * band, on purpose — and `TERMINAL_ROLL_SPEED` / `TERMINAL_ROLL_BOOST` have no
+ * published value behind them at all. The model is deliberately IDEAL: no
+ * english, no ball-to-ball throw, and no cushion-induced sidespin. Two things
+ * DO couple top and bottom spin, because both are what make the shot behave
+ * the way a player expects: cushions, since contact above the ball's centre
+ * torques it, and ball-to-ball contacts, since the two faces mesh like gear
+ * teeth. The app says what is and is not modelled on screen, because a trainer
+ * that teaches geometry the sim then contradicts would be worse than useless.
  */
 
 export const GRAVITY = 9.81;

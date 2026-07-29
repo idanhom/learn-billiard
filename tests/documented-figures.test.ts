@@ -14,6 +14,8 @@ import {
   MIN_CUE_SPEED,
   POWER_CURVE_EXPONENT,
   ROLLING_FRICTION,
+  TERMINAL_ROLL_BOOST,
+  TERMINAL_ROLL_SPEED,
   clothRollingFriction,
 } from '../src/constants';
 import { cueSpeedForPower, recommendedPower } from '../src/game/power';
@@ -58,6 +60,24 @@ describe('the cloth timings quoted for each preset', () => {
     const here = terminalDrift(0.2, ROLLING_FRICTION);
     expect(here.seconds).toBeCloseTo(0.65, 2);
     expect(here.metres).toBeCloseTo(0.076, 3);
+  });
+});
+
+/**
+ * The two numbers with no published value behind them at all. `README.md` and
+ * `src/constants.ts` both quote them outright, so they are claims like any
+ * other and belong here.
+ *
+ * `tests/physics/world.test.ts` pins the knee's BEHAVIOUR, but symbolically —
+ * against whatever the constants happen to say. That is the right shape for a
+ * behaviour test and the wrong shape for a quoted figure: move the knee to
+ * 0.15 and every one of those still passes while the prose goes stale, which
+ * is the failure this file exists to prevent.
+ */
+describe('the terminal knee, which is quoted but not published', () => {
+  test('sits at 0.12 m/s, and doubles the resistance below it', () => {
+    expect(TERMINAL_ROLL_SPEED).toBe(0.12);
+    expect(TERMINAL_ROLL_BOOST).toBe(2);
   });
 });
 
@@ -130,7 +150,10 @@ describe('the power meter', () => {
       const stroke = cueSpeedForPower(recommendedPower(typical, rollingFriction)!);
       return Math.log(linearMeter(stroke)) / Math.log(0.4);
     };
-    expect(exponentFor(ROLLING_FRICTION)).toBeCloseTo(POWER_CURVE_EXPONENT, 1);
+    // To two decimals, because the sentence quotes two. At precision 1 this
+    // tolerates 1.65-1.75 and the constant could drift out from under the prose
+    // without failing, which is the one thing this file exists to stop.
+    expect(exponentFor(ROLLING_FRICTION)).toBeCloseTo(POWER_CURVE_EXPONENT, 2);
     expect(exponentFor(0.01)).toBeCloseTo(2.251, 3);
   });
 });

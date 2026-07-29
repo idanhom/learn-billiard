@@ -200,7 +200,14 @@ export function objectRollFraction(cut: number): number {
  * after a square hit. The slip closes at (7/2)*mu_s*g whichever way it points,
  * so one pair of formulae covers all three cases: the ball leaves the slide at
  * v*(2.5 + k)/3.5, the familiar 5v/7 at k = 0, and covers
- * v^2*|1 - k|*(6 + k) / (24.5*mu_s*g) getting there.
+ * v^2*|1 - k|*(6 + k) / (24.5*mu_s*g) getting there. `distance` is a signed
+ * displacement along the launch direction, not a path length: at k < -6 the
+ * draw is heavy enough that the ball is already behind its launch point when
+ * the slip closes, and the formula says so.
+ *
+ * Below k = -2.5 the exit speed is negative — the ball comes out of the slide
+ * travelling BACKWARDS — and everything downstream has to keep that sign.
+ * `rollPhaseDistance` does; `speedForStoppingDistance` cannot, and refuses.
  */
 function slidePhase(
   speed: number,
@@ -222,12 +229,23 @@ function slidePhase(
  * ball dies rather than trailing off. Above the knee this is the plain
  * quadratic MINUS a fixed offset — the distance the doubled resistance saves —
  * which is what keeps the inverse a single square root.
+ *
+ * Signed, because `speed` is: a ball that came out of its slide reversed (heavy
+ * draw, `rollFraction` below -2.5) rolls on BACKWARDS, and dropping that at
+ * zero would leave `stoppingDistance` reporting a ball ending up in front of
+ * where it actually finishes.
  */
-function rollPhaseDistance(speed: number, rollingFriction: number): number {
-  if (speed <= 0) return 0;
+export function rollPhaseDistance(speed: number, rollingFriction: number): number {
+  if (speed === 0) return 0;
   const decel = rollingFriction * GRAVITY;
-  if (speed <= TERMINAL_ROLL_SPEED) return (speed * speed) / (2 * TERMINAL_ROLL_BOOST * decel);
-  return (speed * speed) / (2 * decel) - terminalOffset(rollingFriction);
+  if (decel <= 0) return speed > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+
+  const magnitude = Math.abs(speed);
+  const distance =
+    magnitude <= TERMINAL_ROLL_SPEED
+      ? (magnitude * magnitude) / (2 * TERMINAL_ROLL_BOOST * decel)
+      : (magnitude * magnitude) / (2 * decel) - terminalOffset(rollingFriction);
+  return speed > 0 ? distance : -distance;
 }
 
 /** What the knee takes off every roll-out that reaches it: K^2/(2*mu_r*g)*(1 - 1/B). */
@@ -240,7 +258,7 @@ function terminalOffset(rollingFriction: number): number {
 
 /** Launch speed at which a ball leaves its slide exactly at the knee. */
 function kneeLaunchSpeed(rollFraction: number): number {
-  return (3.5 * TERMINAL_ROLL_SPEED) / Math.max(1e-9, 2.5 + rollFraction);
+  return (3.5 * TERMINAL_ROLL_SPEED) / (2.5 + rollFraction);
 }
 
 /**
@@ -268,6 +286,12 @@ export function stoppingDistance(
  * back OUT of `stoppingDistance` at a speed known to be on the branch in
  * question — rather than restating the algebra here — is what keeps the two
  * functions exact inverses if either ever changes.
+ *
+ * NaN at `rollFraction` at or below -2.5, where `stoppingDistance` stops being
+ * monotonic in launch speed — the ball comes out of the slide backwards, so a
+ * harder stroke ends up SHORTER and there is no single inverse to return. That
+ * is well outside the -0.15 a contact produces, and it is stated rather than
+ * clamped because a clamp here returned 2.2e9 m/s and looked like an answer.
  */
 export function speedForStoppingDistance(
   distance: number,
@@ -275,6 +299,10 @@ export function speedForStoppingDistance(
   rollFraction = 0,
 ): number {
   if (distance <= 0) return 0;
+  if (rollFraction <= -2.5) return Number.NaN;
+  // No rolling resistance: a ball rolls for ever, so any distance is reached by
+  // an arbitrarily gentle stroke.
+  if (rollingFriction <= 0) return 0;
 
   const knee = kneeLaunchSpeed(rollFraction);
   const offset = terminalOffset(rollingFriction);
@@ -329,10 +357,17 @@ export function launchSpeedFor(
 /**
  * Can any legal stroke drive the object ball to the pocket at this cut?
  *
- * Takes the backspin the contact leaves on the object ball. Ignoring it
- * overstates the ball's reach by about 9% on a full hit, and overstating is the
- * unsafe direction — it declares feasible a layout that is not, which is the
- * one thing `POWER_MARGIN` exists to prevent.
+ * Takes the backspin the contact leaves on the object ball, which costs about
+ * 9% of its reach on a full hit and 4% at 60 degrees.
+ *
+ * The backspin it takes is the one a ROLLING cue ball gears on, and at
+ * `MAX_CUE_SPEED` the cue ball is not rolling: 4.5 m/s slides 2.53 m before the
+ * slip closes, and the table is 1.98 m long. So this is deliberately the
+ * pessimistic end — the real contact at full power transfers less backspin than
+ * this assumes, and the ball reaches slightly further than the check allows.
+ * Erring the other way would declare feasible a layout that is not, which is
+ * the one thing `POWER_MARGIN` exists to prevent. Closing the gap honestly
+ * needs the cue-ball run-up, which this signature does not take.
  */
 export function isPowerFeasible(
   cut: number,

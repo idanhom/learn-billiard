@@ -9,20 +9,13 @@ import {
   resolveBallPair,
   resolveCushion,
 } from '../../src/physics/collision';
+import { lcg } from '../support/random';
 
 const D = 2 * BALL_RADIUS;
 
 /** A ball with no spin of its own. */
 const STILL = vec(0, 0);
 
-/** Deterministic pseudo-random source so the invariant sweeps are reproducible. */
-function lcg(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
 const toDeg = (r: number) => (r * 180) / Math.PI;
 
 describe('ball-ball time of impact', () => {

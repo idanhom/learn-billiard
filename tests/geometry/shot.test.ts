@@ -22,6 +22,7 @@ import {
   launchSpeedFor,
   objectRollFraction,
   objectSpeedAfterCut,
+  rollPhaseDistance,
   speedForStoppingDistance,
   stoppingDistance,
 } from '../../src/geometry/shot';
@@ -269,6 +270,40 @@ describe('speed and roll-out', () => {
   test('a firm stroke can send an object ball the length of the table', () => {
     const speed = objectSpeedAfterCut(MAX_CUE_SPEED, 0);
     expect(stoppingDistance(speed)).toBeGreaterThan(TABLE.playLength);
+  });
+
+  /**
+   * Draw heavy enough to reverse the ball, which no contact in this app
+   * produces — the object ball leaves at -0.15 — but which the signature
+   * accepts, so it has to mean something rather than quietly mean the wrong
+   * thing. Below k = -2.5 the ball comes out of its slide travelling BACKWARDS
+   * and rolls on that way, so the answer is a signed displacement and it can go
+   * negative. Dropping the backward roll at zero would have reported this ball
+   * 20 cm in FRONT of where it finishes.
+   */
+  test('a ball drawn back past its own launch point reports a negative displacement', () => {
+    const forward = stoppingDistance(1, ROLLING_FRICTION, -4);
+    expect(forward).toBeLessThan(0);
+    expect(stoppingDistance(1, ROLLING_FRICTION, -1)).toBeGreaterThan(0);
+
+    // The slide carries it +0.208 m; leaving at -0.4286 m/s it rolls 0.409 back.
+    expect(forward).toBeCloseTo(0.208034 + rollPhaseDistance(-(1 * 1.5) / 3.5, ROLLING_FRICTION), 6);
+  });
+
+  test('and a ball with no cloth under it never stops', () => {
+    expect(stoppingDistance(1, 0)).toBe(Number.POSITIVE_INFINITY);
+    expect(speedForStoppingDistance(1, 0)).toBe(0);
+  });
+
+  /**
+   * Below the reversal there is no inverse to return: a harder stroke lands
+   * SHORTER, so the same distance has two launch speeds. Refusing beats the
+   * clamp that used to sit in `kneeLaunchSpeed`, which answered 2.2e9 m/s.
+   */
+  test('and the inverse refuses the reversed branch rather than guessing', () => {
+    expect(speedForStoppingDistance(0.2, ROLLING_FRICTION, -3)).toBeNaN();
+    expect(speedForStoppingDistance(0.2, ROLLING_FRICTION, -7)).toBeNaN();
+    expect(speedForStoppingDistance(0.2, ROLLING_FRICTION, -2.4)).toBeGreaterThan(0);
   });
 });
 

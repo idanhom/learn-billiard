@@ -193,8 +193,10 @@ three presets come out at 4.7 s, 4.0 s and 3.4 s for a table length.
 Whether it has gone too far the other way is open — nobody has timed it against
 a real table. **Do that.** Roll a ball the length of your table so it just dies
 at the far cushion, and time it: about 5.8 s means the published value is right
-and this is wrong, about 4 s means this is. Every figure in these two paragraphs
-is held to the code by `tests/documented-figures.test.ts`.
+and this is wrong, about 4 s means this is. Every figure above is held to the
+code by `tests/documented-figures.test.ts`, the knee's own two numbers
+included. That the simulation actually behaves that way — rather than merely
+being configured to — is `tests/physics/world.test.ts`'s job.
 
 After a rolling cue ball hits an object ball square, the object should travel
 6.5–8x farther than the cue ball. It now does, across the shots the curriculum

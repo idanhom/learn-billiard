@@ -19,7 +19,7 @@ import {
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
 } from '../../src/constants';
-import { speedForStoppingDistance } from '../../src/geometry/shot';
+import { rollPhaseDistance, speedForStoppingDistance } from '../../src/geometry/shot';
 
 /** Seconds for a ball already rolling at `speed` to come to a stop. */
 export function rollSeconds(speed: number, rollingFriction: number): number {
@@ -35,16 +35,18 @@ export function rollOutSeconds(distance: number, rollingFriction: number): numbe
   return slide + rollSeconds((5 * launch) / 7, rollingFriction);
 }
 
-/** How long the last `speed` of a rolling ball lasts, and how far it drifts. */
+/**
+ * How long the last `speed` of a rolling ball lasts, and how far it drifts.
+ *
+ * The distance is `src/geometry/shot.ts`'s own roll phase, not a second copy of
+ * it — only the *time* is missing from `src`, and only the time is derived here.
+ */
 export function terminalDrift(
   speed: number,
   rollingFriction: number,
 ): { seconds: number; metres: number } {
-  const decel = rollingFriction * GRAVITY;
-  const metres =
-    speed <= TERMINAL_ROLL_SPEED
-      ? (speed * speed) / (2 * TERMINAL_ROLL_BOOST * decel)
-      : (speed * speed) / (2 * decel) -
-        (TERMINAL_ROLL_SPEED * TERMINAL_ROLL_SPEED * (1 - 1 / TERMINAL_ROLL_BOOST)) / (2 * decel);
-  return { seconds: rollSeconds(speed, rollingFriction), metres };
+  return {
+    seconds: rollSeconds(speed, rollingFriction),
+    metres: rollPhaseDistance(speed, rollingFriction),
+  };
 }

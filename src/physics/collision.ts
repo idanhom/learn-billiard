@@ -19,9 +19,6 @@ import { type Vec2, add, dot, normalize, scale, sub, vec } from '../geometry/vec
 /** Guards against re-detecting a contact that was just resolved. */
 const TOUCHING_EPSILON = 1e-9;
 
-/** Below this the surfaces are not sliding across each other at all. */
-const SLIP_EPSILON = 1e-12;
-
 /**
  * Smallest root of |d + t*dv| = radius, restricted to [0, maxTime] and to
  * closing contacts. Shared by ball-ball, cushion nose and pocket queries.
@@ -194,10 +191,12 @@ export function resolveBallPair(
   const slip = Math.hypot(vertical, horizontal);
 
   // A dead-straight stun contact — no roll on either ball, no cut — slips
-  // nowhere. Unguarded the share below is 0*(0/0), which is NaN, and it would
-  // poison both rolls from there on.
+  // nowhere, and the share below would be 0*(0/0): NaN, poisoning both rolls
+  // from there on. Guarding on `vertical` rather than on `slip` is exact rather
+  // than approximate — it is the only way `slip` can be zero, and where it is
+  // zero on its own the share is zero anyway.
   let torque = vec(0, 0);
-  if (slip > SLIP_EPSILON) {
+  if (vertical !== 0) {
     const share = (BALL_CONTACT_FRICTION * exchange * Math.abs(vertical)) / slip;
     const applied = Math.sign(vertical) * Math.min(share, Math.abs(vertical) / 5);
     torque = scale(n, 2.5 * applied);

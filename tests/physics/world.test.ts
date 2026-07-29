@@ -10,10 +10,11 @@ import {
   clothRollingFriction,
 } from '../../src/constants';
 import { angleBetween, spinBy } from '../../src/geometry/quat';
-import { stoppingDistance } from '../../src/geometry/shot';
+import { rollPhaseDistance, stoppingDistance } from '../../src/geometry/shot';
 import { BALL_RADIUS, TABLE, isInLegalBounds, pocketById } from '../../src/geometry/table';
 import { type Vec2, add, dist, fromAngle, len, scale, sub, vec } from '../../src/geometry/vec2';
 import { resolveCushion } from '../../src/physics/collision';
+import { lcg } from '../support/random';
 import {
   TICK,
   type Ball,
@@ -63,7 +64,16 @@ function squareHitRatio(arrival: number): {
   );
 
   const result = simulateToRest(atImpact, { maxDuration: 40 });
-  const ranOut = result.events.some((e) => e.type === 'cushion' || e.type === 'pocket');
+  const ranOutOf = (id: number): boolean =>
+    result.events.some((e) => e.type !== 'ball-ball' && e.ball === id);
+
+  // Only the OBJECT ball is allowed to reach the end of the table. If the cue
+  // ball does, its own travel is measured across a rebound and the ratio is
+  // meaningless — and the object ball's cross-check below would have been
+  // switched off by the same flag that hid it.
+  expect(ranOutOf(0), 'the cue ball reached a cushion; its travel is not measurable').toBe(false);
+  const ranOut = ranOutOf(1);
+
   const cueTravel = result.balls[0]!.pos.x - atImpact[0]!.pos.x;
   const simulated = result.balls[1]!.pos.x - atImpact[1]!.pos.x;
 
@@ -77,15 +87,6 @@ function squareHitRatio(arrival: number): {
 
   const objectTravel = ranOut ? analytic : simulated;
   return { impact: before[0]!.vel.x, cueTravel, objectTravel, ratio: objectTravel / cueTravel };
-}
-
-/** Deterministic pseudo-random source so property sweeps are reproducible. */
-function lcg(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
 }
 
 function stepUntil(
@@ -565,15 +566,6 @@ describe('which way a ball is facing', () => {
 });
 
 /**
- * Constructed fixtures. No shot in the app produces either state — a ball-ball
- * impulse leaves `roll` untouched and same-signed with `vel`, a square rail
- * leaves vel = -0.654v against roll = -0.117v, which is a skid rather than a
- * reversal, and `release()` always launches at roll = 0. A sweep of 3780
- * generated shots over every cloth and power finds not one difference across
- * this change. It is a latent defect and a prerequisite for tip offset, fixed
- * on its own terms.
- */
-/**
  * The unpublished half of this cloth model. See the constants: there is no
  * measured value behind either number, only a judgement about how a ball ought
  * to stop, so what these tests pin is that the code does what the comment says
@@ -619,15 +611,28 @@ describe('the terminal roll knee', () => {
     expect(Math.abs(travelled - predicted) / predicted).toBeLessThan(0.02);
 
     // And the knee is doing real work — without the boost the same launch would
-    // coast about half as far again.
-    const unboosted =
-      predicted +
-      (TERMINAL_ROLL_SPEED * TERMINAL_ROLL_SPEED * (1 - 1 / TERMINAL_ROLL_BOOST)) /
-        (2 * clothRollingFriction('normal') * GRAVITY);
-    expect(unboosted / travelled).toBeGreaterThan(1.4);
+    // coast about half as far again. The offset the boost saves is whatever
+    // `rollPhaseDistance` takes off a roll-out that reaches the knee, read back
+    // out of it rather than restated here.
+    const mu = clothRollingFriction('normal');
+    const savedByTheKnee =
+      (TERMINAL_ROLL_SPEED * TERMINAL_ROLL_SPEED) / (2 * mu * GRAVITY) -
+      rollPhaseDistance(TERMINAL_ROLL_SPEED, mu);
+    expect((predicted + savedByTheKnee) / travelled).toBeGreaterThan(1.4);
   });
 });
 
+/**
+ * Constructed fixtures. No shot in the app produces either state — a rail
+ * leaves vel = -0.654v against roll = -0.117v, which is a skid rather than a
+ * reversal; `release()` always launches at roll = 0; and a ball-ball impulse
+ * does now torque both rolls, but only along the line of centres and only by
+ * 2.5*mu, so the object ball leaves at roll = -0.15*vel — opposed to its
+ * travel, and nowhere near the 40x reversal below. A sweep of 3780 generated
+ * shots over every cloth and power finds not one difference across this change.
+ * It is a latent defect and a prerequisite for tip offset, fixed on its own
+ * terms.
+ */
 describe('a ball that is stationary but still spinning', () => {
   test('is carried back the way its spin points, not frozen where it stands', () => {
     const start = createBall(0, vec(0, 0), vec(0.025, 0), vec(-1, 0));
