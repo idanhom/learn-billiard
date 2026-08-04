@@ -7,14 +7,17 @@
  * and `README.md` invites the reader to check that against a real table with a
  * stopwatch. So the formula lives here rather than in `src`.
  *
- * It lives in ONE place because it is piecewise: `TERMINAL_ROLL_SPEED` splits
- * the roll phase in two, and three test files quietly copying the single-rate
- * version would each go stale on their own schedule — exactly the failure
- * `CLAUDE.md` warns about for coupled calibration.
+ * It lives in ONE place because it is piecewise: `ROLL_FAST_SPEED` and
+ * `TERMINAL_ROLL_SPEED` split the roll phase in three, and three test files
+ * quietly copying the single-rate version would each go stale on their own
+ * schedule — exactly the failure `CLAUDE.md` warns about for coupled
+ * calibration.
  */
 
 import {
   GRAVITY,
+  ROLL_FAST_BOOST,
+  ROLL_FAST_SPEED,
   SLIDING_FRICTION,
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
@@ -24,8 +27,17 @@ import { rollPhaseDistance, speedForStoppingDistance } from '../../src/geometry/
 /** Seconds for a ball already rolling at `speed` to come to a stop. */
 export function rollSeconds(speed: number, rollingFriction: number): number {
   const decel = rollingFriction * GRAVITY;
-  if (speed <= TERMINAL_ROLL_SPEED) return speed / (TERMINAL_ROLL_BOOST * decel);
-  return (speed - TERMINAL_ROLL_SPEED) / decel + TERMINAL_ROLL_SPEED / (TERMINAL_ROLL_BOOST * decel);
+  let seconds = 0;
+  let left = speed;
+  if (left > ROLL_FAST_SPEED) {
+    seconds += (left - ROLL_FAST_SPEED) / (ROLL_FAST_BOOST * decel);
+    left = ROLL_FAST_SPEED;
+  }
+  if (left > TERMINAL_ROLL_SPEED) {
+    seconds += (left - TERMINAL_ROLL_SPEED) / decel;
+    left = TERMINAL_ROLL_SPEED;
+  }
+  return seconds + left / (TERMINAL_ROLL_BOOST * decel);
 }
 
 /** Seconds for a struck ball to cover `distance` and die exactly at the end. */

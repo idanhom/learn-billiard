@@ -20,8 +20,8 @@ export const GRAVITY = 9.81;
 export const SLIDING_FRICTION = 0.2;
 
 /**
- * Rolling resistance above the terminal knee, once the contact point has
- * stopped slipping.
+ * Rolling resistance between the terminal knee and the fast step, once the
+ * contact point has stopped slipping.
  *
  * A deliberate departure from the literature, and worth naming as one rather
  * than dressing up. The usual quoted range is 0.005-0.015, and Alciatore's
@@ -35,7 +35,8 @@ export const SLIDING_FRICTION = 0.2;
  * from 0.025 when the knee arrived, because the knee now does part of that job.
  *
  * What the departure buys, on this 7-foot table: a table length in 4.0 s
- * instead of 5.8, down and back in 5.7 s instead of 8.4, and a ball that spends
+ * instead of 5.8, down and back in 5.2 s instead of 8.4 (the fast step owns
+ * half a second of that — it was 5.7 before the step), and a ball that spends
  * its last 0.2 m/s dying over 0.65 s and 7.6 cm instead of 1.4 s and 17 cm.
  * That terminal crawl is what the "it feels like ice" reports kept landing on.
  *
@@ -54,7 +55,10 @@ export const ROLLING_FRICTION = 0.022;
  * roughly a second either side on a table-length roll: 4.7 s, 4.0 s, 3.4 s.
  *
  * Each is solved to hold its own time, so they moved with `ROLLING_FRICTION`
- * when the knee arrived and are no longer the round numbers they were.
+ * when the knee arrived and are no longer the round numbers they were. The
+ * slow one has since drifted a hair: its table-length roll clips the fast
+ * step, so 0.0308 now times at 3.37 s rather than the 3.4 it was solved for —
+ * see `ROLL_FAST_SPEED` for why that is tolerated rather than re-solved.
  *
  * Only the coefficient lives here. What the player picked is a preference, and
  * belongs in the settings store; physics must not import from game.
@@ -103,10 +107,10 @@ export const BALL_CONTACT_FRICTION = 0.06;
  * Below this speed a rolling ball sheds speed `TERMINAL_ROLL_BOOST` times
  * faster.
  *
- * Unlike every other constant in this file, these two have **no published value
- * behind them**. They are a caricature of a real effect — the ball settling
- * into the cloth pile as it dies — calibrated by eye against how a ball ought
- * to stop, and nothing more. Do not cite them.
+ * These two — and the fast step's two below — have **no published value behind
+ * them**, unlike everything else in this file. They are a caricature of a real
+ * effect — the ball settling into the cloth pile as it dies — calibrated by
+ * eye against how a ball ought to stop, and nothing more. Do not cite them.
  *
  * Piecewise-constant rather than a smooth ramp, deliberately: it keeps every
  * analytic function in `src/geometry/shot.ts` closed-form and exactly
@@ -114,6 +118,45 @@ export const BALL_CONTACT_FRICTION = 0.06;
  */
 export const TERMINAL_ROLL_SPEED = 0.12;
 export const TERMINAL_ROLL_BOOST = 2;
+
+/**
+ * The other end of the same ladder: above `ROLL_FAST_SPEED`, rolling resistance
+ * is `ROLL_FAST_BOOST` times larger.
+ *
+ * As unpublished as the terminal knee, and for the same reason — real rolling
+ * resistance is very nearly constant in speed, so this is a second deliberate
+ * departure in this file and not a measurement of anything. Do not cite it
+ * either.
+ *
+ * What it is for: a cue ball leaving a thin cut carries almost all of its
+ * speed, because the contact takes `cos(theta)` of it and a thin cut has
+ * little. At level 5 it leaves at about 1.95 m/s, which a single constant
+ * deceleration turns into nearly nine metres of travel. The step is what stops
+ * that reading like ice.
+ *
+ * Why it is cheap — not free: the calibration this file rests on — a table
+ * length of free roll in 4.0 s — is a SLOW-ball measurement. That roll launches
+ * at 1.24 m/s and enters its roll phase at 0.88 m/s, and the typical pot behind
+ * `POWER_CURVE_EXPONENT` rolls from about 0.87 m/s. Neither ever reaches
+ * 1.0 m/s while rolling, so neither is touched, and `ROLLING_FRICTION` and
+ * `POWER_CURVE_EXPONENT` both survive this unchanged.
+ * `tests/documented-figures.test.ts` holds that claim rather than trusting it.
+ *
+ * What it does move, re-measured when the step landed: the slow preset's
+ * table-length roll enters its roll phase at 1.11 m/s, clips the step, and now
+ * reads 3.37 s against the 3.4 it was solved for; down and back went 5.7 s to
+ * 5.2; and the longest pot in the curriculum went 1.93 m/s to 2.75, 57% of the
+ * meter to 72%, because its cue ball crosses the step on the 1.5 m run-up. It
+ * also drops the square-hit travel ratio at a 1.55 m/s contact from 6.6x to
+ * 6.45x, BELOW the published 6.5-8x band `tests/physics/world.test.ts` holds —
+ * that one is unresolved, and the failing test is the record of it.
+ *
+ * Note the slide phase is untouched: a hard stroke still slides at
+ * `SLIDING_FRICTION` for its first metre or so, and only what is left when the
+ * slip closes meets this step.
+ */
+export const ROLL_FAST_SPEED = 1;
+export const ROLL_FAST_BOOST = 10;
 
 /**
  * Where the cushion touches the ball, as a fraction of the ball's radius above
@@ -164,9 +207,10 @@ export const MIN_CUE_SPEED = 0.35;
  * away cos(80 degrees) of its speed at contact and genuinely needs ~3.5 m/s,
  * which is 76% of a linear bar — but spread linearly it crushes the ordinary
  * shots into the bottom quarter of it: a typical pot is a 1.22 m/s stroke at
- * 21%, and the longest in the curriculum 1.93 m/s at 38%. The exponent is set
+ * 21%. (The longest in the curriculum stopped being an ordinary shot when the
+ * fast step landed: 2.75 m/s, 58% even of a linear bar.) The exponent is set
  * so that typical pot (0.6 m to the pocket, 0.5 m of cue-ball travel, normal
- * cloth) reads 40% here, which moves the same two to 40% and 57%.
+ * cloth) reads 40% here, which moves the same two to 40% and 72%.
  *
  * It follows the cloth, and now the contact model too, and has to be
  * re-derived from that typical pot whenever either moves. It survived the knee

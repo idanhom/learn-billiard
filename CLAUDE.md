@@ -27,7 +27,7 @@ production artifact, which is what `verify:browser` drives.
 
 ```bash
 npm run typecheck
-npm test                                  # 17 files, vitest, geometry + physics + progression
+npm test                                  # 18 files, vitest, geometry + physics + progression
 npm run build && npm run preview          # then, in another terminal:
 npm run verify:browser                    # drives the production build in real Chromium
 ```
@@ -48,10 +48,13 @@ values that go stale silently:
   literature were wrong. If you move it, re-time it — the timing formula is
   piecewise now and lives in `tests/support/roll-time.ts`, in one place on
   purpose.
-- `TERMINAL_ROLL_SPEED` / `TERMINAL_ROLL_BOOST` have **no published value at
-  all**, unlike everything else in that file. Never cite them. They also carry
-  `ROLLING_FRICTION` with them: the knee does part of the job the plain
-  coefficient used to, which is why it came down from 0.025.
+- `TERMINAL_ROLL_SPEED` / `TERMINAL_ROLL_BOOST` and `ROLL_FAST_SPEED` /
+  `ROLL_FAST_BOOST` have **no published value at all**, unlike everything else
+  in that file. Never cite them. The knee pair also carries `ROLLING_FRICTION`
+  with it: the knee does part of the job the plain coefficient used to, which
+  is why it came down from 0.025. The fast pair moves every figure whose roll
+  phase starts above 1 m/s — the down-and-back time, the longest pot's stroke —
+  so re-measure those whenever it moves.
 - `BALL_CONTACT_FRICTION` is published-typical (0.03-0.08, at the middle) and
   should stay that way. If holding the object/cue travel ratio inside 6.5-8x
   ever needs it dragged off that range, the collision model has a structural

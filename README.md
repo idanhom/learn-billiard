@@ -59,8 +59,9 @@ The meter is not linear, and that is the point.
 A cue can send a ball anywhere from a touch shot to a break, but almost nothing
 in this trainer wants a break. An ordinary pot — 0.6 m to the pocket, half a
 metre of cue-ball travel — is a 1.22 m/s stroke, which on a bar spread linearly
-across 0.35–4.5 m/s is 21% of the travel. Even the longest pot in the
-curriculum, level 6's 1.4 m, only asks 1.93 m/s, or 38%.
+across 0.35–4.5 m/s is 21% of the travel. The longest pot in the curriculum,
+level 6's 1.4 m, asks 2.75 m/s, or 58% — its cue ball crosses the fast step on
+the way in, and pays for it.
 
 Not every shot, though, and that is why the range itself stays: a level-5 thin
 cut throws away cos(80°) at contact and genuinely needs about 3.5 m/s, which is
@@ -79,8 +80,8 @@ pot lands near 40%:
 | 100% | 4.50 m/s | power |
 
 Measured over 200 generated layouts per level, the stroke each one asks for now
-runs from 32% on a straight-in to 94% on the worst thin cut, with the median
-climbing 39% → 41% → 43% → 49% → 65% as the cut angle opens up. What pushes you
+runs from 31% on a straight-in to 94% on the worst thin cut, with the median
+climbing 39% → 41% → 44% → 54% → 67% as the cut angle opens up. What pushes you
 up the meter is the *cut*, which is worth feeling: a thin cut throws away
 `cos(θ)` of the speed at contact, so a 70° cut needs roughly three times the
 stroke of a straight-in over the same distance.
@@ -177,15 +178,17 @@ quoted range is 0.005–0.015, and Alciatore's TP B.2 derives μ_r = 0.01 by
 timing a rolling ball to a stop under `a = μ_r·g`. Normal cloth here is over
 twice that.
 
-On top of it sits a second departure with no published value behind it at all:
-below 0.12 m/s the rolling resistance doubles. Real cloth does something like
-this as the ball settles into the pile while it dies, but the number here is
-not measured, and it is not a caricature anyone else would recognise. It is
-calibrated by eye against how a ball ought to stop. Treat it as a judgement,
-not a citation.
+On top of it sit two more departures with no published value behind them at
+all. Below 0.12 m/s the rolling resistance doubles — real cloth does something
+like this as the ball settles into the pile while it dies, but the number here
+is not measured. And above 1 m/s it is ten times larger, which real cloth does
+not do at all: it exists so a cue ball that keeps nearly all of its speed
+through a thin cut does not sail the table several times over. Both are
+calibrated by eye against how a ball ought to behave. Treat them as
+judgements, not citations.
 
-What the pair buys, on this 7-foot table: a table length of free roll in 4.0 s
-instead of 5.8, down and back in 5.7 s instead of 8.4, and a ball that spends
+What the three buy, on this 7-foot table: a table length of free roll in 4.0 s
+instead of 5.8, down and back in 5.2 s instead of 8.4, and a ball that spends
 its last 0.2 m/s dying over 0.65 s and 7.6 cm instead of 1.4 s and 17 cm. That
 terminal crawl is what the "it feels like ice" reports kept landing on. The
 three presets come out at 4.7 s, 4.0 s and 3.4 s for a table length.
@@ -194,15 +197,20 @@ Whether it has gone too far the other way is open — nobody has timed it agains
 a real table. **Do that.** Roll a ball the length of your table so it just dies
 at the far cushion, and time it: about 5.8 s means the published value is right
 and this is wrong, about 4 s means this is. Every figure above is held to the
-code by `tests/documented-figures.test.ts`, the knee's own two numbers
+code by `tests/documented-figures.test.ts`, the ladder's own four numbers
 included. That the simulation actually behaves that way — rather than merely
 being configured to — is `tests/physics/world.test.ts`'s job.
 
 After a rolling cue ball hits an object ball square, the object should travel
-6.5–8x farther than the cue ball. It now does, across the shots the curriculum
-asks for: 7.4x at an ordinary pot's contact speed of 0.79 m/s, 6.8x at
-1.20 m/s, 6.6x at 1.55 m/s. This used to be 5.2x, and used to be listed here as
-a known deviation; contact friction is what closed it.
+6.5–8x farther than the cue ball. It mostly does: 7.4x at an ordinary pot's
+contact speed of 0.79 m/s, 6.8x at 1.20 m/s — but 6.45x at 1.55 m/s, just
+below the band, because at that speed the object ball's run clips the fast
+step while the cue ball's short follow does not. This used to be 5.2x
+everywhere, and used to be listed here as a known deviation; contact friction
+is what closed it, and the fast step is what has now reopened the top end.
+The failing test in `tests/physics/world.test.ts` is the record of that —
+unresolved, deliberately, until the step is either retuned or the claim
+re-scoped.
 
 It is no longer a ratio the cloth setting leaves alone, and that is the price
 of the terminal knee: below the knee every ball loses speed at a fixed extra

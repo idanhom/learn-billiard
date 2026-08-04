@@ -19,6 +19,8 @@ import {
   DEFAULT_CLOTH,
   GRAVITY,
   REST_SPEED,
+  ROLL_FAST_BOOST,
+  ROLL_FAST_SPEED,
   SLIDING_FRICTION,
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
@@ -391,21 +393,37 @@ function applyFriction(ball: Ball, dt: number, rollingFriction: number): void {
 }
 
 /**
- * Speed left after `dt` of rolling resistance, with the terminal knee.
+ * Speed left after `dt` of rolling resistance.
  *
- * Two constant decelerations rather than one: below `TERMINAL_ROLL_SPEED` the
- * cloth takes `TERMINAL_ROLL_BOOST` times as much, so a ball that has nearly
- * run out dies instead of trailing off over most of a second. The crossing is
- * split exactly rather than integrated at whichever rate the tick started in,
- * so the result does not depend on the tick length — `src/geometry/shot.ts`
- * inverts this analytically and the two have to agree.
+ * A three-rung ladder rather than one constant. The cloth takes
+ * `ROLL_FAST_BOOST` times as much above `ROLL_FAST_SPEED`, so a fast ball —
+ * the cue ball off a thin cut, which keeps nearly all its speed — does not sail
+ * the length of the table several times over. It takes `TERMINAL_ROLL_BOOST`
+ * times as much below `TERMINAL_ROLL_SPEED`, so a ball that has nearly run out
+ * dies instead of trailing off. In between it is the plain coefficient, which
+ * is the band nearly every calibration in `src/constants.ts` was measured in —
+ * the slow preset's table-length roll clips the step; see the constants.
  *
- * Unpublished, unlike everything around it. See the constants.
+ * BOTH crossings are split exactly rather than integrated at whichever rung the
+ * tick started on, so the result does not depend on the tick length —
+ * `src/geometry/shot.ts` inverts this analytically and the two have to agree to
+ * better than the 1% the tests hold them to.
+ *
+ * Both boosts are unpublished, unlike everything around them. See the
+ * constants.
  */
 function rolledDown(speed: number, dt: number, rollingFriction: number): number {
   const decel = rollingFriction * GRAVITY;
   let left = speed;
   let time = dt;
+
+  if (left > ROLL_FAST_SPEED) {
+    const fast = decel * ROLL_FAST_BOOST;
+    const toStep = (left - ROLL_FAST_SPEED) / fast;
+    if (toStep >= time) return left - fast * time;
+    left = ROLL_FAST_SPEED;
+    time -= toStep;
+  }
 
   if (left > TERMINAL_ROLL_SPEED) {
     const toKnee = (left - TERMINAL_ROLL_SPEED) / decel;

@@ -28,20 +28,30 @@ generation validates against), as the ratio of the feasibility limit to the
 distance the layout actually asks for:
 
 ```
-L1 Straight in         max cut  5.0 deg   tightest headroom 15.07x
-L2 Gentle cuts         max cut 20.0 deg   tightest headroom 12.21x
-L3 Half ball           max cut 40.0 deg   tightest headroom  8.28x
-L4 Steep cuts          max cut 60.0 deg   tightest headroom  4.63x
+L1 Straight in         max cut  5.0 deg   tightest headroom  4.97x
+L2 Gentle cuts         max cut 20.0 deg   tightest headroom  4.13x
+L3 Half ball           max cut 40.0 deg   tightest headroom  3.15x
+L4 Steep cuts          max cut 60.0 deg   tightest headroom  2.57x
 L5 Thin cuts           max cut 79.9 deg   tightest headroom  1.00x   <-- binding
-L6 Distance and rails  max cut 44.9 deg   tightest headroom  5.25x
-L7 Exam                max cut 54.9 deg   tightest headroom  4.41x
+L6 Distance and rails  max cut 44.9 deg   tightest headroom  2.10x
+L7 Exam                max cut 54.9 deg   tightest headroom  2.10x
 ```
 
-Everywhere but level 5 the check has 4x to 15x of slack and could not change a
+(Re-measured after the fast step landed; it cut full-hit reach by 3x on the
+near-straight levels and about 1.8-2.5x on the steeper ones — the thinner the
+cut, the less of the object ball's run is above the step — so the slack above
+is a third to a half of what this table first said: 15.07x / 12.21x / 8.28x /
+4.63x / 1.00x / 5.25x / 4.41x. Which row binds did not change.)
+
+Everywhere but level 5 the check has 2x to 5x of slack and could not change a
 decision if it tried. Level 5 generates right up against the limit, so the
 understatement directly shrinks the space of thin cuts the curriculum can
-offer — by 1.6% at 80 degrees and 3.0% at 70. On the slowest cloth a 70-degree
-cut reads a maximum potable distance of 1.684 m against a true 1.736 m.
+offer — by 1.6% at 80 degrees. At 70 the fast step has flipped the sign: the
+check now reads a maximum potable distance of 1.562 m against a true 1.559 m,
+a 0.2% OVERstatement — the backspun ball enters its roll phase slower and
+spends less of its run on the boosted rate — so "safe in direction, never the
+reverse" no longer holds strictly at mid cuts, though `POWER_MARGIN`'s 25%
+dwarfs it.
 
 So: small, but not nothing, and it lands precisely on the hardest level rather
 than being spread harmlessly around. (An earlier note here said the effect was

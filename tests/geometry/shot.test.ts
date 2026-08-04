@@ -223,24 +223,50 @@ describe('speed and roll-out', () => {
   });
 
   /**
-   * Not quite the square, and the terminal knee is why: above it the roll-out
-   * is `C*v^2 - offset`, where the offset is the distance the doubled
-   * resistance saves at the very end. Every ball fast enough to reach the knee
-   * pays the same fixed bite, so doubling the speed slightly more than
-   * quadruples the run.
+   * On any ONE rung of the ladder the roll-out is `C*v^2 + constant`, so two
+   * speeds on that rung determine the constant and it must then predict a third
+   * exactly. Run it on each rung in turn — that is the property
+   * `speedForStoppingDistance` inverts, and it is what makes each branch of the
+   * inverse a single square root.
    */
-  test('stopping distance grows with the square of speed, less a fixed terminal bite', () => {
-    const d1 = stoppingDistance(1);
-    const d2 = stoppingDistance(2);
-    const d3 = stoppingDistance(3);
-    expect(d2 / d1).toBeGreaterThan(4);
-    expect(d2 / d1).toBeLessThan(4.05);
+  test('stopping distance is quadratic plus a constant on each rung of the ladder', () => {
+    const rung = (a: number, b: number, c: number): void => {
+      const [da, db, dc] = [stoppingDistance(a), stoppingDistance(b), stoppingDistance(c)];
+      // da = C*a^2 + k, db = C*b^2 + k  =>  solve both, predict dc.
+      const coefficient = (db - da) / (b * b - a * a);
+      const constant = da - coefficient * a * a;
+      expect(dc).toBeCloseTo(coefficient * c * c + constant, 12);
+    };
 
-    // Recover the offset from two speeds and check it predicts a third exactly.
-    const offset = (d2 - 4 * d1) / 3;
-    expect(offset).toBeGreaterThan(0);
-    expect(d3).toBeCloseTo(9 * (d1 + offset) - offset, 12);
+    rung(0.04, 0.08, 0.12); // below the knee: launch under 3.5*0.12/2.5 = 0.168
+    rung(0.4, 0.8, 1.2); //    between: launch 0.168 to 3.5*1.0/2.5 = 1.4
+    rung(2, 3, 4); //           above the fast step
     expect(stoppingDistance(0)).toBe(0);
+  });
+
+  /**
+   * The knee's offset is a bite: every ball fast enough to reach it pays the
+   * same fixed saving at the very end, so doubling the speed slightly more
+   * than quadruples the run.
+   */
+  test('and the terminal knee makes the middle rung slightly more than quadratic', () => {
+    const d1 = stoppingDistance(0.5);
+    const d2 = stoppingDistance(1);
+    expect(d2 / d1).toBeGreaterThan(4);
+    expect(d2 / d1).toBeLessThan(4.2);
+  });
+
+  /**
+   * And the fast step makes a hard stroke markedly LESS than quadratic, which
+   * is the whole point of it: the cue ball off a thin cut leaves at close to
+   * its full speed, and a single deceleration turns that into most of a dozen
+   * metres. The step's offset is a refund, not a bite, and at ten times the
+   * resistance it is a large one — it dominates both of these runs, so
+   * doubling the speed does not even double the distance.
+   */
+  test('while the fast step makes a hard stroke much less than quadratic', () => {
+    expect(stoppingDistance(4) / stoppingDistance(2)).toBeLessThan(2.2);
+    expect(stoppingDistance(4) / stoppingDistance(2)).toBeGreaterThan(1.8);
   });
 
   test('and is exactly quadratic below the knee, where the boost applies throughout', () => {
@@ -333,6 +359,24 @@ describe('inverting the roll-out', () => {
   test('and stays an exact inverse across the terminal knee', () => {
     for (const friction of CLOTH_PRESET_IDS.map(clothRollingFriction)) {
       for (const speed of [0.02, 0.08, 0.15, 0.167, 0.168, 0.169, 0.25, 0.6]) {
+        expect(speedForStoppingDistance(stoppingDistance(speed, friction), friction)).toBeCloseTo(
+          speed,
+          9,
+        );
+      }
+    }
+  });
+
+  /**
+   * Same straddle at the other crossing: a launch of 3.5/2.5 = 1.4 m/s leaves
+   * its slide exactly at the fast step, so these bracket the top rung's
+   * boundary. The 1.2 is there for the stretch where the top branch's bracket
+   * goes negative and has to fall through as NaN rather than answer — its
+   * distance sits below the fast offset on every cloth.
+   */
+  test('and across the fast step', () => {
+    for (const friction of CLOTH_PRESET_IDS.map(clothRollingFriction)) {
+      for (const speed of [1.2, 1.35, 1.39, 1.4, 1.41, 1.45, 2.2]) {
         expect(speedForStoppingDistance(stoppingDistance(speed, friction), friction)).toBeCloseTo(
           speed,
           9,

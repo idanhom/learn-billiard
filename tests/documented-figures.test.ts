@@ -14,6 +14,8 @@ import {
   MIN_CUE_SPEED,
   POWER_CURVE_EXPONENT,
   ROLLING_FRICTION,
+  ROLL_FAST_BOOST,
+  ROLL_FAST_SPEED,
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
   clothRollingFriction,
@@ -34,8 +36,13 @@ describe('the cloth timings quoted for each preset', () => {
     expect(rollOutSeconds(PLAY_LENGTH, clothRollingFriction('slow'))).toBeCloseTo(3.4, 1);
   });
 
-  test('down the table and back takes 5.7 seconds on normal cloth', () => {
-    expect(rollOutSeconds(2 * PLAY_LENGTH, ROLLING_FRICTION)).toBeCloseTo(5.7, 1);
+  /**
+   * A trip this long launches at 2.79 m/s and starts its roll at 1.99 m/s, so
+   * unlike the single-length roll it spends its first half-second on the fast
+   * step. It read 5.7 s before the step existed.
+   */
+  test('down the table and back takes 5.2 seconds on normal cloth', () => {
+    expect(rollOutSeconds(2 * PLAY_LENGTH, ROLLING_FRICTION)).toBeCloseTo(5.2, 1);
   });
 
   /**
@@ -46,8 +53,11 @@ describe('the cloth timings quoted for each preset', () => {
    * The comparison is not quite like for like and the prose says so: the
    * terminal knee applies on both sides, and the published model has no knee at
    * all. Taking it out of the published side would widen the gap, not close it.
+   * At 0.01 neither trip ever rolls above 1 m/s, so the fast step never
+   * engages on the published side — which is why the double trip's gap grew to
+   * 1.6x when the step landed while the single length stayed at 1.45x.
    */
-  test('at the published 0.01 both take about 1.45x as long', () => {
+  test('at the published 0.01 the table length takes 1.45x as long, the double trip 1.6x', () => {
     expect(rollOutSeconds(PLAY_LENGTH, 0.01)).toBeCloseTo(5.8, 1);
     expect(rollOutSeconds(2 * PLAY_LENGTH, 0.01)).toBeCloseTo(8.4, 1);
   });
@@ -64,20 +74,25 @@ describe('the cloth timings quoted for each preset', () => {
 });
 
 /**
- * The two numbers with no published value behind them at all. `README.md` and
- * `src/constants.ts` both quote them outright, so they are claims like any
- * other and belong here.
+ * The four numbers with no published value behind them at all. `README.md` and
+ * `src/constants.ts` quote them outright, so they are claims like any other
+ * and belong here.
  *
- * `tests/physics/world.test.ts` pins the knee's BEHAVIOUR, but symbolically —
+ * `tests/physics/world.test.ts` pins their BEHAVIOUR, but symbolically —
  * against whatever the constants happen to say. That is the right shape for a
  * behaviour test and the wrong shape for a quoted figure: move the knee to
  * 0.15 and every one of those still passes while the prose goes stale, which
  * is the failure this file exists to prevent.
  */
-describe('the terminal knee, which is quoted but not published', () => {
-  test('sits at 0.12 m/s, and doubles the resistance below it', () => {
+describe('the roll ladder, which is quoted but not published', () => {
+  test('the terminal knee sits at 0.12 m/s, and doubles the resistance below it', () => {
     expect(TERMINAL_ROLL_SPEED).toBe(0.12);
     expect(TERMINAL_ROLL_BOOST).toBe(2);
+  });
+
+  test('the fast step sits at 1 m/s, and takes ten times the resistance above it', () => {
+    expect(ROLL_FAST_SPEED).toBe(1);
+    expect(ROLL_FAST_BOOST).toBe(10);
   });
 });
 
@@ -115,14 +130,19 @@ describe('the power meter', () => {
     expect(longest.objectToPocket).toBeCloseTo(1.4, 2);
   });
 
-  test('an ordinary pot is a 1.22 m/s stroke, the longest one 1.93', () => {
+  /**
+   * The long one crosses the fast step on its 1.5 m run-up — its cue ball has
+   * to arrive rolling at 1.2 m/s, so most of that run is paid at ten times the
+   * resistance. It asked 1.93 m/s before the step existed.
+   */
+  test('an ordinary pot is a 1.22 m/s stroke, the longest one 2.75', () => {
     expect(strokeFor(typical)).toBeCloseTo(1.22, 2);
-    expect(strokeFor(longest)).toBeCloseTo(1.93, 2);
+    expect(strokeFor(longest)).toBeCloseTo(2.75, 2);
   });
 
-  test('which a linear bar would crush into its bottom quarter, at 21% and 38%', () => {
+  test('which a linear bar would put at 21% and 58%', () => {
     expect(linearMeter(strokeFor(typical))).toBeCloseTo(0.21, 2);
-    expect(linearMeter(strokeFor(longest))).toBeCloseTo(0.38, 2);
+    expect(linearMeter(strokeFor(longest))).toBeCloseTo(0.58, 2);
   });
 
   /**
@@ -133,9 +153,9 @@ describe('the power meter', () => {
     expect(linearMeter(3.5)).toBeCloseTo(0.76, 2);
   });
 
-  test('the curve moves the same two shots to 40% and 57%', () => {
+  test('the curve moves the same two shots to 40% and 72%', () => {
     expect(recommendedPower(typical, ROLLING_FRICTION)!).toBeCloseTo(0.4, 2);
-    expect(recommendedPower(longest, ROLLING_FRICTION)!).toBeCloseTo(0.57, 2);
+    expect(recommendedPower(longest, ROLLING_FRICTION)!).toBeCloseTo(0.72, 2);
   });
 
   /**

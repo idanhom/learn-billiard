@@ -14,6 +14,8 @@ import {
   MAX_CUE_SPEED,
   NORMAL_TRANSFER,
   ROLLING_FRICTION,
+  ROLL_FAST_BOOST,
+  ROLL_FAST_SPEED,
   SLIDING_FRICTION,
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
@@ -224,11 +226,16 @@ function slidePhase(
 /**
  * How far a ball already rolling at `speed` goes before it stops.
  *
- * Two constant decelerations, not one: `TERMINAL_ROLL_SPEED` is a knee below
- * which rolling resistance is `TERMINAL_ROLL_BOOST` times larger, so a slow
- * ball dies rather than trailing off. Above the knee this is the plain
- * quadratic MINUS a fixed offset — the distance the doubled resistance saves —
- * which is what keeps the inverse a single square root.
+ * Three constant decelerations, not one. `ROLL_FAST_SPEED` is a step above
+ * which rolling resistance is `ROLL_FAST_BOOST` times larger, so a fast ball
+ * does not sail; `TERMINAL_ROLL_SPEED` is a knee below which it is
+ * `TERMINAL_ROLL_BOOST` times larger, so a slow one dies rather than trailing
+ * off. Every rung stays a plain quadratic PLUS a fixed offset, which is what
+ * keeps each branch of the inverse a single square root:
+ *
+ *   v <= K            v^2 / (2*B*a)
+ *   K < v <= F        v^2 / (2*a)   - terminalOffset
+ *   v > F             v^2 / (2*H*a) + fastOffset - terminalOffset
  *
  * Signed, because `speed` is: a ball that came out of its slide reversed (heavy
  * draw, `rollFraction` below -2.5) rolls on BACKWARDS, and dropping that at
@@ -241,10 +248,17 @@ export function rollPhaseDistance(speed: number, rollingFriction: number): numbe
   if (decel <= 0) return speed > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
 
   const magnitude = Math.abs(speed);
-  const distance =
-    magnitude <= TERMINAL_ROLL_SPEED
-      ? (magnitude * magnitude) / (2 * TERMINAL_ROLL_BOOST * decel)
-      : (magnitude * magnitude) / (2 * decel) - terminalOffset(rollingFriction);
+  let distance: number;
+  if (magnitude <= TERMINAL_ROLL_SPEED) {
+    distance = (magnitude * magnitude) / (2 * TERMINAL_ROLL_BOOST * decel);
+  } else if (magnitude <= ROLL_FAST_SPEED) {
+    distance = (magnitude * magnitude) / (2 * decel) - terminalOffset(rollingFriction);
+  } else {
+    distance =
+      (magnitude * magnitude) / (2 * ROLL_FAST_BOOST * decel) +
+      fastOffset(rollingFriction) -
+      terminalOffset(rollingFriction);
+  }
   return speed > 0 ? distance : -distance;
 }
 
@@ -256,9 +270,25 @@ function terminalOffset(rollingFriction: number): number {
   );
 }
 
-/** Launch speed at which a ball leaves its slide exactly at the knee. */
-function kneeLaunchSpeed(rollFraction: number): number {
-  return (3.5 * TERMINAL_ROLL_SPEED) / (2.5 + rollFraction);
+/**
+ * What the fast step ADDS back to every roll-out that starts above it:
+ * F^2/(2*mu_r*g)*(1 - 1/H).
+ *
+ * Positive, unlike the terminal one, and for the mirror-image reason. Reading
+ * `v^2/(2*H*a)` alone would charge the boosted rate all the way down to rest;
+ * the ball only pays it above `ROLL_FAST_SPEED`, so the untaken part comes
+ * back.
+ */
+function fastOffset(rollingFriction: number): number {
+  return (
+    (ROLL_FAST_SPEED * ROLL_FAST_SPEED * (1 - 1 / ROLL_FAST_BOOST)) /
+    (2 * rollingFriction * GRAVITY)
+  );
+}
+
+/** Launch speed at which a ball leaves its slide exactly at `rollSpeed`. */
+function launchSpeedAtRoll(rollSpeed: number, rollFraction: number): number {
+  return (3.5 * rollSpeed) / (2.5 + rollFraction);
 }
 
 /**
@@ -282,10 +312,15 @@ export function stoppingDistance(
  * `stoppingDistance`.
  *
  * Both phases are quadratic in launch speed, so `stoppingDistance` is
- * `C*v^2 - offset` with a different C on each side of the knee. Reading each C
- * back OUT of `stoppingDistance` at a speed known to be on the branch in
- * question — rather than restating the algebra here — is what keeps the two
- * functions exact inverses if either ever changes.
+ * `C*v^2 + constant` with a different C and a different constant on each rung
+ * of the ladder. Reading each C back OUT of `stoppingDistance` at a speed known
+ * to be on the rung in question — rather than restating the algebra here — is
+ * what keeps the two functions exact inverses if either ever changes.
+ *
+ * Tried fastest-first. A rung whose answer falls off its own rung is the wrong
+ * rung, so it is rejected and the next tried; on the top rung the bracket can
+ * even go negative for a short distance, and `NaN >= fast` being false lets
+ * that fall through on its own.
  *
  * NaN at `rollFraction` at or below -2.5, where `stoppingDistance` stops being
  * monotonic in launch speed — the ball comes out of the slide backwards, so a
@@ -304,13 +339,22 @@ export function speedForStoppingDistance(
   // an arbitrarily gentle stroke.
   if (rollingFriction <= 0) return 0;
 
-  const knee = kneeLaunchSpeed(rollFraction);
-  const offset = terminalOffset(rollingFriction);
+  const knee = launchSpeedAtRoll(TERMINAL_ROLL_SPEED, rollFraction);
+  const fast = launchSpeedAtRoll(ROLL_FAST_SPEED, rollFraction);
+  const terminal = terminalOffset(rollingFriction);
+  const gain = fastOffset(rollingFriction);
 
-  const above = 2 * knee;
-  const coefficient = (stoppingDistance(above, rollingFriction, rollFraction) + offset) / above ** 2;
-  const speed = Math.sqrt((distance + offset) / coefficient);
-  if (speed >= knee) return speed;
+  const high = 2 * fast;
+  const highCoefficient =
+    (stoppingDistance(high, rollingFriction, rollFraction) - gain + terminal) / high ** 2;
+  const highSpeed = Math.sqrt((distance - gain + terminal) / highCoefficient);
+  if (highSpeed >= fast) return highSpeed;
+
+  const middle = (knee + fast) / 2;
+  const midCoefficient =
+    (stoppingDistance(middle, rollingFriction, rollFraction) + terminal) / middle ** 2;
+  const midSpeed = Math.sqrt((distance + terminal) / midCoefficient);
+  if (midSpeed >= knee) return midSpeed;
 
   // Too slow to ever leave the knee: the whole roll phase runs boosted.
   const below = knee / 2;
@@ -323,8 +367,8 @@ export function speedForStoppingDistance(
  *
  * A ball that is ROLLING when it arrives would carry that speed a further
  * `rollPhaseDistance(arrivalSpeed)` if left alone, so the launch we want is
- * simply the one that stops after `distance` plus that — which folds the knee
- * in for free, wherever it falls on the trip.
+ * simply the one that stops after `distance` plus that — which folds the whole
+ * ladder in for free, wherever its crossings fall on the trip.
  *
  * Piecewise, because the ball may not have finished sliding when it arrives.
  * Still sliding, the whole trip decelerates at mu_s*g and the knee never comes

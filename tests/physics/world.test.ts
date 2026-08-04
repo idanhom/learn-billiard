@@ -4,6 +4,8 @@ import {
   type ClothPreset,
   GRAVITY,
   MAX_CUE_SPEED,
+  ROLL_FAST_BOOST,
+  ROLL_FAST_SPEED,
   SLIDING_FRICTION,
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
@@ -46,7 +48,7 @@ function rollingSpeedOf(ball: Ball): number {
  * The object ball's run is measured in the simulation wherever the table is
  * long enough to hold it, and read from `stoppingDistance` — fed the ball's
  * MEASURED post-contact velocity and roll, not an assumed one — when it is not.
- * A 1.55 m/s contact sends the object ball 2.7 m and this table is 1.98 m long,
+ * A 1.55 m/s contact sends the object ball 2.6 m and this table is 1.98 m long,
  * so there is nowhere to measure it. The substitution is only as good as the
  * agreement between the two, which this asserts on the way past at every speed
  * that does fit.
@@ -158,13 +160,17 @@ describe('cushions', () => {
    * The number the whole cushion model is calibrated against: a rolling ball
    * driven square into a rail should come back having lost about half its
    * speed. Measured after it has settled, because most of that loss is the skid
-   * that follows the rebound, not the rebound itself.
+   * that follows the rebound, not the rebound itself — and measured against the
+   * speed AT the rail, per `CLAUDE.md`: this ball launches above the fast step
+   * and sheds a third of its speed on the run-up, and dividing by the launch
+   * speed would bill the cushion for what the cloth took.
    */
   test('take about half the speed of a rolling ball hit square', () => {
-    const speed = 1.4;
-    const start = rollingBall(0, vec(0.4, -0.2), vec(0, speed));
-    const { balls } = stepUntil([start], (events) => events.some((e) => e.type === 'cushion'));
-    const retained = rollingSpeedOf(balls[0]!) / speed;
+    const start = rollingBall(0, vec(0.4, -0.2), vec(0, 1.4));
+    const { balls, before } = stepUntil([start], (events) =>
+      events.some((e) => e.type === 'cushion'),
+    );
+    const retained = rollingSpeedOf(balls[0]!) / rollingSpeedOf(before[0]!);
     expect(retained).toBeGreaterThan(0.45);
     expect(retained).toBeLessThan(0.6);
   });
@@ -619,6 +625,47 @@ describe('the terminal roll knee', () => {
       (TERMINAL_ROLL_SPEED * TERMINAL_ROLL_SPEED) / (2 * mu * GRAVITY) -
       rollPhaseDistance(TERMINAL_ROLL_SPEED, mu);
     expect((predicted + savedByTheKnee) / travelled).toBeGreaterThan(1.4);
+  });
+});
+
+/**
+ * The fast step, the ladder's other unpublished half — same status as the
+ * knee: what these pin is that the code does what the comment says, not that
+ * the comment is right about real cloth.
+ */
+describe('the fast roll step', () => {
+  const plainDecel = clothRollingFriction('normal') * GRAVITY;
+
+  /** Deceleration over one tick of a ball already rolling at `speed`. */
+  function decelAt(speed: number): number {
+    const { balls } = stepWorld([rollingBall(0, vec(-0.5, 0), vec(speed, 0))]);
+    return (speed - len(balls[0]!.vel)) / TICK;
+  }
+
+  test('costs a fast ball ten times the rolling resistance', () => {
+    expect(decelAt(2)).toBeCloseTo(ROLL_FAST_BOOST * plainDecel, 6);
+  });
+
+  /** The mirror of the knee's split: exact on both sides of the crossing. */
+  test('splits a tick that straddles the step, rather than picking one rate', () => {
+    const speed = ROLL_FAST_SPEED + (ROLL_FAST_BOOST * plainDecel * TICK) / 2;
+    const { balls } = stepWorld([rollingBall(0, vec(-0.5, 0), vec(speed, 0))]);
+    const expected = ROLL_FAST_SPEED - (plainDecel * TICK) / 2;
+    expect(len(balls[0]!.vel)).toBeCloseTo(expected, 9);
+  });
+
+  /**
+   * Above the step a free roll outruns this table on the normal cloth — any
+   * rolling start past 1 m/s covers at least 2.3 m — so the one on-table probe
+   * of the crossing is the slow cloth, where 1.05 m/s rolls out in 1.66 m.
+   */
+  test('and the simulation matches the closed form across the crossing', () => {
+    const speed = 1.05;
+    const start = vec(-0.9, 0);
+    const { balls } = simulateToRest([rollingBall(0, start, vec(speed, 0))], { cloth: 'slow' });
+    const travelled = balls[0]!.pos.x - start.x;
+    const predicted = rollPhaseDistance(speed, clothRollingFriction('slow'));
+    expect(Math.abs(travelled - predicted) / predicted).toBeLessThan(0.01);
   });
 });
 
