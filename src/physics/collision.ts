@@ -16,7 +16,7 @@ import {
 import type { Segment } from '../geometry/table';
 import { type Vec2, add, dot, normalize, scale, sub, vec } from '../geometry/vec2';
 
-/** Guards against re-detecting a contact that was just resolved. */
+/** Daylight left between two balls pulled apart from an overlap. */
 const TOUCHING_EPSILON = 1e-9;
 
 /**
@@ -180,8 +180,12 @@ export function resolveBallPair(
   const n = normalize(sub(posB, posA));
   if (n.x === 0 && n.y === 0) return undefined;
 
+  // Any approach at all, matching the time-of-impact query exactly. A
+  // threshold here that the query did not share let a pair closing at under a
+  // nanometre a second come back as a contact at t = 0 on every pass, never be
+  // resolved, and starve every other contact in the tick.
   const closing = dot(sub(velB, velA), n);
-  if (closing >= -TOUCHING_EPSILON) return undefined;
+  if (closing >= 0) return undefined;
 
   // Equal masses: the exchanged normal speed is (1+e)/2 of the closing speed.
   const exchange = (-(1 + BALL_RESTITUTION) * closing) / 2;
@@ -243,7 +247,15 @@ export function resolveCushion(vel: Vec2, roll: Vec2, normal: Vec2): CushionImpu
 
   // Normal velocity of the contact point, not of the centre.
   const closing = dot(vel, normal) + c * dot(roll, normal);
-  if (closing >= 0) return undefined;
+  if (closing >= 0) {
+    // Enough backspin can carry the contact point away while the centre is
+    // still moving in, and a rail the centre can drive into is no rail. Stop
+    // the centre's approach dead and leave the spin to the cloth: it only takes
+    // speed away, so it is passive like the rest of this.
+    const approach = dot(vel, normal);
+    if (approach >= 0) return undefined;
+    return { vel: sub(vel, scale(normal, approach)), roll };
+  }
 
   const effectiveMass = 1 + 2.5 * c * c;
   const j = (-(1 + CUSHION_CONTACT_RESTITUTION) * closing) / effectiveMass;

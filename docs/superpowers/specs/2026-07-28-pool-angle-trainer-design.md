@@ -32,7 +32,7 @@ Progression and feedback use ShotGeometry; the physics sim decides only what phy
 
 ### Physics (2D on table plane, rendered in 3D)
 
-- Fixed tick 1/240 s. Within each tick: compute earliest time-of-impact among ball-ball, ball-cushion-segment, and pocket-capture events; advance to it; resolve; repeat on remaining time with a hard iteration cap (~8). Max cue speed capped. Initial-overlap resolved by positional correction before integration.
+- Fixed tick 1/240 s. Within each tick: compute earliest time-of-impact among ball-ball, ball-cushion-segment, and pocket-capture events; advance to it; resolve; repeat on remaining time with a hard iteration cap (~8; *revised* to 16 per ball, after a line of twelve touching balls ran out of a flat 8 and coasted through each other). Max cue speed capped. Initial-overlap resolved by positional correction before integration.
 - Ball state: position, velocity, roll spin, and orientation. Cue strike = pure sliding; sliding friction (μ≈0.2) until slip reaches zero, then rolling resistance (0.022 as shipped above a terminal knee — see below, this is *not* the published ≈0.01). Produces natural follow on the cue ball — which is *why* the static tangent guide is out.
 
   Orientation is integrated from the roll on the fixed tick, not accumulated in the renderer, so it cannot drift with frame rate or time scale; the renderer slerps previous→current on the same alpha as position. Without it the ball reads as a puck at any friction value, which is what the "feels like ice" reports were actually seeing.

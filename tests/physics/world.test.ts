@@ -708,6 +708,102 @@ describe('a ball that is stationary but still spinning', () => {
   });
 });
 
+/**
+ * The event loop under stress. Each of these is a state the solver can be put
+ * in, checked against the two invariants it exists to keep: no two balls
+ * overlap at the end of a tick, and no ball sits inside a cushion.
+ */
+describe('the event loop under stress', () => {
+  const SLACK = 1e-6;
+
+  function overlaps(balls: readonly Ball[]): string[] {
+    const found: string[] = [];
+    for (let i = 0; i < balls.length; i++) {
+      for (let j = i + 1; j < balls.length; j++) {
+        const a = balls[i]!;
+        const b = balls[j]!;
+        if (a.potted || b.potted) continue;
+        const gap = dist(a.pos, b.pos) - 2 * BALL_RADIUS;
+        if (gap < -SLACK) found.push(`${a.id}/${b.id} by ${(-gap * 1000).toFixed(3)} mm`);
+      }
+    }
+    return found;
+  }
+
+  /**
+   * A cue ball into a line of twelve touching balls. The momentum has to pass
+   * down the whole line inside one tick, one contact per event — more events
+   * than a fixed budget of eight allowed, after which the rest of the tick ran
+   * with no collision checks at all and the moving ball drove into the next.
+   */
+  test('a long line of touching balls passes the hit along without overlapping', () => {
+    let balls: Ball[] = [createBall(0, vec(-0.85, 0), vec(4, 0))];
+    for (let i = 0; i < 12; i++) balls.push(createBall(i + 1, vec(-0.7 + i * 2 * BALL_RADIUS, 0)));
+    for (let tick = 0; tick < 240 * 3; tick++) {
+      balls = stepWorld(balls).balls;
+      expect(overlaps(balls), `tick ${tick}`).toEqual([]);
+    }
+  });
+
+  /**
+   * The cluster the trainer never deals but the solver must survive: a full
+   * rack broken at the hardest legal stroke. Every ball touches two to six
+   * others, so one hit fans out into dozens of contacts inside a tick.
+   */
+  test('a full rack broken at full power stays on the table without overlapping', () => {
+    const footSpot = vec(TABLE.playLength / 4, 0);
+    const rowStep = Math.sqrt(3) * BALL_RADIUS;
+    let balls: Ball[] = [createBall(0, vec(-TABLE.playLength / 4, 0.002), vec(MAX_CUE_SPEED, 0))];
+    for (let row = 0; row < 5; row++) {
+      for (let k = 0; k <= row; k++) {
+        const pos = vec(footSpot.x + row * rowStep, (k - row / 2) * 2 * BALL_RADIUS);
+        balls.push(createBall(balls.length, pos));
+      }
+    }
+    for (let tick = 0; tick < 240 * 20 && !allAtRest(balls); tick++) {
+      balls = stepWorld(balls).balls;
+      expect(overlaps(balls), `tick ${tick}`).toEqual([]);
+      for (const ball of balls) {
+        expect(ball.potted || isInLegalBounds(ball.pos, -SLACK), `ball ${ball.id} tick ${tick}`).toBe(true);
+      }
+    }
+    expect(allAtRest(balls)).toBe(true);
+  });
+
+  /**
+   * Two balls touching and closing at less than the resolver's epsilon. The
+   * time-of-impact query called that a contact at t = 0 and the resolver
+   * declined it, so the same candidate came back every pass — and starved
+   * every other contact in the tick, here a third ball meeting a rail.
+   */
+  test('a contact too slow to resolve does not starve the rest of the tick', () => {
+    // Exactly touching — at the origin, so the separation is exact in floating
+    // point. Anywhere else rounding leaves a gap and the state is never reached.
+    const balls: Ball[] = [
+      createBall(0, vec(0, 0), vec(5e-10, 0)),
+      createBall(1, vec(2 * BALL_RADIUS, 0)),
+      createBall(2, vec(0.4, TABLE.bounds.maxY - 0.001), vec(0, 4)),
+    ];
+    const after = stepWorld(balls).balls;
+    expect(after[2]!.pos.y).toBeLessThanOrEqual(TABLE.bounds.maxY + SLACK);
+    expect(after[2]!.vel.y).toBeLessThan(0);
+  });
+
+  /**
+   * Touching a rail, centre still moving in, but with enough backspin that
+   * the contact point — 0.27R above the centre — is already moving away. The
+   * cushion impulse is computed at that point, so it declined, and the centre
+   * carried on into the rail.
+   */
+  test('a ball whose spin pulls its contact point off the rail still cannot enter it', () => {
+    let balls: Ball[] = [createBall(0, vec(0.4, TABLE.bounds.maxY), vec(0, 0.1), vec(0, -0.5))];
+    for (let tick = 0; tick < 240 && !allAtRest(balls); tick++) {
+      balls = stepWorld(balls).balls;
+      expect(balls[0]!.pos.y, `tick ${tick}`).toBeLessThanOrEqual(TABLE.bounds.maxY + SLACK);
+    }
+  });
+});
+
 function expectFinite(v: Vec2): void {
   expect(Number.isFinite(v.x) && Number.isFinite(v.y)).toBe(true);
 }

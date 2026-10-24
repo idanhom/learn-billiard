@@ -53,8 +53,17 @@ export const REST_DWELL_TICKS = 12;
 /** Failsafe: no shot may run longer than this, however the cloth behaves. */
 export const MAX_SHOT_DURATION = 20;
 
-/** Event-resolution passes allowed inside one tick before we give up and coast. */
-const MAX_EVENT_ITERATIONS = 8;
+/**
+ * Event-resolution passes allowed inside one tick, per ball on the table,
+ * before the solver gives up and coasts.
+ *
+ * Per ball because a cluster passes a hit along one contact at a time: a line
+ * of twelve touching balls needs a dozen events in a single tick, and a rack
+ * fans one hit out into dozens. A flat budget of eight ran out, and the rest of
+ * the tick ran with no collision checks at all. Coasting is still the last
+ * resort, for a state no budget will ever clear, and that should not exist.
+ */
+const EVENT_ITERATIONS_PER_BALL = 16;
 
 const TIME_EPSILON = 1e-12;
 const BALL_DIAMETER = BALL_RADIUS * 2;
@@ -165,7 +174,8 @@ export function stepWorld(
 
   let remaining = dt;
   let elapsed = 0;
-  for (let i = 0; i < MAX_EVENT_ITERATIONS && remaining > TIME_EPSILON; i++) {
+  const budget = EVENT_ITERATIONS_PER_BALL * work.length;
+  for (let i = 0; i < budget && remaining > TIME_EPSILON; i++) {
     const next = earliestCandidate(work, remaining);
     if (!next) break;
     advance(work, next.time);
