@@ -2,10 +2,18 @@ import { describe, expect, test } from 'vitest';
 import { MAX_CUE_SPEED, MIN_CUE_SPEED } from '../../src/constants';
 import { idealAimDirection } from '../../src/geometry/shot';
 import { pocketById } from '../../src/geometry/table';
-import { angleOf, len, vec } from '../../src/geometry/vec2';
+import { angleOf, fromAngle, len, signedAngleBetween, sub, vec } from '../../src/geometry/vec2';
 import { ShotSession } from '../../src/game/shot-session';
 import { cueSpeedForPower } from '../../src/game/power';
-import { CUT_30_DRILL, STRAIGHT_IN_DRILL, layoutWithCut } from '../../src/game/drills';
+import {
+  CUT_30_DRILL,
+  START_AIM_OFFSET_DEGREES,
+  STRAIGHT_IN_DRILL,
+  idealAimAngle,
+  layoutWithCut,
+} from '../../src/game/drills';
+import { generateShot } from '../../src/game/generator';
+import { LEVELS } from '../../src/game/levels';
 
 const deg = (d: number) => (d * Math.PI) / 180;
 
@@ -146,6 +154,67 @@ describe('shot lifecycle', () => {
     session.beginCharge();
     session.release();
     expect(session.cueBall.roll).toEqual(vec(0, 0));
+  });
+});
+
+describe('where the cue starts', () => {
+  const offIdeal = (session: ShotSession): number =>
+    Math.abs(
+      (signedAngleBetween(fromAngle(idealAimAngle(session.layout)), fromAngle(session.aimAngle)) * 180) /
+        Math.PI,
+    );
+  const offCentre = (session: ShotSession): number => {
+    const { cue, object } = session.layout;
+    return Math.abs((signedAngleBetween(sub(object, cue), fromAngle(session.aimAngle)) * 180) / Math.PI);
+  };
+
+  /**
+   * The bug this pins: the cue used to start on the ideal line, so Space alone
+   * scored 0.00 degrees — at the last tier, and in the exam.
+   */
+  test('is never the ideal line, on any level', () => {
+    for (const level of LEVELS) {
+      for (let i = 0; i < 40; i++) {
+        const { layout } = generateShot(level, 500 + i * 7919, {
+          preferredSide: i % 2 === 0 ? 'left' : 'right',
+        });
+        const session = new ShotSession(layout, { aimSeed: i });
+        const [low, high] = START_AIM_OFFSET_DEGREES;
+        expect(offIdeal(session), `level ${level.id} shot ${i}`).toBeGreaterThanOrEqual(low - 1e-9);
+        expect(offCentre(session), `level ${level.id} shot ${i}`).toBeGreaterThanOrEqual(low - 1e-9);
+        expect(offCentre(session), `level ${level.id} shot ${i}`).toBeLessThanOrEqual(high + 1e-9);
+      }
+    }
+  });
+
+  test('so striking without aiming does not qualify', () => {
+    for (let seed = 0; seed < 20; seed++) {
+      const session = new ShotSession(CUT_30_DRILL, { aimSeed: seed, toleranceDegrees: 2 });
+      session.beginCharge();
+      session.setPower(0.5);
+      session.release();
+      runToSettled(session);
+      const outcome = session.evaluate()!;
+      expect(outcome.aimError.degrees, `seed ${seed}`).toBeGreaterThanOrEqual(START_AIM_OFFSET_DEGREES[0] - 1e-9);
+      expect(outcome.qualifying, `seed ${seed}`).toBe(false);
+    }
+  });
+
+  test('falls either side of the object ball, not always the same one', () => {
+    const sides = new Set<number>();
+    for (let seed = 0; seed < 20; seed++) {
+      const session = new ShotSession(STRAIGHT_IN_DRILL, { aimSeed: seed });
+      sides.add(Math.sign(session.aimAngle - idealAimAngle(STRAIGHT_IN_DRILL)));
+    }
+    expect(sides).toEqual(new Set([-1, 1]));
+  });
+
+  test('is reproducible from its seed, and moves when the seed does — a retry starts afresh', () => {
+    const first = new ShotSession(CUT_30_DRILL, { aimSeed: 11 }).aimAngle;
+    expect(new ShotSession(CUT_30_DRILL, { aimSeed: 11 }).aimAngle).toBe(first);
+    const retries = new Set<number>();
+    for (let seed = 11; seed < 16; seed++) retries.add(new ShotSession(CUT_30_DRILL, { aimSeed: seed }).aimAngle);
+    expect(retries.size).toBe(5);
   });
 });
 

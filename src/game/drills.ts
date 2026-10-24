@@ -7,7 +7,19 @@
 
 import { ghostBallCenter } from '../geometry/shot';
 import { type PocketId, pocketById } from '../geometry/table';
-import { type Vec2, add, angleOf, fromAngle, normalize, rotate, scale, sub, vec } from '../geometry/vec2';
+import {
+  type Vec2,
+  add,
+  angleOf,
+  fromAngle,
+  normalize,
+  rotate,
+  scale,
+  signedAngleBetween,
+  sub,
+  vec,
+} from '../geometry/vec2';
+import { hashString, makeRng } from './random';
 
 export interface ShotLayout {
   readonly id: string;
@@ -58,6 +70,36 @@ export const SLICE_DRILLS: readonly ShotLayout[] = [STRAIGHT_IN_DRILL, CUT_30_DR
 export function idealAimAngle(layout: ShotLayout): number {
   const target = pocketById(layout.targetPocket).center;
   return angleOf(sub(ghostBallCenter(layout.object, target), layout.cue));
+}
+
+/** How far off the object ball's centre the cue starts, in degrees. */
+export const START_AIM_OFFSET_DEGREES: readonly [number, number] = [3, 8];
+
+/**
+ * Where the cue points when a shot is dealt: at the object ball's centre,
+ * turned a seeded 3-8 degrees off it to one side or the other.
+ *
+ * Never the ideal line. Starting there handed over the answer — Space alone
+ * scored 0.00 degrees, at the last tier and in the exam. Turned toward the
+ * ghost ball, a large enough offset could still land on it by chance on a thin
+ * cut, so a start within 3 degrees of the ideal line takes the other side
+ * instead. That side never can: it is the offset plus the cut's own lean the
+ * opposite way.
+ *
+ * The seed is mixed with the layout id, so the same layout dealt again — a
+ * retry — starts somewhere new if the caller moves the seed on.
+ */
+export function startingAimAngle(layout: ShotLayout, seed: number): number {
+  const rng = makeRng((seed ^ hashString(layout.id)) >>> 0);
+  const [low, high] = START_AIM_OFFSET_DEGREES;
+  const offset = ((low + (high - low) * rng()) * Math.PI) / 180;
+  const sign = rng() < 0.5 ? -1 : 1;
+
+  const centre = angleOf(sub(layout.object, layout.cue));
+  const ideal = fromAngle(idealAimAngle(layout));
+  const candidate = centre + sign * offset;
+  const fromIdeal = Math.abs(signedAngleBetween(ideal, fromAngle(candidate)));
+  return fromIdeal >= (low * Math.PI) / 180 ? candidate : centre - sign * offset;
 }
 
 /** A point one metre down the aim line — handy for drawing guides. */

@@ -32,7 +32,7 @@ import {
   createBall,
   stepWorld,
 } from '../physics/world';
-import { type ShotLayout, idealAimAngle } from './drills';
+import { type ShotLayout, startingAimAngle } from './drills';
 import { cueSpeedForPower, recommendedPower as recommendedPowerFor } from './power';
 
 export type ShotPhase = 'aiming' | 'charging' | 'simulating' | 'settled' | 'evaluated';
@@ -49,6 +49,11 @@ export interface ShotSessionOptions {
   /** Aim deviation, in degrees, that still counts as a qualifying shot. */
   readonly toleranceDegrees?: number;
   readonly cloth?: ClothPreset;
+  /**
+   * Seeds where the cue starts, off the ideal line. Move it on for every
+   * session dealt — a retry included — and each one starts somewhere new.
+   */
+  readonly aimSeed?: number;
 }
 
 export interface ShotOutcome {
@@ -97,7 +102,7 @@ export class ShotSession {
     this.layout = layout;
     this.toleranceDegrees = options.toleranceDegrees ?? 2;
     this.#cloth = options.cloth ?? DEFAULT_CLOTH;
-    this.#aimAngle = idealAimAngle(layout);
+    this.#aimAngle = startingAimAngle(layout, options.aimSeed ?? 0);
     this.#balls = [
       createBall(CUE_BALL_ID, layout.cue),
       createBall(OBJECT_BALL_ID, layout.object),

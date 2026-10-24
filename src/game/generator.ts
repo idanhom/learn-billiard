@@ -25,6 +25,7 @@ import {
 import { type Vec2, add, angleOf, dist, fromAngle, scale, vec } from '../geometry/vec2';
 import { type ShotLayout, layoutWithCut } from './drills';
 import type { LevelDefinition } from './levels';
+import { makeRng } from './random';
 
 export type LayoutViolation =
   | 'cue-off-table'
@@ -73,18 +74,6 @@ const POCKET_CLEARANCE = BALL_RADIUS / 2;
 /** How wide a fan of object-ball positions to sample in front of each pocket. */
 const CORNER_CONE = (100 * Math.PI) / 180;
 const SIDE_CONE = (150 * Math.PI) / 180;
-
-/** mulberry32 — small, fast, and reproducible across machines. */
-export function makeRng(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 export function generateShot(
   level: LevelDefinition,

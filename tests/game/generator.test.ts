@@ -12,7 +12,8 @@ import {
 import { dist } from '../../src/geometry/vec2';
 import { idealAimAngle } from '../../src/game/drills';
 import { LEVELS, examLevel, levelById } from '../../src/game/levels';
-import { generateShot, layoutViolations, makeRng } from '../../src/game/generator';
+import { generateShot, layoutViolations } from '../../src/game/generator';
+import { makeRng } from '../../src/game/random';
 import { ShotSession } from '../../src/game/shot-session';
 
 const toDeg = (r: number) => (r * 180) / Math.PI;

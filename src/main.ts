@@ -36,9 +36,8 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
 const hudRoot = document.getElementById('hud') as HTMLElement;
 
 const scene = new PoolScene(canvas);
-const campaign = new Campaign(createProgressStore(browserStorage()), {
-  seed: Math.floor(Date.now() % 1_000_000),
-});
+const seed = Math.floor(Date.now() % 1_000_000);
+const campaign = new Campaign(createProgressStore(browserStorage()), { seed });
 
 const hud = new Hud(hudRoot, {
   onReset: () => {
@@ -56,6 +55,8 @@ const history = new ShotHistory();
 // first session is built on the cloth the player actually chose.
 let settings = settingsStore.load();
 
+/** Sessions dealt so far. Seeds where the cue starts, so a retry starts somewhere new. */
+let sessionsDealt = 0;
 let session = newSession();
 let chargeSeconds = 0;
 let evaluations = 0;
@@ -94,6 +95,7 @@ function newSession(): ShotSession {
   return new ShotSession(campaign.layout, {
     toleranceDegrees: campaign.toleranceDegrees,
     cloth: settings.cloth,
+    aimSeed: seed + sessionsDealt++,
   });
 }
 
@@ -333,6 +335,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
         potted: b.potted,
       })),
       aimAngle: session.aimAngle,
+      idealAimAngle: angleOf(session.analysis.aimDirection),
       power: session.power,
       cueSpeed: session.cueSpeed,
       recommendedPower: session.recommendedPower,

@@ -64,6 +64,11 @@ page.on('pageerror', (error) => consoleErrors.push(String(error)));
 
 const state = () => page.evaluate(() => window.__debug.state());
 
+/** Degrees between where the cue points and the ideal line. */
+const offIdeal = (s) =>
+  (Math.abs(Math.atan2(Math.sin(s.aimAngle - s.idealAimAngle), Math.cos(s.aimAngle - s.idealAimAngle))) * 180) /
+  Math.PI;
+
 /** What the power meter is showing: the speed readout, and the target tick. */
 const meter = () =>
   page.evaluate(() => {
@@ -108,6 +113,8 @@ check('starts in the aiming phase', initial.phase === 'aiming', initial.phase);
 check('starts on level 1 at tier 0', initial.levelId === 1 && initial.tier === 0);
 check('starts with every guide showing', initial.guides.objectPath && initial.guides.ghostBall);
 check('a fresh start carries no recovery notice', initial.notice === null, String(initial.notice));
+// Space alone must not be the answer: the cue is dealt off the line.
+check('the cue starts off the ideal line', offIdeal(initial) >= 3, `${offIdeal(initial).toFixed(2)} deg off`);
 
 // The power meter says what it is doing, and marks what the shot asks for.
 const meterAtTierZero = await meter();
@@ -155,6 +162,10 @@ check('a perfectly aimed shot qualifies', first.outcome?.qualifying === true);
 await sleep(1200);
 check('a settled shot is never re-evaluated', (await state()).evaluations === 1);
 await page.screenshot({ path: `${OUT}post-shot-report.png` });
+
+await page.evaluate(() => window.__debug.retry());
+const retried = await state();
+check('a retry starts off the ideal line too', offIdeal(retried) >= 3, `${offIdeal(retried).toFixed(2)} deg off`);
 
 // Guides come away as the aim proves reliable.
 await playPerfect({ fresh: true });

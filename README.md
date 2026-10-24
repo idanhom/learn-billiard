@@ -39,6 +39,11 @@ pixels to a fixed number of degrees no matter where the camera is. The rate is
 `AIM_DEGREES_PER_PIXEL` in `src/game/input.ts` — one constant, currently 0.08°,
 about 8° per 100px.
 
+Every shot is dealt with the cue pointed 3–8° off the object ball's centre, to
+one side or the other, and never within 3° of the line. Finding the line is the
+exercise, so the cue does not start on it. `R` deals the same layout again with
+the cue somewhere new.
+
 ## Slow motion
 
 The simulation runs on a fixed 1/240 s tick, and wall-clock time only decides
