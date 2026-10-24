@@ -421,11 +421,60 @@ const printed = await page.evaluate(() => ({
   buttons: getComputedStyle(document.querySelector('#table-panel .no-print')).display,
 }));
 await page.screenshot({ path: `${OUT}table-sheet-print.png`, fullPage: true });
+// A real print can fire a resize while the table is hidden for it.
+await page.evaluate(() => window.dispatchEvent(new Event('resize')));
 await page.emulateMedia({ media: 'screen' });
+await sleep(100);
+const buffer = await page.evaluate(() => {
+  const canvas = document.getElementById('game');
+  return { width: canvas.width, client: canvas.clientWidth };
+});
+check('after printing, the table is still drawn at full size', buffer.width >= buffer.client, JSON.stringify(buffer));
 check(
   'printed, it is the sheet alone: no game, no HUD, no buttons',
   printed.game === 'none' && printed.hud === 'none' && printed.buttons === 'none' && printed.sheet !== 'none',
   JSON.stringify(printed),
+);
+// The session log: a bad entry is refused with a reason and keeps what was
+// typed; a good one is kept, survives a reload, and can be removed.
+await page.click('#table-panel [data-tab="log"]');
+await sleep(100);
+const loggedSheet = await page.inputValue('#table-panel [name="sheet"]');
+check('the log offers the sheet just dealt', /^\d{4}$/.test(loggedSheet), loggedSheet);
+await page.fill('#table-panel [name="shots"]', '10');
+await page.fill('#table-panel [name="made"]', '12');
+await page.click('#table-panel [data-log-form] [type="submit"]');
+await sleep(100);
+const refused = await page.evaluate(() => ({
+  error: document.querySelector('#table-panel .table-error')?.textContent ?? '',
+  shots: document.querySelector('#table-panel [name="shots"]').value,
+  rows: document.querySelectorAll('#table-panel .table-log li').length,
+}));
+check('more made than taken is refused, saying why, and the form keeps its values', refused.error.includes('no more than') && refused.shots === '10' && refused.rows === 0, JSON.stringify(refused));
+await page.fill('#table-panel [name="made"]', '7');
+await page.fill('#table-panel [name="note"]', '<b>long cuts</b>');
+await page.press('#table-panel [name="note"]', 'Enter');
+await sleep(150);
+const logged = await page.evaluate(() => [...document.querySelectorAll('#table-panel .table-log li')].map((li) => li.innerHTML));
+check(
+  'Enter logs it, and the note shows as text, not markup',
+  logged.length === 1 && logged[0].includes('7 of 10 (70%)') && logged[0].includes('&lt;b&gt;long cuts&lt;/b&gt;'),
+  logged[0],
+);
+await page.screenshot({ path: `${OUT}table-log.png` });
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+await page.focus('#game');
+await page.keyboard.press('KeyT');
+await page.click('#table-panel [data-tab="log"]');
+await sleep(100);
+check('the log survives a reload', (await page.locator('#table-panel .table-log li').count()) === 1);
+await page.click('#table-panel [data-remove="0"]');
+await sleep(100);
+check(
+  'and a session can be taken out of it',
+  (await page.locator('#table-panel .table-log li').count()) === 0 &&
+    (await page.evaluate(() => JSON.parse(window.localStorage.getItem('pool-angle-trainer/table-log/v1')).sessions.length)) === 0,
 );
 await page.click('#table-panel [data-tab="cloth"]');
 await sleep(100);

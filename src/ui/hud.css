@@ -636,6 +636,60 @@ body {
   }
 }
 
+.table-log-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 0 4px;
+}
+
+.table-log-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-dim);
+}
+
+.table-log-form .table-wide {
+  flex: 1 1 220px;
+}
+
+.table-log-form .table-wide input {
+  flex: 1;
+  width: auto;
+}
+
+.table-error {
+  min-height: 1.2em;
+  color: var(--bad);
+}
+
+.table-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.table-log li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-variant-numeric: tabular-nums;
+}
+
+#table-panel select {
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  font: inherit;
+}
+
 #table-panel input {
   width: 6em;
   padding: 3px 6px;

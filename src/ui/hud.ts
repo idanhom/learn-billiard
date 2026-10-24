@@ -20,6 +20,7 @@ import type { ExamRun } from '../game/campaign';
 import type { ShotOutcome, ShotPhase, ShotResult } from '../game/shot-session';
 import type { HistoryEntry, TendencyRow } from '../game/shot-history';
 import type { GuideVisibility } from '../game/tiers';
+import { escape } from './html';
 
 /**
  * A level just cleared or an exam just finished. Held on screen, under the
@@ -944,6 +945,3 @@ function panel(root: HTMLElement, id: string): HTMLElement {
   return element;
 }
 
-function escape(text: string): string {
-  return text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-}

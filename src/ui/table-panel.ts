@@ -9,11 +9,21 @@
 import type { ClothPreset } from '../constants';
 import { TABLE_FEET, TIMING_RANGE, type TableFeet, timeCloth } from '../game/cloth-timing';
 import { type DrillSheet, type FractionMiss, type SheetShot, dealSheet, pocketName } from '../game/drill-sheet';
+import {
+  MAX_NOTE_LENGTH,
+  MAX_SESSION_SHOTS,
+  type TableLogStore,
+  type TableSession,
+  addSession,
+  summarise,
+  validateSession,
+} from '../game/table-log';
 import { toDiamonds } from '../geometry/diamonds';
 import type { PocketId } from '../geometry/table';
 import type { Vec2 } from '../geometry/vec2';
+import { escape } from './html';
 
-export type TableTab = 'sheet' | 'cloth' | 'limits';
+export type TableTab = 'sheet' | 'log' | 'cloth' | 'limits';
 
 export interface TablePanelActions {
   /** The panel has closed: give the keyboard back to the table. */
@@ -24,10 +34,13 @@ export interface TablePanelActions {
   onSetTableFeet(feet: TableFeet): void;
   /** How often each fraction's shots miss here, for a drill sheet to lean on. */
   fractionMisses(): readonly FractionMiss[];
+  /** Where sessions at a real table are kept. */
+  readonly log: TableLogStore;
 }
 
 const TABS: readonly { readonly id: TableTab; readonly label: string }[] = [
   { id: 'sheet', label: 'Drill sheet' },
+  { id: 'log', label: 'Session log' },
   { id: 'cloth', label: 'Time your cloth' },
   { id: 'limits', label: 'What this can&rsquo;t teach' },
 ];
@@ -41,6 +54,8 @@ export class TablePanel {
   #sheet: DrillSheet | undefined;
   /** The day the sheet was dealt, for the top of the print. */
   #dealtOn = '';
+  /** Sessions at a real table, newest first, read from the store when first shown. */
+  #sessions: TableSession[] | undefined;
   /** The time taken to roll a table length, once one is in. */
   #seconds: number | null = null;
   /** When the stopwatch started, while it runs; and what ticks its display. */
@@ -87,12 +102,23 @@ export class TablePanel {
         window.print();
         return;
       }
+      const remove = target.closest('[data-remove]');
+      if (remove instanceof HTMLElement) {
+        const sessions = this.#loadSessions().filter((_, i) => i !== Number(remove.dataset.remove));
+        this.#saveSessions(sessions);
+        this.#render();
+        return;
+      }
       const use = target.closest('[data-use-cloth]');
       if (use instanceof HTMLElement) {
         this.#actions.onSetCloth(use.dataset.useCloth as ClothPreset);
         this.#renderTiming();
         this.#keepFocus();
       }
+    });
+    this.#element.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if ((event.target as HTMLElement).matches('[data-log-form]')) this.#logSession(event.target as HTMLFormElement);
     });
     this.#element.addEventListener('input', (event) => {
       const field = event.target as HTMLInputElement;
@@ -155,6 +181,8 @@ export class TablePanel {
     switch (this.#tab) {
       case 'sheet':
         return this.#sheetBody();
+      case 'log':
+        return this.#logBody();
       case 'cloth':
         return this.#clothBody();
       case 'limits':
@@ -189,6 +217,76 @@ export class TablePanel {
       '</div></div>' +
       (sheet ? renderSheet(sheet, this.#dealtOn) : '')
     );
+  }
+
+  #logBody(): string {
+    const { tableFeet } = this.#actions.settings();
+    const sessions = this.#loadSessions();
+    const sizes = TABLE_FEET.map(
+      (feet) => `<option value="${feet}"${feet === tableFeet ? ' selected' : ''}>${feet} ft</option>`,
+    ).join('');
+    const form =
+      '<form class="table-log-form" data-log-form novalidate>' +
+      `<label>Date <input type="date" name="date" value="${today()}"></label>` +
+      `<label>Table <select name="tableFeet">${sizes}</select></label>` +
+      `<label>Shots <input type="number" name="shots" min="1" max="${MAX_SESSION_SHOTS}" inputmode="numeric"></label>` +
+      `<label>Made <input type="number" name="made" min="0" max="${MAX_SESSION_SHOTS}" inputmode="numeric"></label>` +
+      '<label>Sheet <input type="number" name="sheet" min="1" inputmode="numeric" placeholder="none" ' +
+      `value="${this.#sheet?.id ?? ''}"></label>` +
+      `<label class="table-wide">Note <input type="text" name="note" maxlength="${MAX_NOTE_LENGTH}"></label>` +
+      '<button type="submit" class="hud-chip">Log it</button></form>' +
+      '<p class="table-error" role="alert"></p>';
+    const rows = sessions
+      .map(
+        (session, i) =>
+          `<li><span>${escape(session.date)} &middot; ${session.tableFeet} ft &middot; ` +
+          `${session.made} of ${session.shots} (${percent(session.made, session.shots)})` +
+          (session.sheet === null ? '' : ` &middot; sheet ${session.sheet}`) +
+          (session.note === '' ? '' : ` &middot; ${escape(session.note)}`) +
+          `</span><button type="button" class="hud-call" data-remove="${i}" aria-label="Remove this session">&times;</button></li>`,
+      )
+      .join('');
+    return (
+      '<p>Log your sessions at a real table, to see whether what you learn here carries over. A drill ' +
+      'sheet&rsquo;s number goes in by itself once you have dealt one.</p>' +
+      form +
+      (sessions.length === 0 ? '' : `<p>${trend(sessions)}</p><ul class="table-log">${rows}</ul>`)
+    );
+  }
+
+  #loadSessions(): TableSession[] {
+    this.#sessions ??= this.#actions.log.load();
+    return this.#sessions;
+  }
+
+  #saveSessions(sessions: TableSession[]): void {
+    this.#sessions = sessions;
+    this.#actions.log.save(sessions);
+  }
+
+  /** Log what the form says, or say what is wrong with it and keep what was typed. */
+  #logSession(form: HTMLFormElement): void {
+    const data = new FormData(form);
+    const number = (name: string): number => {
+      const value = String(data.get(name) ?? '').trim();
+      return value === '' ? Number.NaN : Number(value);
+    };
+    const sheet = String(data.get('sheet') ?? '').trim();
+    const session = validateSession({
+      date: String(data.get('date') ?? ''),
+      tableFeet: number('tableFeet'),
+      shots: number('shots'),
+      made: number('made'),
+      sheet: sheet === '' ? null : Number(sheet),
+      note: String(data.get('note') ?? '').trim(),
+    });
+    if (typeof session === 'string') {
+      const error = this.#element.querySelector('.table-error');
+      if (error) error.textContent = session;
+      return;
+    }
+    this.#saveSessions(addSession(this.#loadSessions(), session));
+    this.#render('[name="shots"]');
   }
 
   #clothBody(): string {
@@ -274,6 +372,29 @@ export class TablePanel {
     this.#ticker = undefined;
     this.#started = null;
   }
+}
+
+/** Today, as a date field wants it: the local day, not the UTC one. */
+function today(): string {
+  const now = new Date();
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function percent(made: number, shots: number): string {
+  return `${Math.round((made / shots) * 100)}%`;
+}
+
+/** The last five sessions against the five before, so a trend shows. */
+function trend(sessions: readonly TableSession[]): string {
+  const recent = summarise(sessions, 5);
+  const before = summarise(sessions, 5, 5);
+  const run = (summary: ReturnType<typeof summarise>, label: string): string =>
+    `${label}: ${summary.made} of ${summary.shots} made (${percent(summary.made, summary.shots)})`;
+  const latest = run(recent, recent.sessions === 1 ? 'Your session' : `Your last ${recent.sessions} sessions`);
+  return before.sessions === 0
+    ? `${latest}.`
+    : `${latest}. ${run(before, before.sessions === 1 ? 'The one before' : `The ${before.sessions} before`)}.`;
 }
 
 /** The sheet, as it prints: a heading, then one row a shot with a picture of it. */

@@ -194,8 +194,12 @@ export class PoolScene {
   }
 
   resize(): void {
-    const width = this.#canvas.clientWidth || 1;
-    const height = this.#canvas.clientHeight || 1;
+    const width = this.#canvas.clientWidth;
+    const height = this.#canvas.clientHeight;
+    // Hidden, as it is while a drill sheet prints: keep the last size. Sized
+    // to nothing, it would stay a single stretched pixel once shown again,
+    // since showing it fires no resize of its own.
+    if (width === 0 || height === 0) return;
     this.#renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.#renderer.setSize(width, height, false);
     this.#cssHeight = height;

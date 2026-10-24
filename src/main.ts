@@ -22,6 +22,7 @@ import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
 import { PerceptionDrill } from './game/perception';
 import { potWindow } from './game/pot-window';
 import { Routine } from './game/routine';
+import { createTableLogStore } from './game/table-log';
 import { ADVANCE_REQUIRED, ADVANCE_WINDOW, FINAL_TIER, type GuideVisibility } from './game/tiers';
 import type { LevelDefinition } from './game/levels';
 import { ballNumberFor } from './scene/ball-textures';
@@ -50,6 +51,7 @@ const tablePanel = new TablePanel(document.getElementById('app') as HTMLElement,
     settingsStore.save(settings);
   },
   fractionMisses: () => campaign.fractionMisses,
+  log: createTableLogStore(browserStorage()),
 });
 
 const scene = new PoolScene(canvas);
