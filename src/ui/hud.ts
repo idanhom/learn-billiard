@@ -167,6 +167,8 @@ export interface HudActions {
   onDrillCall(fraction: FractionName): void;
   /** Hand the keyboard back to the table. Called after every click on the HUD. */
   returnFocus(): void;
+  /** The panel of things to take to a real table. */
+  onOpenTable(): void;
 }
 
 /** A panel a small screen folds away behind a toolbar chip. */
@@ -295,7 +297,7 @@ export class Hud {
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera: behind, overhead, stance &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
       '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>9</b> level &middot; ' +
-      '<b>F</b> call the fraction &middot; <b>G</b> get down on the line</div>' +
+      '<b>F</b> call the fraction &middot; <b>G</b> get down on the line &middot; <b>T</b> at the table</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
       '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +
       'lift to strike; slide off its side to call the shot off. The buttons along the bottom do ' +
@@ -376,6 +378,8 @@ export class Hud {
         return this.#actions.onCycleSpeed();
       case 'cloth':
         return this.#actions.onCycleCloth();
+      case 'table':
+        return this.#actions.onOpenTable();
       case 'levels':
       case 'history':
         return this.#toggleSheet(this.#openSheet === action ? undefined : action);
@@ -526,10 +530,14 @@ export class Hud {
       (state.history.length > 0
         ? chip('history', 'Shots', { compactOnly: true, pressed: this.#openSheet === 'history' })
         : '') +
+      chip('table', 'At the table', { key: 'T' }) +
       chip('help', '?', { pressed: this.#helpOpen, label: 'Controls and model notes' });
     if (html === this.#renderedToolbar) return;
     this.#renderedToolbar = html;
     this.#toolbar.innerHTML = html;
+    // The controls panel sits on top of the toolbar, which wraps to a second
+    // row when its chips outgrow it.
+    this.#root.style.setProperty('--toolbar-height', `${this.#toolbar.offsetHeight}px`);
   }
 
   #renderStatus(state: HudState): void {

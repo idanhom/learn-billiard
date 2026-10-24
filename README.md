@@ -51,6 +51,7 @@ by that.
 | `1`–`9` | jump to a level |
 | `F` | call the fraction the shot needs |
 | `G` | get down on the line, or stand back up (last tier and exam) |
+| `T` | at the table: what to take to a real one, and what this can't teach |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
 degree at a time with the `‹` `›` buttons. Power is the strip down the right edge:
@@ -64,6 +65,12 @@ a small screen, a phone either way up, the panels shrink, and the level list
 and the recent shots fold away behind toolbar buttons of their own, so the
 table keeps most of the screen. `?` opens the controls and the notes on what
 the physics leaves out.
+
+At the table (`T`) gathers what carries the trainer over to a real table. It
+starts with what this cannot teach: stance and sighting, a bridge, a straight
+stroke (with a test for it), spin and cue ball control, speed by feel, and the
+table you play on. Every stroke here goes exactly where you aimed, so every
+miss here is the aim; at a table it may be the stroke.
 
 Aiming is by drag rather than by pointing at the cloth. Pointing reads well on
 paper, but behind the cue the camera sits low and close to the table, so a few

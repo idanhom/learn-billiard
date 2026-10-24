@@ -31,6 +31,8 @@ export interface InputHandlers {
   onGetDown(): void;
   /** Escape when not charging: dismiss what is asking, such as the self-estimate. */
   onDismiss(): void;
+  /** T: the panel of things to take to a real table. */
+  onOpenTable(): void;
 }
 
 /**
@@ -152,6 +154,10 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
       case 'KeyG':
         if (event.repeat) return;
         handlers.onGetDown();
+        return;
+      case 'KeyT':
+        if (event.repeat) return;
+        handlers.onOpenTable();
         return;
       case 'Escape':
         if (charging) {

@@ -388,6 +388,33 @@ const onTheGhost = await page.evaluate(() => {
 });
 check('placed on the ghost ball, it is right', onTheGhost?.result?.correct === true, JSON.stringify(onTheGhost));
 
+// At the table: T opens it over the game, Escape closes it and the keyboard
+// goes back to the table.
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(200);
+await page.focus('#game');
+await page.keyboard.press('KeyT');
+await sleep(150);
+const tableOpen = await page.evaluate(() => {
+  const panel = document.getElementById('table-panel');
+  return { shown: panel && !panel.hidden, text: panel?.textContent ?? '' };
+});
+check('T opens the at-the-table panel, on what this cannot teach', tableOpen.shown && tableOpen.text.includes('A straight stroke'), JSON.stringify(tableOpen.shown));
+await page.screenshot({ path: `${OUT}table-limits.png` });
+await page.keyboard.press('Escape');
+await sleep(100);
+const tableClosed = await page.evaluate(() => ({
+  hidden: document.getElementById('table-panel').hidden,
+  focus: document.activeElement?.id,
+}));
+check('Escape closes it and gives the keyboard back to the table', tableClosed.hidden && tableClosed.focus === 'game', JSON.stringify(tableClosed));
+await page.click('#hud-toolbar [data-action="table"]');
+await sleep(100);
+const byChip = await page.evaluate(() => !document.getElementById('table-panel').hidden);
+await page.click('#table-panel [data-close]');
+await sleep(100);
+check('the toolbar chip opens it too, and Close closes it', byChip && (await page.evaluate(() => document.getElementById('table-panel').hidden)));
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {
@@ -852,6 +879,13 @@ const helpShown = () => page.locator('#hud-help').isVisible();
 check('help stays folded away until asked for', !(await helpShown()));
 await chip('help').click();
 check('and ? opens it', await helpShown());
+const helpBox = await page.locator('#hud-help').boundingBox();
+const toolbarBox = await page.locator('#hud-toolbar').boundingBox();
+check(
+  'and it sits clear above the toolbar, however many rows that has',
+  helpBox.y + helpBox.height <= toolbarBox.y,
+  `help bottom ${(helpBox.y + helpBox.height).toFixed(0)}, toolbar top ${toolbarBox.y.toFixed(0)}`,
+);
 await chip('help').click();
 check('and closes it again', !(await helpShown()));
 check(

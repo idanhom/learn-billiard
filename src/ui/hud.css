@@ -224,7 +224,7 @@ body {
 }
 
 #hud-help {
-  bottom: calc(var(--edge-bottom) + 52px);
+  bottom: calc(var(--edge-bottom) + var(--toolbar-height, 44px) + 8px);
   left: var(--edge-left);
 }
 
@@ -412,6 +412,60 @@ body {
 
 .hud-aim-button:active {
   background: rgba(111, 211, 160, 0.2);
+}
+
+/*
+ * At the table: over the game, outside the HUD, centred and scrolling on its
+ * own when it is taller than the screen.
+ */
+#table-panel {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(600px, calc(100% - 28px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  z-index: 10;
+  background: rgba(12, 18, 24, 0.96);
+}
+
+#table-panel[hidden] {
+  display: none;
+}
+
+.table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.table-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.table-body {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.table-body h3 {
+  margin: 12px 0 2px;
+  font-size: 13.5px;
+  color: var(--accent);
+}
+
+.table-body p {
+  margin: 0 0 6px;
+}
+
+#table-panel kbd {
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--ink-dim);
 }
 
 /* A perception drill takes no shot: no meter, no strip, no aim buttons. */

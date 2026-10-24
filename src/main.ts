@@ -27,6 +27,7 @@ import type { LevelDefinition } from './game/levels';
 import { ballNumberFor } from './scene/ball-textures';
 import { type CameraView, PoolScene } from './scene/pool-scene';
 import { Hud, type HudState, type Milestone, type Notice } from './ui/hud';
+import { TablePanel } from './ui/table-panel';
 
 /** Seconds of held Space to reach full power. */
 const CHARGE_SECONDS = 1.1;
@@ -40,6 +41,9 @@ const CLOTH_LABELS: Record<ClothPreset, string> = {
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const hudRoot = document.getElementById('hud') as HTMLElement;
+const tablePanel = new TablePanel(document.getElementById('app') as HTMLElement, {
+  onClose: () => canvas.focus(),
+});
 
 const scene = new PoolScene(canvas);
 const seed = Math.floor(Date.now() % 1_000_000);
@@ -60,6 +64,7 @@ const hud = new Hud(hudRoot, {
   onCall: (fraction) => session.callFraction(fraction),
   onViewingDistance: (steps) => changeViewingDistance(steps),
   returnFocus: () => canvas.focus(),
+  onOpenTable: () => tablePanel.toggle(),
 });
 
 const settingsStore = createSettingsStore(browserStorage());
@@ -394,6 +399,7 @@ attachInput(canvas, {
   },
   onGetDown: toggleDown,
   onDismiss: () => answerEstimate(null),
+  onOpenTable: () => tablePanel.open(),
   onRetry: retry,
   onNext: nextShot,
   onSelectLevel(id: number) {
