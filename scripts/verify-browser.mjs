@@ -1130,6 +1130,33 @@ await page.waitForFunction((id) => window.__debug.state().shotId !== id, countin
 check('with the next shot dealing itself, the report counts down and the shot comes', /Next shot in \d s/.test(countdown), countdown);
 await page.evaluate(() => window.__debug.toggleAutoNext());
 
+// The daily set: ten shots with no guides, a card at the end on the median,
+// and once the first run is in, the rest of the day is practice.
+await page.evaluate(() => window.__debug.selectLevel(11));
+await sleep(200);
+const dailyStart = await page.textContent('#hud-status');
+check('the daily set opens on its first shot, the run that counts', dailyStart.includes('Daily set: shot 1 of 10') && dailyStart.includes('first run today'), dailyStart);
+for (let shot = 0; shot < 10; shot++) {
+  await page.evaluate(() => {
+    window.__debug.aimIdeal();
+    window.__debug.fire(0.5);
+  });
+  await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+  if (shot < 9) await page.evaluate(() => window.__debug.next());
+}
+const dailyDone = await state();
+check(
+  'ten shots close the run on its median, as the first run of the day',
+  dailyDone.milestone?.kind === 'daily-finished' && dailyDone.milestone.first === true && dailyDone.milestone.median < 0.2,
+  JSON.stringify(dailyDone.milestone),
+);
+await page.screenshot({ path: `${OUT}daily-finished.png` });
+await page.evaluate(() => window.__debug.next());
+await sleep(200);
+const dailyAgain = await page.textContent('#hud-status');
+check('after it, the set again is practice, and the first run stands', dailyAgain.includes('shot 1 of 10') && dailyAgain.includes('Practice'), dailyAgain);
+check('the levels panel counts the days practised', (await page.textContent('#hud-levels')).includes('Practised on 1 of the last 7 days'));
+
 check(
   'without a touch screen the power bar stays, and the touch strip stays away',
   (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),

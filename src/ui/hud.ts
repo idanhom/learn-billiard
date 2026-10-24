@@ -46,6 +46,15 @@ export type Milestone =
       readonly total: number;
       readonly personalBest: boolean;
       readonly best: number | null;
+      readonly first: boolean;
+      readonly firstToday: number;
+    }
+  | {
+      readonly kind: 'daily-finished';
+      readonly median: number;
+      readonly first: boolean;
+      readonly firstToday: number;
+      readonly earlier: readonly { readonly date: string; readonly score: number }[];
     };
 
 /** Something worth saying once, at the top of the screen. */
@@ -99,6 +108,10 @@ export interface HudState {
   readonly levelName: string;
   readonly levelDescription: string;
   readonly levels: readonly HudLevelEntry[];
+  /** The daily set's run in play, on its level. */
+  readonly daily: { readonly shot: number; readonly total: number; readonly firstToday: number | null } | null;
+  /** On how many of the last seven days there was practice. */
+  readonly daysPractised: number;
   /** Mastery by ten-degree band of cut. */
   readonly bands: readonly BandMastery[];
   /** Share of the pocket a qualifying shot may use. */
@@ -577,7 +590,9 @@ export class Hud {
   }
 
   #renderStatus(state: HudState): void {
-    const heading = state.exam
+    const heading = state.daily
+      ? `Daily set: shot ${state.daily.shot} of ${state.daily.total}`
+      : state.exam
       ? `Exam &mdash; shot ${Math.min(state.exam.shotsTaken + 1, state.exam.total)} of ${state.exam.total}`
       : state.tierComplete
         ? 'Level complete'
@@ -587,7 +602,11 @@ export class Hud {
 
     // The drills show no guide at any tier, and a flash drill is judged on
     // the fraction rather than the pocket.
-    const line = state.exam
+    const line = state.daily
+      ? state.daily.firstToday === null
+        ? 'Your first run today: it counts'
+        : `Practice: today&rsquo;s first run stands at ${ofThePocket(state.daily.firstToday)}`
+      : state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
       : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize} to advance` +
         (state.drill ? '' : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
@@ -684,6 +703,7 @@ export class Hud {
     const key =
       state.levels.map((l) => `${l.id}${l.current ? 'c' : ''}${l.completed ? 'x' : ''}`).join() +
       state.bands.map((b) => `${b.rate}/${b.shots}${b.mastered ? 'm' : ''}`).join() +
+      `p${state.daysPractised}` +
       (this.#confirmingReset ? '?' : '');
     if (key === this.#renderedLevels) return;
     this.#renderedLevels = key;
@@ -704,7 +724,10 @@ export class Hud {
       : '<button type="button" class="hud-reset" data-action="reset">Reset progress</button>';
 
     this.#levels.innerHTML =
-      '<div class="hud-label">Levels</div>' + `<div class="hud-level-list">${rows}</div>` + masteryStrip(state.bands) + reset;
+      '<div class="hud-label">Levels</div>' + `<div class="hud-level-list">${rows}</div>` +
+      masteryStrip(state.bands) +
+      `<div class="hud-sub hud-practised">Practised on ${state.daysPractised} of the last 7 days</div>` +
+      reset;
   }
 }
 
@@ -748,14 +771,27 @@ function renderMilestone(milestone: Milestone): string {
         (milestone.potted === null ? 'read right' : `on aim &middot; ${milestone.potted} potted`) +
         '</div>' +
         (milestone.nextLevelName === null ? '' : `<div class="hud-sub">Next: ${escape(milestone.nextLevelName)}</div>`)
-      : '<div class="hud-label">Exam finished</div>' +
-        `<div class="hud-big">${milestone.potted} of ${milestone.total} potted</div>` +
-        (milestone.personalBest
-          ? '<div class="hud-sub">A personal best.</div>'
-          : milestone.best === null
+      : milestone.kind === 'daily-finished'
+        ? '<div class="hud-label">Daily set</div>' +
+          `<div class="hud-big">Median: ${ofThePocket(milestone.median)}</div>` +
+          (milestone.first
+            ? '<div class="hud-sub">Your first run today: this is the one that counts.</div>'
+            : `<div class="hud-sub">Practice: today&rsquo;s first run stands at ${ofThePocket(milestone.firstToday)}.</div>`) +
+          (milestone.earlier.length === 0
             ? ''
-            : `<div class="hud-sub">Your best is ${milestone.best} of ${milestone.total}.</div>`) +
-        `<div class="hud-sub">Next: a fresh run of ${milestone.total}</div>`;
+            : `<div class="hud-sub">First runs before, latest first: ${milestone.earlier.map((run) => shareOfPocket(run.score)).join(', ')}</div>`) +
+          '<div class="hud-sub">Next: the same ten again, as practice</div>'
+        : '<div class="hud-label">Exam finished</div>' +
+          `<div class="hud-big">${milestone.potted} of ${milestone.total} potted</div>` +
+          (milestone.personalBest
+            ? '<div class="hud-sub">A personal best.</div>'
+            : milestone.best === null
+              ? ''
+              : `<div class="hud-sub">Your best is ${milestone.best} of ${milestone.total}.</div>`) +
+          (milestone.first
+            ? '<div class="hud-sub">Your first run today.</div>'
+            : `<div class="hud-sub">Today&rsquo;s first run: ${milestone.firstToday} of ${milestone.total}.</div>`) +
+          `<div class="hud-sub">Next: a fresh run of ${milestone.total}</div>`;
   return (
     body +
     '<button type="button" class="hud-continue">Continue</button>' +
@@ -963,6 +999,11 @@ function percent(share: number): string {
 /** A share of the pocket: a percentage inside it, a multiple of it outside, where percentages run to four figures. */
 function ofThePocket(share: number): string {
   return share <= 1 ? `${percent(share)} of the pocket` : `${share.toFixed(1)}&times; the pocket`;
+}
+
+/** The same, for a list: "42%", or "1.5×" past the pocket. */
+function shareOfPocket(share: number): string {
+  return share <= 1 ? percent(share) : `${share.toFixed(1)}&times;`;
 }
 
 /** What the object ball did, in table units. */

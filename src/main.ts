@@ -213,7 +213,7 @@ function clock(): number {
  * real table.
  */
 function routineActive(): boolean {
-  return campaign.level.exam || campaign.tier === FINAL_TIER;
+  return campaign.level.exam || campaign.level.daily === true || campaign.tier === FINAL_TIER;
 }
 
 /** Every aim change goes through here, so the routine can hold it to the committed line. */
@@ -393,7 +393,7 @@ function recordOutcome(outcome: ShotOutcome): void {
   const level = campaign.level;
   // Once the ghost ball has gone, the player says how they hit it before the
   // report says. Judged on the tier the shot was played at.
-  if ((level.exam || campaign.tier >= 2) && outcome.pocketUsed !== null) {
+  if ((level.exam || level.daily || campaign.tier >= 2) && outcome.pocketUsed !== null) {
     const actual = estimateOf(signedShare(outcome.pocketUsed, outcome.aimError.side));
     estimate = { asking: true, said: null, actual, straight: outcome.cutSide === 'straight' };
   }
@@ -427,6 +427,8 @@ function recordOutcome(outcome: ShotOutcome): void {
 function handleEvent(event: CampaignEvent, level: LevelDefinition): void {
   if (event.examFinished) {
     milestone = { kind: 'exam-finished', ...event.examFinished, best: campaign.examBest };
+  } else if (event.dailyFinished) {
+    milestone = { kind: 'daily-finished', ...event.dailyFinished };
   } else if (event.levelCompleted) {
     const stats = campaign.levelStats(level.id);
     milestone = {
@@ -693,6 +695,8 @@ function frame(now: number): void {
     potted: stats.potted,
     exam: campaign.exam,
     examBest: campaign.examBest,
+    daily: campaign.daily ?? null,
+    daysPractised: campaign.daysPractised,
     practice,
     milestone,
     notice,
@@ -814,6 +818,8 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       stats: campaign.stats,
       exam: campaign.exam ?? null,
       examBest: campaign.examBest,
+      daily: campaign.daily ?? null,
+      daysPractised: campaign.daysPractised,
       notice: notice?.text ?? null,
       evaluations,
       practice,

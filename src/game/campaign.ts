@@ -21,6 +21,7 @@ import {
   levelById,
 } from './levels';
 import {
+  type DailyRun,
   type LevelProgress,
   type ProgressState,
   type ProgressStore,
@@ -28,6 +29,18 @@ import {
   emptyProgress,
   levelProgress,
 } from './progress-store';
+import {
+  DAILY_SHOTS,
+  type FirstRun,
+  addFirstRun,
+  dailySeed,
+  daysPractised,
+  firstRunOn,
+  localDate,
+  markPractised,
+  median,
+  shotError,
+} from './daily';
 import type { FractionMiss } from './drill-sheet';
 import {
   type BandRecord,
@@ -52,6 +65,19 @@ export interface ScoredShot {
    * Given only for shots played without the ghost ball.
    */
   readonly mastery?: { readonly cutDegrees: number; readonly onStandard: boolean };
+  /** The share of the pocket the aim used, or null with no line: what the daily set scores. */
+  readonly pocketUsed?: number | null;
+}
+
+export interface DailyResult {
+  /** The run's median share of the pocket. */
+  readonly median: number;
+  /** This was the day's first run, the one that counts. */
+  readonly first: boolean;
+  /** The day's first run, which stands. */
+  readonly firstToday: number;
+  /** The first runs of the days before, latest first, up to six. */
+  readonly earlier: readonly FirstRun<number>[];
 }
 
 /** A band of cut as the levels panel shows it. */
@@ -74,6 +100,10 @@ export interface ExamResult {
   readonly potted: number;
   readonly total: number;
   readonly personalBest: boolean;
+  /** This was the day's first finished run. */
+  readonly first: boolean;
+  /** The day's first finished run, which stands. */
+  readonly firstToday: number;
 }
 
 export interface CampaignEvent {
@@ -84,11 +114,14 @@ export interface CampaignEvent {
   readonly examFinished?: ExamResult;
   /** The band this shot took to mastered, by its label. */
   readonly mastered?: string;
+  readonly dailyFinished?: DailyResult;
 }
 
 export interface CampaignOptions {
   /** Base seed; each shot uses seed + a counter, so a session is reproducible. */
   readonly seed?: number;
+  /** Today, as YYYY-MM-DD: the local date unless a test says otherwise. */
+  readonly today?: () => string;
 }
 
 const NO_GUIDES: GuideVisibility = {
@@ -103,6 +136,7 @@ const NO_GUIDES: GuideVisibility = {
 export class Campaign {
   readonly #store: ProgressStore;
   readonly #baseSeed: number;
+  readonly #today: () => string;
   readonly #notice: string | undefined;
 
   #state: ProgressState;
@@ -121,6 +155,7 @@ export class Campaign {
   constructor(store: ProgressStore, options: CampaignOptions = {}) {
     this.#store = store;
     this.#baseSeed = options.seed ?? 1;
+    this.#today = options.today ?? (() => localDate());
 
     const loaded = store.load();
     this.#state = loaded.state;
@@ -131,6 +166,16 @@ export class Campaign {
     this.#exam = this.#level.exam ? freshExam(this.#level) : undefined;
     this.#source = this.#level;
     this.#layout = this.#generate();
+  }
+
+  /** The daily set's run in play: today's, picked up where it was left, or a fresh one. */
+  #dailyRun(): DailyRun {
+    const today = this.#today();
+    const kept = this.#state.dailyRun;
+    if (kept?.date === today) return kept;
+    const run = { date: today, errors: [] };
+    this.#state = { ...this.#state, dailyRun: run };
+    return run;
   }
 
   get notice(): string | undefined {
@@ -158,9 +203,22 @@ export class Campaign {
     return this.#tiers.tier;
   }
 
-  /** The exam is exempt from tiers, and it and the perception drills show no guide. */
+  /** The exam is exempt from tiers, and it, the daily set and the perception drills show no guide. */
   get guides(): GuideVisibility {
-    return this.#level.exam || this.#level.perception ? NO_GUIDES : this.#tiers.guides;
+    return this.#level.exam || this.#level.perception || this.#level.daily ? NO_GUIDES : this.#tiers.guides;
+  }
+
+  /** The daily set's run in play, on its level. */
+  get daily(): { readonly shot: number; readonly total: number; readonly firstToday: number | null } | undefined {
+    if (!this.#level.daily) return undefined;
+    const run = this.#dailyRun();
+    const standing = firstRunOn(this.#state.dailyFirstRuns, run.date);
+    return { shot: run.errors.length + 1, total: DAILY_SHOTS, firstToday: standing?.score ?? null };
+  }
+
+  /** On how many of the last seven days there was practice, today included. */
+  get daysPractised(): number {
+    return daysPractised(this.#state.practiceDays, this.#today());
   }
 
   /** How often each fraction level's shots miss, as the review weighs them: what a drill sheet leans on. */
@@ -255,9 +313,13 @@ export class Campaign {
     if (this.#layoutPlayed) return { advancedTier: false, levelCompleted: false, practice: true };
     this.#layoutPlayed = true;
     this.#countAttempt(shot);
+    this.#state = { ...this.#state, practiceDays: markPractised(this.#state.practiceDays, this.#today()) };
     const mastered = this.#recordMastery(shot);
     const news = mastered === undefined ? {} : { mastered };
 
+    if (this.#level.daily) {
+      return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordDaily(shot), ...news };
+    }
     if (this.#level.exam) {
       return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordExam(shot), ...news };
     }
@@ -338,6 +400,12 @@ export class Campaign {
     const previousBest = this.#state.examBest;
     const personalBest = previousBest === null || next.potted > previousBest;
     if (personalBest) this.#state = { ...this.#state, examBest: next.potted };
+    // The day's first finished run is kept as well, beside the best.
+    const today = this.#today();
+    const standing = firstRunOn(this.#state.examFirstRuns, today);
+    if (!standing) {
+      this.#state = { ...this.#state, examFirstRuns: addFirstRun(this.#state.examFirstRuns, { date: today, score: next.potted }) };
+    }
 
     // The run is over, so the next shot starts a new one, on a layout nobody
     // has played. Left as it was, the finished run kept counting — an
@@ -347,7 +415,42 @@ export class Campaign {
     this.#shotCounter++;
     this.#deal();
     this.#persist();
-    return { examFinished: { potted: next.potted, total: next.total, personalBest } };
+    return {
+      examFinished: {
+        potted: next.potted,
+        total: next.total,
+        personalBest,
+        first: !standing,
+        firstToday: standing?.score ?? next.potted,
+      },
+    };
+  }
+
+  /**
+   * One shot of the daily set, scored on the share of the pocket it used. The
+   * tenth closes the run on its median, and only a day's first run is kept.
+   */
+  #recordDaily(shot: ScoredShot): { dailyFinished?: DailyResult } {
+    const run = this.#dailyRun();
+    const errors = [...run.errors, shotError(shot.pocketUsed ?? null)];
+    if (errors.length < DAILY_SHOTS) {
+      this.#state = { ...this.#state, dailyRun: { ...run, errors } };
+      this.#persist();
+      return {};
+    }
+
+    const score = median(errors);
+    const standing = firstRunOn(this.#state.dailyFirstRuns, run.date);
+    const earlier = this.#state.dailyFirstRuns.filter((other) => other.date < run.date).slice(0, 6);
+    this.#state = {
+      ...this.#state,
+      dailyRun: null,
+      ...(standing ? {} : { dailyFirstRuns: addFirstRun(this.#state.dailyFirstRuns, { date: run.date, score }) }),
+    };
+    this.#shotCounter++;
+    this.#deal();
+    this.#persist();
+    return { dailyFinished: { median: score, first: !standing, firstToday: standing?.score ?? score, earlier } };
   }
 
   #countAttempt(shot: ScoredShot): void {
@@ -395,12 +498,26 @@ export class Campaign {
   }
 
   #generate(): ShotLayout {
+    if (this.#level.daily) return this.#dailyLayout();
     // Alternate the cut side rather than leaving it to chance, so a run of
     // shots cannot all fall the same way.
     const side = this.#shotCounter % 2 === 0 ? 'left' : 'right';
     const seed = this.#baseSeed + this.#shotCounter * 7919;
     this.#source = this.#sourceFor(seed);
     return generateShot(this.#source, seed, { preferredSide: side }).layout;
+  }
+
+  /**
+   * Shot n of the day's set: the same for everyone that day, whatever else
+   * they have played, and the same again until it is played, so Next cannot
+   * pass over a hard one.
+   */
+  #dailyLayout(): ShotLayout {
+    const run = this.#dailyRun();
+    const index = run.errors.length;
+    this.#source = DAILY_SOURCES[index % DAILY_SOURCES.length]!;
+    const seed = (dailySeed(run.date) + index * 7919) >>> 0;
+    return generateShot(this.#source, seed, { preferredSide: index % 2 === 0 ? 'left' : 'right' }).layout;
   }
 
   /**
@@ -451,6 +568,9 @@ export const INTERLEAVE_FROM_TIER = FINAL_TIER;
 
 /** The least weight a fraction level carries in review, however well it goes. */
 const REVIEW_FLOOR = 0.1;
+
+/** The levels the daily set deals from in turn: the five fractions, then distance and rails. */
+const DAILY_SOURCES = LEVELS.filter((level) => level.id >= 1 && level.id <= 6);
 
 /** Keeps the choice of level independent of the layout drawn from the same seed. */
 const SOURCE_SEED_MIX = 0x5bd1e995;

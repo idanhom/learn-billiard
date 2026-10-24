@@ -13,7 +13,8 @@
  * scored on pots, because at some point the question stops being "is your aim
  * good" and starts being "can you make the ball". Level 8 is a mixed review of
  * the five fractions, leaning on the ones missed most, level 9 reads shots
- * without playing them, and level 10 deals the angles mastered least.
+ * without playing them, level 10 deals the angles mastered least, and level 11
+ * is the daily set.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
@@ -52,6 +53,8 @@ export interface LevelDefinition {
   readonly perception?: boolean;
   /** Deals from the ten-degree bands of cut least mastered, rather than a band of its own. */
   readonly weak?: boolean;
+  /** The daily set: the same ten shots for everyone on a day, dealt from levels 1 to 6. */
+  readonly daily?: boolean;
   /** Fallback used when generation cannot satisfy the brief. */
   readonly template: ShotLayout;
 }
@@ -223,6 +226,21 @@ export const LEVELS: readonly LevelDefinition[] = [
     examShots: 0,
     weak: true,
     template: layoutWithCut('level-10-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 11,
+    name: 'Daily set',
+    description: 'Ten shots, the same for everyone today, with no guides. Only your first run of the day counts.',
+    cutRange: [0, bandAround('eighth')[1]],
+    pocketAllowance: 0.8,
+    cueDistance: [0.35, 1],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    daily: true,
+    template: layoutWithCut('level-11-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
   },
 ];
 

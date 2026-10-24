@@ -240,6 +240,19 @@ mastered least (below), each band as likely as the share of its recent shots
 that missed, an untried band as an even chance, and a mastered one still now
 and then.
 
+Level 11 is the daily set: ten shots, the same for everyone on a given day,
+dealt in turn from levels 1 to 6, with no guides and from the stance. It is
+scored on the median share of the pocket your shots used, so one wild shot
+cannot sink it, and a shot that misses the object ball counts as ten pockets
+off. Only your first run of the day counts; after it the set is practice, and
+the card at the end sets the run against your first runs of the days before.
+A run in play is kept, so a reload or a visit to another level picks it up
+where it was rather than starting the day's first run over, and `N` deals the
+same shot until it is played, so none can be passed over. The exam keeps your
+first finished run of each day beside your best, and the levels panel counts
+the days in the last seven with any practice, rather than a streak that one
+missed day would break.
+
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is
 part of the skill, and a level that only ever deals one kind never tests it.

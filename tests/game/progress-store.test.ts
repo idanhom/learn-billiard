@@ -39,6 +39,10 @@ function populated(): ProgressState {
     bands: {
       '30': { attempts: 12, recent: [true, false, true, true, true, true, false, true, true, true, true, true], mastered: false },
     },
+    practiceDays: ['2026-10-25', '2026-10-23'],
+    dailyFirstRuns: [{ date: '2026-10-25', score: 0.42 }],
+    examFirstRuns: [{ date: '2026-10-23', score: 6 }],
+    dailyRun: { date: '2026-10-25', errors: [0.2, 10, 0.4] },
   };
 }
 
@@ -54,15 +58,52 @@ describe('empty progress', () => {
 });
 
 describe('a save from before mastery by band', () => {
-  test('loads, as it was, with no band played', () => {
-    const { bands: _bands, ...old } = populated();
+  test('loads, as it was, with no band played and no day or first run kept', () => {
+    const { bands: _b, practiceDays: _p, dailyFirstRuns: _d, examFirstRuns: _e, dailyRun: _r, ...old } = populated();
     const loaded = validateProgress({ ...old, version: 1 });
-    expect(loaded).toEqual({ ...populated(), bands: {} });
+    expect(loaded).toEqual({
+      ...populated(),
+      bands: {},
+      practiceDays: [],
+      dailyFirstRuns: [],
+      examFirstRuns: [],
+      dailyRun: null,
+    });
   });
 
   test('but a current one without its bands is not a save', () => {
     const { bands: _bands, ...missing } = populated();
     expect(validateProgress(missing)).toBeUndefined();
+  });
+});
+
+describe('days and first runs', () => {
+  test('are dates, each once', () => {
+    expect(validateProgress({ ...populated(), practiceDays: ['25/10/2026'] })).toBeUndefined();
+    expect(validateProgress({ ...populated(), practiceDays: ['2026-10-25', '2026-10-25'] })).toBeUndefined();
+    expect(
+      validateProgress({
+        ...populated(),
+        dailyFirstRuns: [
+          { date: '2026-10-25', score: 0.4 },
+          { date: '2026-10-25', score: 0.3 },
+        ],
+      }),
+    ).toBeUndefined();
+  });
+
+  test('keep a daily run in play that could be one', () => {
+    expect(validateProgress({ ...populated(), dailyRun: null })).toBeDefined();
+    expect(validateProgress({ ...populated(), dailyRun: { date: '2026-10-25', errors: Array(10).fill(0.1) } })).toBeUndefined();
+    expect(validateProgress({ ...populated(), dailyRun: { date: '2026-10-25', errors: [-0.1] } })).toBeUndefined();
+    expect(validateProgress({ ...populated(), dailyRun: { date: 'today', errors: [] } })).toBeUndefined();
+  });
+
+  test('hold scores that could have happened', () => {
+    expect(validateProgress({ ...populated(), dailyFirstRuns: [{ date: '2026-10-25', score: -1 }] })).toBeUndefined();
+    expect(validateProgress({ ...populated(), dailyFirstRuns: [{ date: '2026-10-25', score: 11 }] })).toBeUndefined();
+    expect(validateProgress({ ...populated(), examFirstRuns: [{ date: '2026-10-25', score: 11 }] })).toBeUndefined();
+    expect(validateProgress({ ...populated(), examFirstRuns: [{ date: '2026-10-25', score: 2.5 }] })).toBeUndefined();
   });
 });
 

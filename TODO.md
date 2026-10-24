@@ -30,6 +30,7 @@ L7 Exam                max cut 69.7 deg   tightest headroom  1.23x   <-- nearest
 L8 Mixed review        max cut 67.2 deg   tightest headroom  2.11x
 L9 Read the angle      max cut 67.2 deg   tightest headroom  2.10x
 L10 Weak angles        max cut 69.9 deg   tightest headroom  1.69x
+L11 Daily set          max cut 67.2 deg   tightest headroom  2.10x
 ```
 
 (`MEASURE=1 npx vitest run tests/zz-calibration.test.ts --reporter=verbose`
@@ -37,9 +38,10 @@ prints this table, seeded.) Since the practice levels were centred on the ball
 fractions (roadmap step D1), the thinnest cut they deal is 67 degrees, and none
 of them comes near the limit; it used to be level 5's 80-degree cuts, at 1.00x.
 The exam, widened to 70-degree cuts and 1.3 m shots (D2), is where it now comes
-nearest. (The review, perception and weak-angles rows are the generator on
-those levels' own bands; in play the first two deal from the five fraction
-levels and the last from one ten-degree band at a time.)
+nearest. (The review, perception, weak-angles and daily rows are the
+generator on those levels' own bands; in play the first two deal from the five
+fraction levels, weak angles from one ten-degree band at a time, and the daily
+set from levels 1 to 6 in turn.)
 `tests/game/generator.test.ts` asserts generated layouts are never
 `underpowered`, which is the invariant that must survive.
 

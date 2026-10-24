@@ -13,11 +13,13 @@
 
 import { FINAL_TIER, type Tier } from './tiers';
 import { LEVELS, examLevel } from './levels';
+import { DAILY_SHOTS, DAYS_KEPT, type FirstRun, NO_LINE } from './daily';
 import { type BandRecord, MASTERY_BANDS, MASTERY_WINDOW, bandKey } from './mastery';
 
 /**
- * Version 2 added mastery by band. A version 1 save is still a good save, and
- * loads with no band played; the key keeps its old name so it is found.
+ * Version 2 added mastery by band, the days practised, and the first runs of
+ * the daily set and the exam. A version 1 save is still a good save, and
+ * loads with none of them yet; the key keeps its old name so it is found.
  */
 export const PROGRESS_VERSION = 2;
 export const PROGRESS_KEY = 'pool-angle-trainer/progress/v1';
@@ -39,6 +41,23 @@ export interface ProgressState {
   readonly examBest: number | null;
   /** Mastery by ten-degree band of cut, keyed by the degree each starts at. */
   readonly bands: Readonly<Record<string, BandRecord>>;
+  /** Days with a shot or drill scored, latest first, as YYYY-MM-DD. */
+  readonly practiceDays: readonly string[];
+  /** The first run of the daily set each day: its median share of the pocket. Latest first. */
+  readonly dailyFirstRuns: readonly FirstRun<number>[];
+  /** The first exam run each day: how many it potted. Latest first. */
+  readonly examFirstRuns: readonly FirstRun<number>[];
+  /**
+   * The daily set's run in play, kept so that leaving it, by a reload or for
+   * another level, does not start the day's first run over.
+   */
+  readonly dailyRun: DailyRun | null;
+}
+
+export interface DailyRun {
+  readonly date: string;
+  /** Each shot's share of the pocket so far. */
+  readonly errors: readonly number[];
 }
 
 export interface LoadResult {
@@ -72,6 +91,10 @@ export function emptyProgress(): ProgressState {
     levels: {},
     examBest: null,
     bands: {},
+    practiceDays: [],
+    dailyFirstRuns: [],
+    examFirstRuns: [],
+    dailyRun: null,
   };
 }
 
@@ -106,8 +129,12 @@ export function validateProgress(raw: unknown): ProgressState | undefined {
     levels[key] = level;
   }
 
-  // Version 1 had no bands: it loads with none played.
+  // Version 1 had none of what follows: it loads with none of it yet.
   const bands: Record<string, BandRecord> = {};
+  let practiceDays: string[] = [];
+  let dailyFirstRuns: FirstRun<number>[] = [];
+  let examFirstRuns: FirstRun<number>[] = [];
+  let dailyRun: DailyRun | null = null;
   if (raw.version !== 1) {
     if (!isRecord(raw.bands)) return undefined;
     for (const [key, value] of Object.entries(raw.bands)) {
@@ -115,6 +142,24 @@ export function validateProgress(raw: unknown): ProgressState | undefined {
       const band = validateBand(value);
       if (!band) return undefined;
       bands[key] = band;
+    }
+    const days = raw.practiceDays;
+    if (!Array.isArray(days) || days.length > DAYS_KEPT || !days.every(isDate) || new Set(days).size !== days.length) {
+      return undefined;
+    }
+    practiceDays = days as string[];
+    const daily = validateFirstRuns(raw.dailyFirstRuns, (score) => typeof score === 'number' && score >= 0 && score <= NO_LINE);
+    const exam = validateFirstRuns(raw.examFirstRuns, (score) => isCount(score) && score <= examShots);
+    if (!daily || !exam) return undefined;
+    dailyFirstRuns = daily;
+    examFirstRuns = exam;
+    if (raw.dailyRun !== null) {
+      const run = raw.dailyRun;
+      if (!isRecord(run) || !isDate(run.date) || !Array.isArray(run.errors)) return undefined;
+      if (run.errors.length >= DAILY_SHOTS || !run.errors.every((e) => typeof e === 'number' && e >= 0 && e <= NO_LINE)) {
+        return undefined;
+      }
+      dailyRun = { date: run.date, errors: run.errors as number[] };
     }
   }
 
@@ -124,7 +169,28 @@ export function validateProgress(raw: unknown): ProgressState | undefined {
     levels,
     examBest: examBest as number | null,
     bands,
+    practiceDays,
+    dailyFirstRuns,
+    examFirstRuns,
+    dailyRun,
   };
+}
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isDate(value: unknown): value is string {
+  return typeof value === 'string' && DATE.test(value);
+}
+
+/** One run a day at most, each with a date and a score that `scoreOk` accepts. */
+function validateFirstRuns(raw: unknown, scoreOk: (score: unknown) => boolean): FirstRun<number>[] | undefined {
+  if (!Array.isArray(raw) || raw.length > DAYS_KEPT) return undefined;
+  const dates = new Set<string>();
+  for (const run of raw) {
+    if (!isRecord(run) || !isDate(run.date) || !scoreOk(run.score) || dates.has(run.date)) return undefined;
+    dates.add(run.date);
+  }
+  return raw.map((run) => ({ date: run.date as string, score: run.score as number }));
 }
 
 function validateBand(raw: unknown): BandRecord | undefined {

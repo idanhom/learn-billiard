@@ -428,7 +428,17 @@ function resumed(
   levels[String(level)] = { ...base, ...(records[String(level)] ?? {}), tier } as LevelProgress;
   storage.setItem(
     PROGRESS_KEY,
-    JSON.stringify({ version: PROGRESS_VERSION, currentLevel: level, levels, examBest: null, bands }),
+    JSON.stringify({
+      version: PROGRESS_VERSION,
+      currentLevel: level,
+      levels,
+      examBest: null,
+      bands,
+      practiceDays: [],
+      dailyFirstRuns: [],
+      examFirstRuns: [],
+      dailyRun: null,
+    }),
   );
   return new Campaign(createProgressStore(storage), { seed: 4000 });
 }
@@ -615,5 +625,150 @@ describe('the weak-angles level', () => {
       subject.nextShot();
     }
     expect([...seen].sort((a, b) => a - b)).toEqual([0, 10, 20, 30, 40, 50, 60]);
+  });
+});
+
+describe('the daily set', () => {
+  const dailyLevel = LEVELS.find((level) => level.daily)!;
+  let day = '2026-10-25';
+  const onDay = (storage = new FakeStorage(), seed = 4000) =>
+    new Campaign(createProgressStore(storage), { seed, today: () => day });
+  const used = (share: number | null): ScoredShot => ({ qualifying: share !== null && share <= 0.8, pottedTarget: false, pocketUsed: share });
+
+  /** Play a whole run, the n-th shot using `shares[n]` of the pocket. */
+  function run(subject: Campaign, shares: readonly (number | null)[]) {
+    let last;
+    for (const share of shares) {
+      last = subject.record(used(share));
+      subject.nextShot();
+    }
+    return last!;
+  }
+
+  test('deals the same ten shots to everyone that day, and others the next', () => {
+    day = '2026-10-25';
+    const ids = (seed: number) => {
+      const subject = onDay(new FakeStorage(), seed);
+      subject.selectLevel(dailyLevel.id);
+      const seen: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        seen.push(subject.layout.id);
+        expect(layoutViolations(subject.layout, subject.layoutLevel)).toEqual([]);
+        subject.record(used(0.2));
+        subject.nextShot();
+      }
+      return seen;
+    };
+    const today = ids(4000);
+    expect(ids(9)).toEqual(today);
+    day = '2026-10-26';
+    expect(ids(4000)).not.toEqual(today);
+  });
+
+  test('cannot be passed over: Next deals the same shot until it is played', () => {
+    day = '2026-10-25';
+    const subject = onDay();
+    subject.selectLevel(dailyLevel.id);
+    const first = subject.layout.id;
+    subject.nextShot();
+    expect(subject.layout.id).toBe(first);
+    expect(subject.guides).toEqual(Object.fromEntries(Object.keys(subject.guides).map((k) => [k, false])));
+  });
+
+  test('scores the run on its median, and keeps only the day’s first', () => {
+    day = '2026-10-25';
+    const subject = onDay();
+    subject.selectLevel(dailyLevel.id);
+    const first = run(subject, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, null]).dailyFinished!;
+    expect(first).toMatchObject({ first: true, firstToday: first.median });
+    expect(first.median).toBeCloseTo(0.55, 12);
+    expect(subject.daily).toMatchObject({ shot: 1, firstToday: 0.55 });
+    const second = run(subject, Array(10).fill(0.1)).dailyFinished!;
+    expect(second.median).toBeCloseTo(0.1, 12);
+    expect(second).toMatchObject({ first: false });
+    expect(second.firstToday).toBeCloseTo(0.55, 12);
+  });
+
+  test('picks a run back up after a reload or another level, rather than starting it over', () => {
+    day = '2026-10-25';
+    const storage = new FakeStorage();
+    const before = onDay(storage);
+    before.selectLevel(dailyLevel.id);
+    run(before, [0.3, 0.3, 0.3]);
+    const after = onDay(storage);
+    expect(after.daily?.shot).toBe(4);
+    after.selectLevel(1);
+    after.selectLevel(dailyLevel.id);
+    expect(after.daily?.shot).toBe(4);
+    const finished = run(after, Array(7).fill(0.3)).dailyFinished!;
+    expect(finished.first).toBe(true);
+  });
+
+  test('drops yesterday’s unfinished run for a fresh one', () => {
+    day = '2026-10-25';
+    const storage = new FakeStorage();
+    const yesterday = onDay(storage);
+    yesterday.selectLevel(dailyLevel.id);
+    run(yesterday, [0.3, 0.3]);
+    day = '2026-10-26';
+    expect(onDay(storage).daily?.shot).toBe(1);
+  });
+
+  test('shows the first runs of the days before', () => {
+    const storage = new FakeStorage();
+    for (const [date, share] of [['2026-10-23', 0.6], ['2026-10-24', 0.4]] as const) {
+      day = date;
+      const subject = onDay(storage);
+      subject.selectLevel(dailyLevel.id);
+      run(subject, Array(10).fill(share));
+    }
+    day = '2026-10-25';
+    const subject = onDay(storage);
+    subject.selectLevel(dailyLevel.id);
+    const result = run(subject, Array(10).fill(0.2)).dailyFinished!;
+    expect(result.earlier.map((r) => [r.date, r.score])).toEqual([
+      ['2026-10-24', 0.4],
+      ['2026-10-23', 0.6],
+    ]);
+  });
+});
+
+describe('days practised and the exam’s first run', () => {
+  let day = '2026-10-20';
+  const onDay = (storage: FakeStorage) => new Campaign(createProgressStore(storage), { seed: 4000, today: () => day });
+
+  test('count the days in the last week with a shot played, not a retry alone', () => {
+    const storage = new FakeStorage();
+    for (const date of ['2026-10-18', '2026-10-20', '2026-10-24']) {
+      day = date;
+      onDay(storage).record(hit);
+    }
+    day = '2026-10-25';
+    const subject = onDay(storage);
+    expect(subject.daysPractised).toBe(2);
+    subject.record(hit);
+    expect(subject.daysPractised).toBe(3);
+    subject.retryShot();
+    subject.record(hit);
+    expect(subject.daysPractised).toBe(3);
+  });
+
+  test('keep the day’s first finished exam run beside the best', () => {
+    day = '2026-10-25';
+    const storage = new FakeStorage();
+    const subject = onDay(storage);
+    const exam = examLevel();
+    subject.selectLevel(exam.id);
+    let result;
+    for (let i = 0; i < exam.examShots; i++) {
+      result = subject.record(i < 6 ? hit : miss).examFinished;
+      subject.nextShot();
+    }
+    expect(result).toMatchObject({ potted: 6, first: true, firstToday: 6 });
+    for (let i = 0; i < exam.examShots; i++) {
+      result = subject.record(hit).examFinished;
+      subject.nextShot();
+    }
+    expect(result).toMatchObject({ potted: 10, personalBest: true, first: false, firstToday: 6 });
   });
 });
