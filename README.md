@@ -131,6 +131,11 @@ Three qualifying shots out of the last five take away one layer of guides:
 
 A bad run never sends you backwards. Clearing tier 3 completes the level.
 
+Only the first shot at a layout counts. `R` deals the same layout again, but a
+retry has already seen where the first shot went, so it is practice: it is
+played and reported, marked as a retry, and counted toward nothing — not the
+tier, not the level's record, not the exam.
+
 Level 7 is the exam: no guides, no tiers, ten shots, scored on pots.
 
 ## Calibrating yourself
@@ -144,7 +149,9 @@ them, the average. One shot being thick is noise; *consistently* hitting cuts
 straight-ins are averaged separately — a left bias on straight shots has nothing
 to do with a thick bias on cuts, and folding them together would cancel a real
 tendency against an unrelated one. Shots that miss the object ball entirely are
-excluded; they say nothing about how thick you are hitting them.
+excluded; they say nothing about how thick you are hitting them. Retries are
+listed but excluded too: a retry leans away from the miss it has just seen,
+and averaging it in would pull a real bias toward zero.
 
 The history clears when you change level, since a tendency measured on
 straight-ins tells you nothing about thin cuts.

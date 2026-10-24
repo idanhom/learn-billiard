@@ -167,6 +167,21 @@ await page.evaluate(() => window.__debug.retry());
 const retried = await state();
 check('a retry starts off the ideal line too', offIdeal(retried) >= 3, `${offIdeal(retried).toFixed(2)} deg off`);
 
+// Only the first look at a layout counts. A retry has seen where the first
+// shot went, so it is practice: flagged, played, and counted for nothing.
+check('a retry is flagged as practice', retried.practice === true);
+await page.evaluate(() => {
+  window.__debug.aimIdeal();
+  window.__debug.fire(0.5);
+});
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const practised = await state();
+check(
+  'a retry counts toward neither the tier window nor the level record',
+  practised.evaluations === 2 && practised.stats.attempts === 1 && practised.tier === 0,
+  `evaluations=${practised.evaluations} attempts=${practised.stats.attempts} tier=${practised.tier}`,
+);
+
 // Guides come away as the aim proves reliable.
 await playPerfect({ fresh: true });
 await playPerfect({ fresh: true });
@@ -426,11 +441,17 @@ await page.evaluate(() => window.__debug.selectLevel(3));
 await sleep(300);
 check('changing level clears the calibration history', (await state()).historyLength === 0);
 
+// Each on a fresh layout, since a retry is practice and stays out of the
+// average. Layouts alternate their cut side, so the offset is turned toward the
+// object ball's centre on each one — thick, every time.
 for (const offsetDegrees of [1.2, 1.6, 1.0]) {
   await page.evaluate((d) => {
-    window.__debug.retry();
-    window.__debug.aimIdeal();
-    window.__debug.aimAt(window.__debug.state().aimAngle + (d * Math.PI) / 180);
+    window.__debug.next();
+    const s = window.__debug.state();
+    const [cue, object] = s.balls;
+    const centre = Math.atan2(object.pos.y - cue.pos.y, object.pos.x - cue.pos.x);
+    const towardCentre = Math.sign(Math.sin(centre - s.idealAimAngle));
+    window.__debug.aimAt(s.idealAimAngle + (towardCentre * d * Math.PI) / 180);
     window.__debug.fire(0.55);
   }, offsetDegrees);
   await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, {
@@ -441,7 +462,7 @@ const calibrated = await state();
 check('the history records each shot', calibrated.historyLength === 3, `n=${calibrated.historyLength}`);
 check(
   'a consistent bias is reported as a tendency',
-  calibrated.cutTendency?.kind === 'thick' || calibrated.cutTendency?.kind === 'thin',
+  calibrated.cutTendency?.kind === 'thick',
   JSON.stringify(calibrated.cutTendency),
 );
 // The mean lands on 1.267 when all three shots contact, but the layout is

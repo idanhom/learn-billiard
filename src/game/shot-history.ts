@@ -10,6 +10,10 @@
  * physical error whichever way a shot cuts, so those average cleanly; but on a
  * straight-in there is no thick or thin, only left and right, and folding the
  * two together would cancel a real bias against an unrelated one.
+ *
+ * Retries are listed but never averaged. A retry has seen where the first shot
+ * went and leans the other way, so folding it in would pull a real bias toward
+ * zero — the bias worth knowing is the one you bring to a shot cold.
  */
 
 import type { AimError } from '../geometry/shot';
@@ -30,6 +34,8 @@ export interface HistoryEntry {
   readonly pottedTarget: boolean;
   readonly contacted: boolean;
   readonly cutAngleDegrees: number;
+  /** A retry of a layout already played. Practice: listed, but not averaged. */
+  readonly retry: boolean;
 }
 
 export type TendencyKind = 'thick' | 'thin' | 'left' | 'right' | 'even';
@@ -92,6 +98,7 @@ export class ShotHistory {
     const relevant = this.#entries.filter(
       (e) =>
         e.contacted &&
+        !e.retry &&
         (e.aimError.kind === positive ||
           e.aimError.kind === negative ||
           (e.aimError.kind === 'on-line' && this.#isSameFamily(e, positive))),

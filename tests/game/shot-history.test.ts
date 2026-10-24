@@ -15,6 +15,7 @@ function entry(kind: AimError['kind'], degrees: number, extra: Partial<HistoryEn
     pottedTarget: false,
     contacted: true,
     cutAngleDegrees: kind === 'left' || kind === 'right' ? 0 : 30,
+    retry: false,
     ...extra,
   };
 }
@@ -114,6 +115,22 @@ describe('the thick/thin tendency', () => {
     const history = new ShotHistory();
     history.record(entry('thick', 2));
     expect(history.cutTendency).toBeNull();
+  });
+
+  /**
+   * A retry has seen where the first shot went and leans the other way. Two
+   * thick first looks corrected by a thin retry are still a thick player.
+   */
+  test('lists retries but leaves them out of the average', () => {
+    const history = new ShotHistory();
+    history.record(entry('thick', 2));
+    history.record(entry('thin', 2, { retry: true }));
+    history.record(entry('thick', 2));
+    history.record(entry('thin', 2, { retry: true }));
+    expect(history.entries).toHaveLength(4);
+    expect(history.cutTendency!.samples).toBe(2);
+    expect(history.cutTendency!.kind).toBe('thick');
+    expect(history.cutTendency!.degrees).toBeCloseTo(2, 6);
   });
 });
 

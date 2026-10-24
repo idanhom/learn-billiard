@@ -58,6 +58,8 @@ let settings = settingsStore.load();
 /** Sessions dealt so far. Seeds where the cue starts, so a retry starts somewhere new. */
 let sessionsDealt = 0;
 let session = newSession();
+/** The session in play is a retry: practice, which the campaign will not count. */
+let practice = campaign.retrying;
 let chargeSeconds = 0;
 let evaluations = 0;
 let notice = campaign.notice;
@@ -101,6 +103,7 @@ function newSession(): ShotSession {
 
 function startShot(): void {
   session = newSession();
+  practice = campaign.retrying;
   objectBallNumber = ballNumberFor(session.layout.id);
   chargeSeconds = 0;
 }
@@ -130,14 +133,15 @@ function selectLevel(id: number): void {
 
 function recordOutcome(outcome: ShotOutcome): void {
   evaluations++;
+  const event = campaign.record(outcome);
   history.record({
     aimError: outcome.aimError,
     qualifying: outcome.qualifying,
     pottedTarget: outcome.pottedTarget,
     contacted: outcome.contacted,
     cutAngleDegrees: (outcome.cutAngle * 180) / Math.PI,
+    retry: event.practice,
   });
-  const event = campaign.record(outcome);
   if (event.examFinished) {
     const { potted, total, personalBest } = event.examFinished;
     notice = `Exam finished: ${potted} of ${total} potted${personalBest ? ' — a personal best' : ''}.`;
@@ -262,6 +266,7 @@ function frame(now: number): void {
     potted: stats.potted,
     exam: campaign.exam,
     examBest: campaign.examBest,
+    practice,
     notice,
     view: scene.view,
     outcome: session.outcome,
@@ -354,6 +359,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       examBest: campaign.examBest,
       notice: notice ?? null,
       evaluations,
+      practice,
       outcome: session.outcome ?? null,
     }),
   };

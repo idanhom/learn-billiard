@@ -270,6 +270,18 @@ body {
   color: var(--ink);
 }
 
+.hud-shot-row.retry {
+  opacity: 0.6;
+}
+
+.hud-shot-row.retry .hud-shot-mark {
+  color: var(--ink-dim);
+}
+
+.hud-practice {
+  color: var(--warn);
+}
+
 .hud-shot-mark {
   margin-right: auto;
   font-size: 10.5px;

@@ -46,6 +46,8 @@ export interface HudState {
   readonly potted: number;
   readonly exam: ExamRun | undefined;
   readonly examBest: number | null;
+  /** The shot in play is a retry of a layout already played: practice, not counted. */
+  readonly practice: boolean;
   readonly notice: string | undefined;
   readonly view: string;
   readonly outcome: ShotOutcome | undefined;
@@ -147,7 +149,7 @@ export class Hud {
     this.#renderPower(state);
 
     if (state.outcome) {
-      const html = renderReport(state.outcome, state.exam);
+      const html = renderReport(state.outcome, state.exam, state.practice);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
         this.#report.innerHTML = html;
@@ -211,6 +213,7 @@ export class Hud {
       `<div class="hud-label">${escape(state.levelName)}</div>` +
       `<div class="hud-big">${heading}</div>` +
       `<div class="hud-sub">${line}</div>` +
+      (state.practice ? '<div class="hud-sub hud-practice">Retry: practice, not counted</div>' : '') +
       `<div class="hud-sub">${state.qualified}/${state.attempts} on aim &middot; ` +
       `${state.potted} potted &middot; ${escape(state.view)} view${speed}${cloth}</div>`;
     if (html === this.#renderedStatus) return;
@@ -270,9 +273,10 @@ export class Hud {
           : entry.aimError.kind === 'on-line'
             ? 'on the line'
             : `${entry.aimError.degrees.toFixed(2)}&deg; ${entry.aimError.kind}`;
-        const mark = entry.pottedTarget ? 'potted' : entry.qualifying ? 'on aim' : '';
+        const mark = entry.retry ? 'retry' : entry.pottedTarget ? 'potted' : entry.qualifying ? 'on aim' : '';
+        const kind = entry.retry ? ' retry' : entry.qualifying ? ' good' : '';
         return (
-          `<div class="hud-shot-row${entry.qualifying ? ' good' : ''}">` +
+          `<div class="hud-shot-row${kind}">` +
           `<span class="hud-shot-mark">${mark}</span>${label}</div>`
         );
       })
@@ -326,7 +330,7 @@ function tendencyLine(label: string, tendency: Tendency | null): string {
   return `<div class="hud-sub hud-tendency">${label}: ${body} <span class="hud-note">(${tendency.samples})</span></div>`;
 }
 
-function renderReport(outcome: ShotOutcome, exam: ExamRun | undefined): string {
+function renderReport(outcome: ShotOutcome, exam: ExamRun | undefined, practice: boolean): string {
   const verdict = exam
     ? outcome.pottedTarget
       ? 'Potted'
@@ -351,6 +355,7 @@ function renderReport(outcome: ShotOutcome, exam: ExamRun | undefined): string {
         : `missed by ${(outcome.missDistance * 100).toFixed(1)} cm`;
 
   const notes: string[] = [];
+  if (practice) notes.push('retry: practice, not counted');
   if (outcome.scratch) notes.push('scratch');
   if (!outcome.settled) notes.push('shot cut short');
 

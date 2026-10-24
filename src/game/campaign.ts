@@ -5,6 +5,11 @@
  * it turns every guide off, ignores tiers entirely, and counts pots over a
  * fixed run — because the last thing worth checking is not whether the aim is
  * within tolerance but whether the ball goes in.
+ *
+ * Only the first shot at a layout counts, for tiers, for the level's record and
+ * for the exam. A retry has already seen where the first one went, so it says
+ * how well you correct rather than how well you read a shot cold — worth
+ * playing, as practice, and counted for nothing.
  */
 
 import type { ShotLayout } from './drills';
@@ -46,6 +51,8 @@ export interface ExamResult {
 export interface CampaignEvent {
   readonly advancedTier: boolean;
   readonly levelCompleted: boolean;
+  /** A retry of a layout already played: practice, so nothing was counted. */
+  readonly practice: boolean;
   readonly examFinished?: ExamResult;
 }
 
@@ -72,6 +79,8 @@ export class Campaign {
   #level: LevelDefinition;
   #tiers: TierTracker;
   #layout: ShotLayout;
+  /** A shot at the current layout has been scored, so any further one is a retry. */
+  #layoutPlayed = false;
   #shotCounter = 0;
   #exam: ExamRun | undefined;
 
@@ -143,14 +152,21 @@ export class Campaign {
     return this.#state.examBest;
   }
 
-  /** Same layout again — a retry does not count until it is actually played. */
-  retryShot(): void {
-    // The layout is untouched; the caller builds a fresh ShotSession from it.
+  /** A shot taken now would be a retry: practice, and not counted. */
+  get retrying(): boolean {
+    return this.#layoutPlayed;
   }
+
+  /**
+   * Same layout again. Nothing changes here — the caller builds a fresh
+   * ShotSession from the layout — but once the layout has been played, the
+   * shot that follows is a retry and `record` counts it as practice.
+   */
+  retryShot(): void {}
 
   nextShot(): void {
     this.#shotCounter++;
-    this.#layout = this.#generate();
+    this.#deal();
   }
 
   selectLevel(id: number): boolean {
@@ -160,17 +176,23 @@ export class Campaign {
     this.#exam = this.#level.exam ? freshExam(this.#level) : undefined;
     this.#state = { ...this.#state, currentLevel: id };
     this.#shotCounter++;
-    this.#layout = this.#generate();
+    this.#deal();
     this.#persist();
     return true;
   }
 
-  /** Score one evaluated shot. Only ever called once per shot, by the FSM guard. */
+  /**
+   * Score one evaluated shot. Only ever called once per shot, by the FSM guard.
+   * A retry is answered as practice and touches nothing: not the tier window,
+   * not the level's counts, not the exam run.
+   */
   record(shot: ScoredShot): CampaignEvent {
+    if (this.#layoutPlayed) return { advancedTier: false, levelCompleted: false, practice: true };
+    this.#layoutPlayed = true;
     this.#countAttempt(shot);
 
     if (this.#level.exam) {
-      return { advancedTier: false, levelCompleted: false, ...this.#recordExam(shot) };
+      return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordExam(shot) };
     }
 
     const result = this.#tiers.record(shot.qualifying);
@@ -178,11 +200,11 @@ export class Campaign {
 
     if (result.completed) {
       this.#advanceToNextLevel();
-      return { advancedTier: false, levelCompleted: true };
+      return { advancedTier: false, levelCompleted: true, practice: false };
     }
 
     this.#persist();
-    return { advancedTier: result.advanced, levelCompleted: false };
+    return { advancedTier: result.advanced, levelCompleted: false, practice: false };
   }
 
   resetProgress(): void {
@@ -192,7 +214,7 @@ export class Campaign {
     this.#tiers = new TierTracker();
     this.#exam = undefined;
     this.#shotCounter++;
-    this.#layout = this.#generate();
+    this.#deal();
   }
 
   #recordExam(shot: ScoredShot): { examFinished?: ExamResult } {
@@ -252,6 +274,12 @@ export class Campaign {
   #trackerFor(level: LevelDefinition): TierTracker {
     const progress = levelProgress(this.#state, level.id);
     return new TierTracker({ tier: progress.tier, completed: progress.completed });
+  }
+
+  /** A new layout, which nobody has played yet. */
+  #deal(): void {
+    this.#layout = this.#generate();
+    this.#layoutPlayed = false;
   }
 
   #generate(): ShotLayout {

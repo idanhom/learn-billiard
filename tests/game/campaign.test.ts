@@ -129,6 +129,86 @@ describe('progression', () => {
   });
 });
 
+/**
+ * A retry has seen where the first shot went. It is practice: the tiers, the
+ * level's record and the exam all count the first look at a layout only.
+ */
+describe('retries', () => {
+  test('a retry does not move the tier window', () => {
+    const subject = campaign();
+    subject.record(hit);
+    for (let i = 0; i < 5; i++) {
+      subject.retryShot();
+      expect(subject.retrying).toBe(true);
+      expect(subject.record(hit)).toEqual({ advancedTier: false, levelCompleted: false, practice: true });
+    }
+    expect(subject.tier).toBe(0);
+    expect(subject.qualifiedInWindow).toBe(1);
+  });
+
+  test('so three good shots at one layout are not three qualifying shots', () => {
+    const subject = campaign();
+    subject.record(hit);
+    subject.record(hit);
+    subject.record(hit);
+    expect(subject.tier).toBe(0);
+    subject.nextShot();
+    subject.record(hit);
+    subject.nextShot();
+    expect(subject.record(hit).advancedTier).toBe(true);
+  });
+
+  test('a retry is left out of the level record', () => {
+    const subject = campaign();
+    subject.record(miss);
+    subject.record(hit);
+    subject.record(hit);
+    expect(subject.stats).toMatchObject({ attempts: 1, qualified: 0, potted: 0 });
+  });
+
+  test('a retry before the layout has been played is still the first shot at it', () => {
+    const subject = campaign();
+    expect(subject.retrying).toBe(false);
+    subject.retryShot();
+    expect(subject.retrying).toBe(false);
+    expect(subject.record(hit).practice).toBe(false);
+    expect(subject.stats.attempts).toBe(1);
+  });
+
+  test('a new layout, a new level or a reset makes the next shot count again', () => {
+    const subject = campaign();
+    subject.record(hit);
+    expect(subject.retrying).toBe(true);
+    subject.nextShot();
+    expect(subject.retrying).toBe(false);
+
+    subject.record(hit);
+    subject.selectLevel(3);
+    expect(subject.retrying).toBe(false);
+
+    subject.record(hit);
+    subject.resetProgress();
+    expect(subject.retrying).toBe(false);
+  });
+
+  test('the shot that completes a level deals the next level a fresh layout', () => {
+    const subject = campaign();
+    play(subject, hit, 11);
+    expect(subject.record(hit).levelCompleted).toBe(true);
+    expect(subject.level.id).toBe(2);
+    expect(subject.retrying).toBe(false);
+  });
+
+  test('a retry in the exam does not count against the run', () => {
+    const subject = campaign();
+    subject.selectLevel(examLevel().id);
+    subject.record(miss);
+    subject.record(hit);
+    subject.record(hit);
+    expect(subject.exam).toMatchObject({ shotsTaken: 1, potted: 0 });
+  });
+});
+
 describe('level select', () => {
   test('jumps to a chosen level and uses its tolerance', () => {
     const subject = campaign();
