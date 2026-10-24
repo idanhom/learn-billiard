@@ -7,11 +7,11 @@
  */
 
 import {
-  BALL_CONTACT_FRICTION,
   BALL_RESTITUTION,
   CUSHION_CONTACT_HEIGHT_RATIO,
   CUSHION_FRICTION,
   CUSHION_RESTITUTION,
+  contactFriction,
 } from '../constants';
 import type { Segment } from '../geometry/table';
 import { type Vec2, add, dot, normalize, scale, sub, vec } from '../geometry/vec2';
@@ -151,33 +151,34 @@ export interface PairImpulse {
 /**
  * Equal-mass impulse along the line of centres, plus contact friction.
  *
- * The normal impulse is unchanged and the tangential VELOCITY components still
- * pass through untouched, which is why a struck ball leaves exactly along the
- * line of centres and the cue ball keeps its sideways drift. Ball-to-ball
- * throw is still not modelled — the app says so.
+ * The friction is Coulomb, `contactFriction(slip)` times the normal impulse,
+ * along the direction the two surfaces slide past each other at the contact.
+ * That slide has two parts, and each one is capped at the impulse that would
+ * stop it, so the surfaces can come out meshed but never reversed.
  *
- * What contact friction does change is the spin, and the direction is the part
- * worth reading twice. The two contact faces sit on opposite sides of their
- * respective centres, so they MESH LIKE GEARS: a ball rolling forward has its
- * leading face moving downward, that face drags the object ball's trailing face
- * down with it, and a trailing face moving down is BACKSPIN. So follow
- * transfers as a touch of draw, exactly as left english transfers as right
- * english. Both rolls decrease along `n`; the quantity conserved is their
- * DIFFERENCE, not their sum.
+ * The vertical part is spin, and its direction is worth reading twice. The two
+ * contact faces sit on opposite sides of their respective centres, so they
+ * MESH LIKE GEARS: a ball rolling forward has its leading face moving
+ * downward, that face drags the object ball's trailing face down with it, and
+ * a trailing face moving down is BACKSPIN. So follow transfers as a touch of
+ * draw, exactly as left english transfers as right english. Both rolls
+ * decrease along `n`; the quantity conserved is their DIFFERENCE, not their
+ * sum. That makes the vertical slip the SUM `(rollA + rollB)·n`, and `|W|/5`
+ * the impulse that zeros it: only the spins can answer it, since the vertical
+ * LINEAR impulse would drive the balls into or out of the cloth, and the table
+ * absorbs it. Passive by construction: the roll energy changes by
+ * `(m/5)(-5*Pv*W + 12.5*Pv^2)`, negative for every `|Pv| < 2|W|/5`, and the
+ * cap is half of that.
  *
- * That makes the vertical slip the SUM `(rollA + rollB)·n`, and `|W|/5` the
- * impulse that zeros it — the surfaces mesh, and the cap belongs there rather
- * than on the total friction impulse. Passive by construction: the roll energy
- * changes by `(m/5)(-5*Pv*W + 12.5*Pv^2)`, negative for every `|Pv| < 2|W|/5`,
- * and the cap is half of that.
- *
- * Only the vertical share of the friction is applied. The horizontal share, the
- * one the cut angle produces, is precisely throw. Declining it costs
- * `mu*sin(theta)` of deflection — about 1.7 degrees at half-ball, inside the
- * 1-2 degrees the trainer scores against.
- *
- * The vertical LINEAR impulse is discarded rather than applied: it would drive
- * the balls into or out of the cloth, and the table absorbs it.
+ * The horizontal part is THROW: the cue ball's sideways motion across the line
+ * of centres drags the object ball with it, so on a cut the object ball leaves
+ * a little short of the line of centres, turned toward the way the cue ball
+ * was going. It acts at the height of the centres, so it moves both balls
+ * sideways and spins them about the vertical, and `|H|/7` is the impulse that
+ * stops the slide once both are counted: 1/m of linear and 5/2m of turning,
+ * each, on each ball. Nothing here tracks vertical-axis spin, so that share
+ * goes nowhere, as the cushions put none on either. This is TP A.14's model,
+ * cap and all; it differs only in taking restitution as 0.95 rather than 1.
  */
 export function resolveBallPair(
   posA: Vec2,
@@ -200,25 +201,27 @@ export function resolveBallPair(
   // Equal masses: the exchanged normal speed is (1+e)/2 of the closing speed.
   const exchange = (-(1 + BALL_RESTITUTION) * closing) / 2;
 
+  const across = vec(-n.y, n.x);
   const vertical = dot(add(rollA, rollB), n);
-  const horizontal = dot(sub(velA, velB), vec(-n.y, n.x));
+  const horizontal = dot(sub(velA, velB), across);
   const slip = Math.hypot(vertical, horizontal);
 
-  // A dead-straight stun contact — no roll on either ball, no cut — slips
-  // nowhere, and the share below would be 0*(0/0): NaN, poisoning both rolls
-  // from there on. Guarding on `vertical` rather than on `slip` is exact rather
-  // than approximate — it is the only way `slip` can be zero, and where it is
-  // zero on its own the share is zero anyway.
+  // A dead-straight stun contact (no roll on either ball, no cut) slips
+  // nowhere, and the shares below would be 0*(0/0): NaN, poisoning both balls
+  // from there on.
   let torque = vec(0, 0);
-  if (vertical !== 0) {
-    const share = (BALL_CONTACT_FRICTION * exchange * Math.abs(vertical)) / slip;
-    const applied = Math.sign(vertical) * Math.min(share, Math.abs(vertical) / 5);
-    torque = scale(n, 2.5 * applied);
+  let thrown = vec(0, 0);
+  if (slip > 0) {
+    const perSlip = (contactFriction(slip) * exchange) / slip;
+    const spun = Math.sign(vertical) * Math.min(perSlip * Math.abs(vertical), Math.abs(vertical) / 5);
+    torque = scale(n, 2.5 * spun);
+    const dragged = Math.sign(horizontal) * Math.min(perSlip * Math.abs(horizontal), Math.abs(horizontal) / 7);
+    thrown = scale(across, dragged);
   }
 
   return {
-    velA: sub(velA, scale(n, exchange)),
-    velB: add(velB, scale(n, exchange)),
+    velA: sub(sub(velA, scale(n, exchange)), thrown),
+    velB: add(add(velB, scale(n, exchange)), thrown),
     rollA: sub(rollA, torque),
     rollB: sub(rollB, torque),
   };

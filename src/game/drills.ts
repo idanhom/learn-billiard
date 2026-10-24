@@ -6,7 +6,7 @@
  */
 
 import { aimPoint } from '../geometry/pocket-window';
-import { ghostBallCenter } from '../geometry/shot';
+import { analyseShot, ghostBallCenter } from '../geometry/shot';
 import { type PocketId, pocketById } from '../geometry/table';
 import {
   type Vec2,
@@ -32,9 +32,15 @@ export interface ShotLayout {
 }
 
 /**
- * Place the cue ball so the shot has exactly `cutDegrees` of cut, measured to
- * the middle of the pocket's clean band. Positive cuts the object ball to the
- * left, negative to the right.
+ * Place the cue ball so the shot has exactly `cutDegrees` of cut, `cueDistance`
+ * short of the ghost ball. Positive cuts the object ball to the left, negative
+ * to the right.
+ *
+ * The cut is the one the player aims: between the cue ball's line and the line
+ * of centres, which throw turns away from where the object ball goes. Throw in
+ * turn depends on where the cue ball sits, so the placement starts from the
+ * throw-free ghost ball and is moved round to the analysed one until it
+ * settles.
  */
 export function layoutWithCut(
   id: string,
@@ -43,12 +49,20 @@ export function layoutWithCut(
   cutDegrees: number,
   cueDistance: number,
 ): ShotLayout {
-  const target = aimPoint(object, pocketById(targetPocket));
-  const departure = normalize(sub(target, object));
-  const ghost = ghostBallCenter(object, target);
-  const approach = rotate(departure, (-cutDegrees * Math.PI) / 180);
-  return { id, cue: sub(ghost, scale(approach, cueDistance)), object, targetPocket };
+  const pocket = pocketById(targetPocket);
+  const turn = (-cutDegrees * Math.PI) / 180;
+  const place = (ghost: Vec2): Vec2 =>
+    sub(ghost, scale(rotate(normalize(sub(object, ghost)), turn), cueDistance));
+
+  let cue = place(ghostBallCenter(object, aimPoint(object, pocket)));
+  for (let pass = 0; pass < PLACEMENT_PASSES; pass++) {
+    cue = place(analyseShot({ cue, object, pocket, obstacles: [] }).ghostCenter);
+  }
+  return { id, cue, object, targetPocket };
 }
+
+/** Passes moving the cue ball round to the throw-corrected ghost ball; each shrinks the miss about twentyfold. */
+const PLACEMENT_PASSES = 8;
 
 export const STRAIGHT_IN_DRILL: ShotLayout = layoutWithCut(
   'drill-straight-in',
@@ -73,9 +87,24 @@ export function aimTarget(layout: ShotLayout): Vec2 {
   return aimPoint(layout.object, pocketById(layout.targetPocket));
 }
 
-/** Direction the cue must travel for a perfect hit, as an angle in radians. */
-export function idealAimAngle(layout: ShotLayout): number {
-  return angleOf(sub(ghostBallCenter(layout.object, aimTarget(layout)), layout.cue));
+/**
+ * Direction the cue must travel for a perfect hit, as an angle in radians: at
+ * the throw-corrected ghost ball, for the recommended stroke on normal cloth
+ * unless told otherwise.
+ */
+export function idealAimAngle(
+  layout: ShotLayout,
+  stroke: { readonly rollingFriction?: number; readonly cueSpeed?: number } = {},
+): number {
+  return angleOf(
+    analyseShot({
+      cue: layout.cue,
+      object: layout.object,
+      pocket: pocketById(layout.targetPocket),
+      obstacles: layout.obstacles ?? [],
+      ...stroke,
+    }).aimDirection,
+  );
 }
 
 /** How far off the object ball's centre the cue starts, in degrees. */

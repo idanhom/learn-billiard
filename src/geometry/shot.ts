@@ -9,7 +9,7 @@
  */
 
 import {
-  BALL_CONTACT_FRICTION,
+  DROP_MARGIN,
   GRAVITY,
   MAX_CUE_SPEED,
   NORMAL_TRANSFER,
@@ -17,6 +17,7 @@ import {
   SLIDING_FRICTION,
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
+  contactFriction,
 } from '../constants';
 import { pocketWindow } from './pocket-window';
 import { BALL_RADIUS, type Pocket, isInLegalBounds } from './table';
@@ -25,8 +26,10 @@ import {
   add,
   angleBetween,
   cross,
+  dist,
   dot,
   normalize,
+  rotate,
   scale,
   signedAngleBetween,
   sub,
@@ -70,11 +73,16 @@ export interface ShotLayoutQuery {
   /** Centres of every other ball on the table. */
   readonly obstacles: readonly Vec2[];
   /**
-   * Cloth to judge power against. Defaults to the normal cloth so ordinary
-   * analysis is unaffected; the shot generator passes the slowest, so a layout
-   * it produces stays makeable whichever cloth the player picks.
+   * Cloth the shot is played on. It sets the stroke, and so the throw the
+   * ideal line allows for. Defaults to the normal cloth.
    */
   readonly rollingFriction?: number;
+  /**
+   * Launch speed to allow for throw at. Throw falls as the contact speeds up,
+   * so the line that pots moves with the stroke; left out, it is the
+   * recommended one.
+   */
+  readonly cueSpeed?: number;
 }
 
 export interface ShotAnalysis {
@@ -83,10 +91,19 @@ export interface ShotAnalysis {
    * the drop line. The pocket's centre when no line drops clean.
    */
   readonly target: Vec2;
+  /**
+   * Where the cue ball's centre has to be at contact: a diameter behind the
+   * object ball on the line of centres that, turned by the throw, sends the
+   * object ball at `target`. Over-cut by the throw, compared with the ghost
+   * ball a player is first taught to picture.
+   */
   readonly ghostCenter: Vec2;
   /** Unit vector from the cue ball at the ghost ball. */
   readonly aimDirection: Vec2;
+  /** Between the cue ball's line and the line of centres: the cut the player aims. */
   readonly cutAngle: number;
+  /** How far throw turns the object ball off the line of centres, in radians, at the stroke assumed. */
+  readonly throwAngle: number;
   readonly cutSide: CutSide;
   /** Fraction of the object ball the cue ball covers: 1 is dead full, 0 is a bare edge. */
   readonly fullness: number;
@@ -141,13 +158,23 @@ export function aimError(
   target: Vec2,
   aimDirection: Vec2,
 ): AimError {
-  const ideal = idealAimDirection(cueCenter, objectCenter, target);
+  return aimErrorAt(cueCenter, objectCenter, ghostBallCenter(objectCenter, target), aimDirection);
+}
+
+/** `aimError` against a given ghost-ball position, such as the throw-corrected one. */
+export function aimErrorAt(
+  cueCenter: Vec2,
+  objectCenter: Vec2,
+  ghost: Vec2,
+  aimDirection: Vec2,
+): AimError {
+  const ideal = normalize(sub(ghost, cueCenter));
   const signed = signedAngleBetween(ideal, normalize(aimDirection));
   const degrees = Math.abs((signed * 180) / Math.PI);
 
   if (Math.abs(signed) <= ON_LINE_LIMIT) return { signed, degrees, kind: 'on-line' };
 
-  const cut = cutAngle(cueCenter, objectCenter, target);
+  const cut = angleBetween(ideal, normalize(sub(objectCenter, ghost)));
   if (cut <= STRAIGHT_CUT_LIMIT) {
     return { signed, degrees, kind: signed > 0 ? 'left' : 'right' };
   }
@@ -180,21 +207,101 @@ export function objectSpeedAfterCut(cueSpeed: number, cut: number): number {
 }
 
 /**
- * Roll the object ball carries away from a contact with a ROLLING cue ball, as
- * a fraction of its own launch speed.
+ * The contact `resolveBallPair` resolves when a cue ball arrives at `speed`,
+ * with `rollFraction` of it as roll, on a still object ball at `cut`: the
+ * normal speed exchanged, and the friction's two shares per unit of mass, the
+ * spin it gears onto the object ball and the sideways drag that is throw.
+ * Term for term the solver's arithmetic, so the two cannot drift apart.
+ */
+function contactImpulse(
+  cut: number,
+  speed: number,
+  rollFraction: number,
+): { readonly exchange: number; readonly spun: number; readonly dragged: number } {
+  const exchange = NORMAL_TRANSFER * speed * Math.cos(cut);
+  const vertical = rollFraction * speed * Math.cos(cut);
+  const across = speed * Math.sin(cut);
+  const slip = Math.hypot(vertical, across);
+  if (exchange <= 0 || slip === 0) return { exchange: Math.max(0, exchange), spun: 0, dragged: 0 };
+  const perSlip = (contactFriction(slip) * exchange) / slip;
+  return {
+    exchange,
+    spun: Math.sign(vertical) * Math.min(perSlip * Math.abs(vertical), Math.abs(vertical) / 5),
+    dragged: Math.min(perSlip * Math.abs(across), Math.abs(across) / 7),
+  };
+}
+
+/**
+ * Roll the object ball carries away from a contact, as a fraction of its own
+ * launch speed, when the cue ball arrives at `contactSpeed` with
+ * `rollFraction` of it as roll: 1 rolling, the default, and 0 a pure slide.
  *
  * Negative, and that sign is the whole point. Contact friction gears the two
- * balls together — their contact faces sit on opposite sides of their
- * respective centres, so they mesh like teeth — and a cue ball with topspin
+ * balls together (their contact faces sit on opposite sides of their
+ * respective centres, so they mesh like teeth) and a cue ball with topspin
  * therefore lays a little BACKSPIN on the object ball, not follow. This is the
  * published direction: left english transfers as right english, and follow
  * transfers as a touch of draw.
  *
- * Free of restitution, because the friction impulse and the object ball's
- * launch speed both scale with the normal impulse and it cancels.
+ * It depends on speed because the friction does: a slow contact grips harder.
+ * A sliding cue ball has no topspin to gear on and lays on none.
  */
-export function objectRollFraction(cut: number): number {
-  return -2.5 * BALL_CONTACT_FRICTION * Math.max(0, Math.cos(cut));
+export function objectRollFraction(cut: number, contactSpeed: number, rollFraction = 1): number {
+  const { exchange, spun } = contactImpulse(cut, contactSpeed, rollFraction);
+  return exchange > 0 ? (-2.5 * spun) / exchange : 0;
+}
+
+/**
+ * How far throw turns the object ball off the line of centres, in radians,
+ * toward the way the cue ball was moving across it. Zero on a straight-in.
+ *
+ * Alciatore's TP A.14, as the contact model applies it. Largest for a slow,
+ * sliding cue ball near a half-ball hit, where it is several degrees; a
+ * rolling cue ball throws less, because part of the friction goes into the
+ * vertical slide instead, and a fast one less again, because the friction
+ * falls with speed.
+ */
+export function throwAngle(cut: number, contactSpeed: number, rollFraction = 1): number {
+  const { exchange, dragged } = contactImpulse(cut, contactSpeed, rollFraction);
+  return exchange > 0 ? Math.atan2(dragged, exchange) : 0;
+}
+
+/** The cue ball as it reaches the object ball. */
+export interface ContactState {
+  readonly speed: number;
+  /** Roll as a fraction of speed: 0 just struck, rising while the cloth catches it, 1 once rolling. */
+  readonly rollFraction: number;
+}
+
+/**
+ * What a cue ball launched at `launchSpeed` is doing after `distance`. It
+ * leaves the tip sliding, and while it slides the cloth takes mu_s*g off its
+ * speed and turns five halves of that into roll, so the roll fraction climbs
+ * from 0 to 1 at the end of the slide.
+ */
+export function contactState(
+  launchSpeed: number,
+  distance: number,
+  rollingFriction: number = ROLLING_FRICTION,
+): ContactState {
+  const slide = slidePhase(launchSpeed, 0);
+  if (distance < slide.distance) {
+    const speed = Math.sqrt(Math.max(0, launchSpeed ** 2 - 2 * SLIDING_FRICTION * GRAVITY * distance));
+    return { speed, rollFraction: speed > 0 ? (2.5 * (launchSpeed - speed)) / speed : 1 };
+  }
+  return {
+    speed: rollingSpeedAfter(slide.exitSpeed, distance - slide.distance, rollingFriction),
+    rollFraction: 1,
+  };
+}
+
+/** Speed a rolling ball has left after `distance`, or zero if it stops first: `rollPhaseDistance` run forward. */
+function rollingSpeedAfter(speed: number, distance: number, rollingFriction: number): number {
+  const remaining = rollPhaseDistance(speed, rollingFriction) - distance;
+  if (remaining <= 0) return 0;
+  const decel = rollingFriction * GRAVITY;
+  const above = Math.sqrt(2 * decel * (remaining + terminalOffset(rollingFriction)));
+  return above > TERMINAL_ROLL_SPEED ? above : Math.sqrt(2 * TERMINAL_ROLL_BOOST * decel * remaining);
 }
 
 /**
@@ -371,41 +478,120 @@ export function launchSpeedFor(
 /**
  * Can any legal stroke drive the object ball to the pocket at this cut?
  *
- * Takes the backspin the contact leaves on the object ball, which costs about
- * 9% of its reach on a full hit and 4% at 60 degrees.
- *
- * The backspin it takes is the one a ROLLING cue ball gears on, and at
- * `MAX_CUE_SPEED` the cue ball is not rolling: 4.5 m/s slides 2.53 m before the
- * slip closes, and the table is 1.98 m long. So this is deliberately the
- * pessimistic end — the real contact at full power transfers less backspin than
- * this assumes, and the ball reaches slightly further than the check allows.
- * Erring the other way would declare feasible a layout that is not, which is
- * the one thing `POWER_MARGIN` exists to prevent. Closing the gap honestly
- * needs the cue-ball run-up, which this signature does not take.
+ * Played out at `MAX_CUE_SPEED` with the cue ball as it really arrives: still
+ * sliding (4.5 m/s slides 2.53 m before the slip closes, and the table is
+ * 1.98 m long), slowed by the run-up, and gearing on only the topspin the
+ * cloth has given it by then.
  */
 export function isPowerFeasible(
   cut: number,
   objectToPocket: number,
+  cueToGhost: number,
   rollingFriction: number = ROLLING_FRICTION,
 ): boolean {
+  const contact = contactState(MAX_CUE_SPEED, cueToGhost, rollingFriction);
   return (
     stoppingDistance(
-      objectSpeedAfterCut(MAX_CUE_SPEED, cut),
+      objectSpeedAfterCut(contact.speed, cut),
       rollingFriction,
-      objectRollFraction(cut),
+      objectRollFraction(cut, contact.speed, contact.rollFraction),
     ) >=
     objectToPocket * POWER_MARGIN
   );
 }
 
+/**
+ * Launch speed that leaves the object ball dying just past the pocket, or
+ * undefined when no legal stroke can.
+ *
+ * Works backwards from where the ball has to finish: the departure speed that
+ * dies `DROP_MARGIN` past the pocket, the cue-ball speed at contact that
+ * produces it after the cut throws cos(theta) of it away, and the launch that
+ * still has that left after the trip to the ghost ball. The backspin the
+ * contact lays on depends on how fast, and how far rolling, the cue ball
+ * arrives, which depends on the launch, so the chain is run round until it
+ * stops moving. It moves less each time, and settles in a handful of passes.
+ */
+export function recommendedLaunchSpeed(
+  cut: number,
+  objectToPocket: number,
+  cueToGhost: number,
+  rollingFriction: number = ROLLING_FRICTION,
+): number | undefined {
+  const transfer = NORMAL_TRANSFER * Math.cos(cut);
+  if (transfer <= 0) return undefined;
+
+  let contact: ContactState = { speed: 1, rollFraction: 1 };
+  let launch = Number.NaN;
+  for (let pass = 0; pass < RECOMMENDATION_PASSES; pass++) {
+    const objectSpeed = speedForStoppingDistance(
+      objectToPocket * DROP_MARGIN,
+      rollingFriction,
+      objectRollFraction(cut, contact.speed, contact.rollFraction),
+    );
+    const next = launchSpeedFor(objectSpeed / transfer, cueToGhost, rollingFriction);
+    if (!Number.isFinite(next)) return undefined;
+    const settled = Math.abs(next - launch) < 1e-12;
+    launch = next;
+    if (settled) break;
+    contact = contactState(launch, cueToGhost, rollingFriction);
+  }
+  return launch <= MAX_CUE_SPEED ? launch : undefined;
+}
+
+/** Ceiling on the passes round the recommendation's loop; it settles well inside it. */
+const RECOMMENDATION_PASSES = 30;
+
+/**
+ * Passes round the throw correction. Throw is a few degrees and changes slowly
+ * with the cut, so each pass shrinks the error by about the throw's slope in
+ * the cut; five leave it far below anything a player could aim.
+ */
+const THROW_PASSES = 5;
+
+/**
+ * The ideal shot at a layout: where the object ball is sent, the ghost ball
+ * that sends it there, and everything that stands in the way.
+ *
+ * The object ball is sent at the middle of the pocket's clean band. It does
+ * not leave along the line of centres, though: throw turns it toward the way
+ * the cue ball was moving across that line. So the line of centres is turned
+ * the other way by the throw, which makes the ghost ball an over-cut. The
+ * throw depends on the cut, and on how fast and how far rolling the cue ball
+ * arrives, which depend on the stroke, which depends on the cut; the
+ * correction is run round until it settles.
+ */
 export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
   const { cue, object, pocket, obstacles } = query;
+  const rollingFriction = query.rollingFriction ?? ROLLING_FRICTION;
   const window = pocketWindow(object, pocket);
   const target = window?.target ?? pocket.center;
-  const ghostCenter = ghostBallCenter(object, target);
+  const departure = normalize(sub(target, object));
+  const objectToPocket = dist(object, target);
+
+  let line = departure;
+  let thrown = 0;
+  for (let pass = 0; pass < THROW_PASSES; pass++) {
+    const ghost = sub(object, scale(line, 2 * BALL_RADIUS));
+    const approach = normalize(sub(ghost, cue));
+    const cut = angleBetween(approach, line);
+    const cueToGhost = dist(cue, ghost);
+    const launch =
+      query.cueSpeed ??
+      recommendedLaunchSpeed(cut, objectToPocket, cueToGhost, rollingFriction) ??
+      MAX_CUE_SPEED;
+    const contact = contactState(launch, cueToGhost, rollingFriction);
+    thrown = throwAngle(cut, contact.speed, contact.rollFraction);
+    // Throw turns the departure from the line of centres toward the approach,
+    // so the line of centres sits that far from the departure the other way.
+    line = rotate(departure, -Math.sign(signedAngleBetween(line, approach)) * thrown);
+  }
+
+  const ghostCenter = sub(object, scale(line, 2 * BALL_RADIUS));
   const aimDirection = normalize(sub(ghostCenter, cue));
-  const cut = cutAngle(cue, object, target);
-  const objectToPocket = Math.hypot(target.x - object.x, target.y - object.y);
+  const signedCut = signedAngleBetween(aimDirection, line);
+  const cut = Math.abs(signedCut);
+  const cueToGhost = dist(cue, ghostCenter);
 
   const blockers: ShotBlocker[] = [];
   if (!window) blockers.push('pocket-closed');
@@ -413,16 +599,17 @@ export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
   if (cut > MAX_CUT_ANGLE) blockers.push('cut-too-steep');
   if (!isPathClear(cue, ghostCenter, obstacles)) blockers.push('cue-path-blocked');
   if (!isPathClear(object, target, obstacles)) blockers.push('object-path-blocked');
-  if (!isPowerFeasible(cut, objectToPocket, query.rollingFriction)) blockers.push('underpowered');
+  if (!isPowerFeasible(cut, objectToPocket, cueToGhost, rollingFriction)) blockers.push('underpowered');
 
   return {
     target,
     ghostCenter,
     aimDirection,
     cutAngle: cut,
-    cutSide: cutSide(cue, object, target),
+    throwAngle: thrown,
+    cutSide: cut <= STRAIGHT_CUT_LIMIT ? 'straight' : signedCut > 0 ? 'left' : 'right',
     fullness: fullness(cut),
-    cueToGhost: Math.hypot(ghostCenter.x - cue.x, ghostCenter.y - cue.y),
+    cueToGhost,
     objectToPocket,
     reachable: blockers.length === 0,
     blockers,

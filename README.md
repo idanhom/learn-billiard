@@ -97,27 +97,27 @@ A cue can send a ball anywhere from a touch shot to a break, but almost nothing
 in this trainer wants a break. An ordinary pot — 0.6 m to the pocket, half a
 metre of cue-ball travel — is a 1.22 m/s stroke, which on a bar spread linearly
 across 0.35–4.5 m/s is 21% of the travel. The longest pot in the curriculum,
-level 6's 1.4 m, asks 1.93 m/s, or 38%.
+level 6's 1.4 m, asks 1.90 m/s, or 37%.
 
 Not every shot, though, and that is why the range itself stays: an 80° cut
 with 0.4 m to the pocket throws away cos(80°) at contact and genuinely needs
-3.86 m/s, which is 85% of a linear bar. The problem is the shape, not the ends.
+3.83 m/s, which is 84% of a linear bar. The problem is the shape, not the ends.
 
-So the bar is a curve — `speed = 0.35 + 4.15 × power^1.7` — set so an ordinary
+So the bar is a curve, `speed = 0.35 + 4.15 × power^1.71`, set so an ordinary
 pot lands near 40%:
 
 | power | launch | band |
 |---:|---:|---|
-| 20% | 0.62 m/s | slow |
-| 30% | 0.89 m/s | slow |
+| 20% | 0.61 m/s | slow |
+| 30% | 0.88 m/s | slow |
 | 40% | 1.22 m/s | medium |
-| 50% | 1.63 m/s | medium |
+| 50% | 1.62 m/s | medium |
 | 70% | 2.61 m/s | fast |
 | 100% | 4.50 m/s | power |
 
 Measured over 200 generated layouts per level, the stroke each one asks for now
-runs from 32% on a straight-in to 91% on the worst thin cut, with the median
-climbing 38% → 40% → 44% → 50% → 64% as the cut angle opens up. What pushes you
+runs from 32% on a straight-in to 88% on the worst thin cut, with the median
+climbing 39% → 40% → 44% → 50% → 64% as the cut angle opens up. What pushes you
 up the meter is the *cut*, which is worth feeling: a thin cut throws away
 `cos(θ)` of the speed at contact, so a 70° cut has to arrive almost three times
 as fast as a straight-in to send the object ball the same distance.
@@ -161,7 +161,9 @@ and wrong-pocket drops are all reported, but they don't drive progression.
 
 The ideal line sends the object ball at the middle of the pocket as the ball
 sees it, which is not always the middle of the pocket; the Pockets section
-below says why.
+below says why. And it allows for throw: the ghost ball is where the cue ball
+has to be for the object ball to leave along that line, which is a little
+thinner than the line of centres pointing at it.
 
 Three qualifying shots out of the last five take away one layer of guides:
 
@@ -205,25 +207,35 @@ straight-ins tells you nothing about thin cuts.
 
 ## The physics is idealised
 
-Centre-ball hits only — no english, no draw, no swerve. No throw between balls,
-and cushions impart no sidespin. Balls slide, then roll — visibly so: the cue
+Centre-ball hits only: no english, no draw, no swerve, and cushions impart no
+sidespin. Balls slide, then roll, visibly so: the cue
 ball carries six marks, and off the tip it skids, turning about 2.4x less than
 its travel would imply, before the cloth catches it and the two lock together.
 
-Balls *do* rub against each other at the contact, though only in the vertical
-direction. The two contact faces sit on opposite sides of their respective
-centres, so they mesh like gear teeth: a cue ball rolling forward leaves the
-object ball with a little backspin, which is the published direction — follow
-transfers as a touch of draw, exactly as left english arrives as right english.
-That is what keeps a rolling cue ball from drifting too far after the hit. The
-horizontal share of the same friction is throw, and it is declined: at a
-half-ball hit that is about 1.7° of deflection, which would break the
-ghost-ball line-of-centres model this trainer teaches and scores against.
+Balls rub against each other at the contact, with the friction Alciatore fits
+to Marlow's measurements in TP A.14: 0.11 when the surfaces barely slide, 0.06
+at 0.7 m/s, and falling toward 0.01 as they slide faster. It works two ways at
+once. Vertically, the two contact faces sit on opposite sides of their
+respective centres, so they mesh like gear teeth: a cue ball rolling forward
+leaves the object ball with a little backspin, which is the published
+direction (follow transfers as a touch of draw, exactly as left english
+arrives as right english), and that is what keeps a rolling cue ball from
+drifting too far after the hit.
 
-Sliding friction, restitution and ball-to-ball friction are published typical
-values rather than measurements of a specific table. The two cushion
-coefficients are fitted to published measurements, as below. The rolling
-resistance is neither, and the next section says what it is instead.
+Sideways, the cue ball's motion across the line of centres drags the object
+ball with it. That is throw: on a cut the object ball leaves a little short of
+the line of centres, turned toward the way the cue ball was going. It is about
+a degree on a rolling half-ball hit at medium pace, and nearer five on a slow
+stun shot, which is enough to miss a pocket from across the table. So the
+ghost ball shows the throw-corrected aim, over-cut by that much. Throw falls as
+the contact speeds up, so the right aim moves a little with the stroke; the
+ghost ball is drawn for the recommended one.
+
+Sliding friction and restitution are published typical values rather than
+measurements of a specific table, and the ball-to-ball friction is a published
+fit to measurements. The two cushion coefficients are fitted to published
+measurements, as below. The rolling resistance is neither, and the next
+section says what it is instead.
 
 Cushions follow Han (2005), as the pooltool simulator implements it. The rail
 touches the ball 0.27R above its centre (the WPA's nominal height), so the push
@@ -280,20 +292,21 @@ being configured to — is `tests/physics/world.test.ts`'s job.
 After a rolling cue ball hits an object ball square, the object ball should
 travel about seven times as far as the cue ball follows. That is Alciatore's
 figure (*Billiards Digest*, June 2020, "Speed Control"), and he adds that it
-varies some with the balls and the cloth. Here it is 7.3x at an ordinary pot's
-contact speed of 0.79 m/s, 6.8x at 1.20, 6.6x at 1.55 and 6.5x at 2.5 —
-settling toward the 6.4x that the slide-then-roll arithmetic gives with this
-restitution and contact friction, and above the 6.25x of the frictionless
-textbook case. It was 5.2x everywhere before contact friction, and used to be
-listed here as a known deviation. (An earlier version of this section held
-the ratio to a 6.5–8x band that nobody had a source for.)
+varies some with the balls and the cloth. Here it is 7.2x at an ordinary pot's
+contact speed of 0.79 m/s. Faster contacts read lower: 6.2x at 1.20 m/s, 5.9x
+at 1.55 and 5.6x at 2.5, because the friction falls with speed and a fast
+contact gears less spin, so the ratio heads for the 5.2x it would be with no
+friction at all at this restitution. Whether real balls fall off like that is
+open, since Alciatore's figure does not say at what speed. (With a constant
+0.06 the ratio held between 6.5x and 7.3x at all four speeds, and an earlier
+version of this section held it to a 6.5–8x band that nobody had a source
+for.)
 
-Alciatore's ratio holds at every speed, and this one does not — that is the
-price of the terminal knee. Below the knee every ball loses speed at a fixed
-extra rate, which takes a proportionally bigger bite out of the cue ball's
-short follow than the object ball's long run. On the softest shots — 0.50 m/s
-at contact — it reaches 9.6x. There the cue ball follows under 3 cm, and nobody
-can see where it stopped.
+At the slow end the terminal knee pushes it the other way. Below the knee
+every ball loses speed at a fixed extra rate, which takes a proportionally
+bigger bite out of the cue ball's short follow than the object ball's long
+run. On the softest shots, 0.50 m/s at contact, it reaches 10.5x. There the
+cue ball follows under 3 cm, and nobody can see where it stopped.
 
 This matters, and the app says so on screen. Everything the guides teach is
 consistent with what the simulation does — which is why there is no static 90°
@@ -326,10 +339,12 @@ The corner of the table, where the trainer used to aim, can be off the band
 altogether; from a flat enough angle a ball sent there catches the rail it is
 running along before it reaches the mouth.
 
-A ball frozen to a rail and sent along it has one line and no band: straight
-down the rail, with the cue ball meeting the rail and the ball together, the
-way the shot is taught. Level 6 deals those alongside balls a few centimetres
-off the cushion.
+A ball frozen to a rail is not dealt. Sent along its rail, throw drives it into
+the cushion and it comes back off, because the simulation takes the cue ball,
+the object ball and the rail one pair at a time where the real contact is all
+three at once; and sent any other way, the ghost ball that would send it is
+inside the rail. Level 6 deals balls within six centimetres of the cushion
+instead.
 
 ## Development
 

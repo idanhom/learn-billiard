@@ -13,7 +13,7 @@
 
 import { SLOWEST_CLOTH, clothRollingFriction } from '../constants';
 import { aimPoint, pocketWindow } from '../geometry/pocket-window';
-import { analyseShot, ghostBallCenter } from '../geometry/shot';
+import { analyseShot, ghostBallCenter, isPowerFeasible } from '../geometry/shot';
 import {
   BALL_RADIUS,
   TABLE,
@@ -23,7 +23,7 @@ import {
   pocketById,
   pocketOnPath,
 } from '../geometry/table';
-import { type Vec2, add, angleOf, dist, fromAngle, scale, sub, vec } from '../geometry/vec2';
+import { type Vec2, add, angleOf, dist, fromAngle, normalize, rotate, scale, sub, vec } from '../geometry/vec2';
 import { type ShotLayout, layoutWithCut } from './drills';
 import type { LevelDefinition } from './levels';
 import { makeRng } from './random';
@@ -157,10 +157,15 @@ function proposeOnRail(
   return layoutWithCut(id, object, pocket.id, cutDegrees, cueDistance);
 }
 
-/** How far back along its line of approach the cue ball can sit and still be on the table. */
+/**
+ * How far back along its line of approach the cue ball can sit and still be on
+ * the table. Taken from the throw-free ghost ball: the degree or two throw
+ * turns the line by is left for the full check to catch.
+ */
 function cueRoom(object: Vec2, pocket: Pocket, cutDegrees: number): number {
-  const ghost = ghostBallCenter(object, aimPoint(object, pocket));
-  const back = sub(layoutWithCut('room', object, pocket.id, cutDegrees, 1).cue, ghost);
+  const target = aimPoint(object, pocket);
+  const ghost = ghostBallCenter(object, target);
+  const back = rotate(normalize(sub(object, target)), (-cutDegrees * Math.PI) / 180);
   const bounds = TABLE.bounds;
   const toEdge = (from: number, step: number, low: number, high: number): number =>
     step > 0 ? (high - from) / step : step < 0 ? (low - from) / step : Number.POSITIVE_INFINITY;
@@ -183,19 +188,25 @@ function sampleFromPocket(
   return isInLegalBounds(object) ? object : undefined;
 }
 
-/** An object ball parked within the level's band of a cushion. */
+/**
+ * An object ball within the level's band of a cushion, short of touching it.
+ *
+ * Never frozen to it. Sent along its rail, a frozen ball is thrown into the
+ * rubber and comes back off it, because the solver takes the cue ball, the
+ * object ball and the rail one pair at a time where the real contact is all
+ * three at once; and sent any other way, its ghost ball is inside the rail. So
+ * a frozen ball is a shot the model cannot play straight, and it is not dealt.
+ */
 function sampleNearRail(level: LevelDefinition, rng: () => number): Vec2 | undefined {
   const bounds = TABLE.bounds;
   const offset = rng() * Math.max(0, level.railBand - BALL_RADIUS);
   if (rng() < 0.5) {
-    const y = (rng() < 0.5 ? bounds.maxY : bounds.minY) + (rng() < 0.5 ? -offset : offset);
-    const x = lerp(bounds.minX, bounds.maxX, rng());
-    const object = vec(x, clamp(y, bounds.minY, bounds.maxY));
+    const y = rng() < 0.5 ? bounds.maxY - offset : bounds.minY + offset;
+    const object = vec(lerp(bounds.minX, bounds.maxX, rng()), y);
     return isInLegalBounds(object) ? object : undefined;
   }
-  const x = (rng() < 0.5 ? bounds.maxX : bounds.minX) + (rng() < 0.5 ? -offset : offset);
-  const y = lerp(bounds.minY, bounds.maxY, rng());
-  const object = vec(clamp(x, bounds.minX, bounds.maxX), y);
+  const x = rng() < 0.5 ? bounds.maxX - offset : bounds.minX + offset;
+  const object = vec(x, lerp(bounds.minY, bounds.maxY, rng()));
   return isInLegalBounds(object) ? object : undefined;
 }
 
@@ -222,16 +233,15 @@ export function layoutViolations(
   if (isInPocketMouth(layout.cue, POCKET_CLEARANCE)) violations.push('cue-in-pocket');
   if (isInPocketMouth(layout.object, POCKET_CLEARANCE)) violations.push('object-in-pocket');
 
-  const analysis = analyseShot({
-    cue: layout.cue,
-    object: layout.object,
-    pocket,
-    obstacles,
-    // Judge power against the most sluggish cloth on offer, so a layout stays
-    // makeable whichever cloth the player switches to afterwards.
-    rollingFriction: clothRollingFriction(SLOWEST_CLOTH),
-  });
+  const analysis = analyseShot({ cue: layout.cue, object: layout.object, pocket, obstacles });
   for (const blocker of analysis.blockers) violations.push(blocker);
+  // Power is judged again against the most sluggish cloth on offer, so a
+  // layout stays makeable whichever cloth the player switches to afterwards.
+  const { cutAngle, objectToPocket, cueToGhost } = analysis;
+  const slowest = clothRollingFriction(SLOWEST_CLOTH);
+  if (!isPowerFeasible(cutAngle, objectToPocket, cueToGhost, slowest) && !violations.includes('underpowered')) {
+    violations.push('underpowered');
+  }
 
   // Neither ball may be required to roll over a pocket on its way. The cue ball
   // has no exception: any pocket it crosses swallows it. The object ball is
@@ -281,8 +291,4 @@ export function stepAlong(from: Vec2, heading: number, distance: number): Vec2 {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
 }

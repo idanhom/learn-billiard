@@ -10,7 +10,7 @@ import {
   clothRollingFriction,
 } from '../../src/constants';
 import { angleBetween, spinBy } from '../../src/geometry/quat';
-import { rollPhaseDistance, stoppingDistance } from '../../src/geometry/shot';
+import { contactState, rollPhaseDistance, stoppingDistance, throwAngle } from '../../src/geometry/shot';
 import { BALL_RADIUS, TABLE, isOnShelf, pocketById } from '../../src/geometry/table';
 import { type Vec2, add, dist, fromAngle, len, scale, sub, vec } from '../../src/geometry/vec2';
 import { resolveCushion } from '../../src/physics/collision';
@@ -426,32 +426,43 @@ describe('ball on ball', () => {
    * A rolling cue ball hit square sends the object ball "about 7 times as far"
    * as the cue ball follows, and Alciatore adds that it "can vary some with
    * ball and cloth conditions" (Billiards Digest, June 2020, "Speed Control",
-   * tip 4). One either side of seven is the reading held here. That is not
-   * decoration: the frictionless textbook case is (5/2)^2 = 6.25, this model
-   * gave 5.2x before it had contact friction, and with the spin transfer
-   * inverted it reads 8.2x at 1.2 m/s — each one outside.
-   *
-   * The model settles toward 6.4x as the knee's share shrinks, which is what
-   * the slide-then-roll arithmetic gives with this restitution and contact
-   * friction. An earlier version of this test held 6.5-8x, a band nobody had a
-   * source for; the fast step took the 1.55 m/s contact under it, and the step
-   * has since gone.
+   * tip 4). One either side of seven is the reading held here, at an ordinary
+   * pot's contact speed. That is not decoration: this model gave 5.2x before
+   * it had contact friction, and with the spin transfer inverted it read 8.2x
+   * at 1.2 m/s, both outside.
    *
    * Measured against the speed AT CONTACT, per `CLAUDE.md`: measuring a
    * collision property against a launch speed folds in whatever the cloth took
    * on the run-up.
    */
   test('sends the object ball about seven times as far as the cue ball follows', () => {
+    const { ratio, impact } = squareHitRatio(0.787);
+    expect(impact).toBeCloseTo(0.787, 2);
+    expect(ratio).toBeCloseTo(7.2, 1);
+    expect(Math.abs(ratio - 7)).toBeLessThan(1);
+  });
+
+  /**
+   * Faster contacts read lower. The friction follows TP A.14 and falls with
+   * sliding speed, so a fast contact gears less spin, and the ratio heads for
+   * the 5.2x it would be with no friction at all at this restitution. That is
+   * a prediction, not a fit, and whether real balls do it is open: Alciatore's
+   * figure does not say at what speed.
+   */
+  test('and less the faster the contact, as the friction falls', () => {
+    let previous = Number.POSITIVE_INFINITY;
     for (const [arrival, expected] of [
-      [0.787, 7.34],
-      [1.2, 6.76],
-      [1.55, 6.6],
-      [2.5, 6.47],
+      [0.787, 7.2],
+      [1.2, 6.24],
+      [1.55, 5.92],
+      [2.5, 5.58],
     ] as const) {
       const { ratio, impact } = squareHitRatio(arrival);
       expect(impact).toBeCloseTo(arrival, 2);
       expect(ratio).toBeCloseTo(expected, 1);
-      expect(Math.abs(ratio - 7)).toBeLessThan(1);
+      expect(ratio).toBeLessThan(previous);
+      expect(ratio).toBeGreaterThan(5.2);
+      previous = ratio;
     }
   });
 
@@ -465,18 +476,27 @@ describe('ball on ball', () => {
    */
   test('but runs high on a touch shot, which is the cost of the knee', () => {
     const { ratio } = squareHitRatio(0.5);
-    expect(ratio).toBeCloseTo(9.63, 1);
+    expect(ratio).toBeCloseTo(10.54, 1);
     expect(ratio).toBeGreaterThan(8);
   });
 
-  test('a half-ball hit sends the object ball off at thirty degrees', () => {
+  /**
+   * Thirty degrees off the line of centres, less the throw, which turns the
+   * object ball toward the way the cue ball was going. Still sliding at
+   * contact here, so the throw is the larger, stun kind.
+   */
+  test('a half-ball hit sends the object ball off at thirty degrees, less the throw', () => {
     const cue = createBall(0, vec(-0.3, 0), vec(2, 0));
     const object = createBall(1, vec(0, BALL_RADIUS));
     const { balls } = stepUntil([cue, object], (events) =>
       events.some((e) => e.type === 'ball-ball'),
     );
     const angle = (Math.atan2(balls[1]!.vel.y, balls[1]!.vel.x) * 180) / Math.PI;
-    expect(angle).toBeCloseTo(30, 0);
+    const run = 0.3 - Math.sqrt((2 * BALL_RADIUS) ** 2 - BALL_RADIUS ** 2);
+    const contact = contactState(2, run);
+    const thrown = (throwAngle(Math.PI / 6, contact.speed, contact.rollFraction) * 180) / Math.PI;
+    expect(thrown).toBeGreaterThan(1.5);
+    expect(angle).toBeCloseTo(30 - thrown, 1);
   });
 
   test('balls that start overlapping are separated rather than exploding', () => {

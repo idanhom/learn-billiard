@@ -6,12 +6,14 @@
  * exception and says so at length: it sits at 0.022, over twice the published
  * band, on purpose — and `TERMINAL_ROLL_SPEED` / `TERMINAL_ROLL_BOOST` have no
  * published value behind them at all. The model is deliberately IDEAL: no
- * english, no ball-to-ball throw, and no cushion-induced sidespin. Two things
- * DO couple top and bottom spin, because both are what make the shot behave
- * the way a player expects: cushions, since contact above the ball's centre
- * torques it, and ball-to-ball contacts, since the two faces mesh like gear
- * teeth. The app says what is and is not modelled on screen, because a trainer
- * that teaches geometry the sim then contradicts would be worse than useless.
+ * english and no cushion-induced sidespin. Two things DO couple top and bottom
+ * spin, because both are what make the shot behave the way a player expects:
+ * cushions, since contact above the ball's centre torques it, and ball-to-ball
+ * contacts, since the two faces mesh like gear teeth. The same contact friction
+ * pushes the object ball sideways too, which is throw, and the ideal line
+ * allows for it. The app says what is and is not modelled on screen, because a
+ * trainer that teaches geometry the sim then contradicts would be worse than
+ * useless.
  */
 
 export const GRAVITY = 9.81;
@@ -90,22 +92,32 @@ export function clothRollingFriction(preset: ClothPreset): number {
 export const BALL_RESTITUTION = 0.95;
 
 /**
- * Coulomb friction between two balls at the moment of contact.
+ * Coulomb friction between two balls at the moment of contact, which falls as
+ * the two surfaces slide past each other faster: mu(v) = a + b*exp(-c*v), with
+ * v the sliding speed at the contact in m/s.
  *
- * The published range for polished phenolic on phenolic is 0.03-0.08, and this
- * is the middle of it — Alciatore's typical figure. It is NOT tuned. The check
- * worth keeping is the square-hit travel ratio: a rolling cue ball sends the
- * object ball "about 7 times as far" as it follows itself (Alciatore,
- * Billiards Digest, June 2020), and the model lands near that at the published
- * value. If holding the ratio near 7 ever needs this dragged off 0.03-0.08, the
- * collision model has a structural error rather than a calibration one, which
- * is how the first draft of this change was caught: it had the spin transfer
- * inverted, and needed 0.045 to compensate.
+ * Alciatore, TP A.14 ("The effects of cut angle, speed, and spin on object ball
+ * throw"), fitted there to Marlow's measurements (The Physics of Pocket
+ * Billiards, 1995, Table 10): 0.11, 0.06 and 0.01 at 0.071, 0.71 and 7.1 m/s of
+ * slip. It passes 0.06, the middle of the 0.03-0.08 usually quoted for
+ * phenolic on phenolic, at 0.71 m/s. None of the three constants is tuned.
  *
- * Only the vertical (gear-meshing) share of the friction impulse is applied.
- * The horizontal share is throw, which this model declares it does not have.
+ * The check worth keeping is the square-hit travel ratio: a rolling cue ball
+ * sends the object ball "about 7 times as far" as it follows itself
+ * (Alciatore, Billiards Digest, June 2020). If holding that ever needs these
+ * moved, the collision model has a structural error rather than a calibration
+ * one, which is how the first draft of the contact friction was caught: it had
+ * the spin transfer inverted, and needed a coefficient of 0.045 to compensate.
  */
-export const BALL_CONTACT_FRICTION = 0.06;
+export const CONTACT_FRICTION_FLOOR = 9.951e-3;
+export const CONTACT_FRICTION_RISE = 0.108;
+/** In s/m. */
+export const CONTACT_FRICTION_DECAY = 1.088;
+
+/** Ball-to-ball friction at a contact sliding at `slip` m/s. */
+export function contactFriction(slip: number): number {
+  return CONTACT_FRICTION_FLOOR + CONTACT_FRICTION_RISE * Math.exp(-CONTACT_FRICTION_DECAY * slip);
+}
 
 /**
  * Below this speed a rolling ball sheds speed `TERMINAL_ROLL_BOOST` times
@@ -182,22 +194,22 @@ export const MIN_CUE_SPEED = 0.35;
 /**
  * Shape of the power meter: speed is MIN + (MAX - MIN) * power^this.
  *
- * Not a feel knob. The range 0.35-4.5 m/s is right — an 80 degree cut with
- * 0.4 m to the pocket throws away cos(80 degrees) of its speed at contact and
- * genuinely needs 3.86 m/s,
- * which is 85% of a linear bar — but spread linearly it crushes the ordinary
- * shots into the bottom of it: a typical pot is a 1.22 m/s stroke at 21%, and
- * the longest in the curriculum 1.93 m/s at 38%. The exponent is set so that
- * typical pot (0.6 m to the pocket, 0.5 m of cue-ball travel, normal cloth)
- * reads 40% here, which moves the same two to 40% and 57%.
+ * Not a feel knob. The range 0.35-4.5 m/s is right: an 80 degree cut with 0.4 m
+ * to the pocket throws away cos(80 degrees) of its speed at contact and
+ * genuinely needs 3.83 m/s, which is 84% of a linear bar. But spread linearly
+ * it crushes the ordinary shots into the bottom of it: a typical pot is a
+ * 1.22 m/s stroke at 21%, and the longest in the curriculum 1.90 m/s at 37%.
+ * The exponent is set so that typical pot (0.6 m to the pocket, 0.5 m of
+ * cue-ball travel, normal cloth) reads 40% here, which moves the same two to
+ * 40% and 56%.
  *
- * It follows the cloth, and now the contact model too, and has to be
- * re-derived from that typical pot whenever either moves. It survived the knee
- * at 1.70 by coincidence rather than by construction — the faster cloth wanted
- * it lower, the object ball's new backspin wanted it higher, and the two very
- * nearly cancelled. If the cloth ever goes back to 0.010 this becomes 2.251.
+ * It follows the cloth and the contact model, and has to be re-derived from
+ * that typical pot whenever either moves. It went from 1.70 to 1.71 when the
+ * ball-to-ball friction became TP A.14's, which falls with speed and so lays
+ * less backspin on a fast contact. If the cloth ever goes back to 0.010 this
+ * becomes 2.240.
  */
-export const POWER_CURVE_EXPONENT = 1.7;
+export const POWER_CURVE_EXPONENT = 1.71;
 
 /**
  * How far past the pocket the recommended power would carry the object ball,

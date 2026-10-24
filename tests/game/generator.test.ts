@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { SLOWEST_CLOTH } from '../../src/constants';
-import { cutAngle, cutSide, ghostBallCenter } from '../../src/geometry/shot';
+import { SLOWEST_CLOTH, clothRollingFriction } from '../../src/constants';
+import { type ShotAnalysis, analyseShot } from '../../src/geometry/shot';
 import {
   BALL_RADIUS,
   TABLE,
@@ -9,11 +9,17 @@ import {
   pocketOnPath,
 } from '../../src/geometry/table';
 import { dist } from '../../src/geometry/vec2';
-import { aimTarget, idealAimAngle } from '../../src/game/drills';
+import { type ShotLayout, aimTarget, idealAimAngle } from '../../src/game/drills';
 import { LEVELS, examLevel, levelById } from '../../src/game/levels';
 import { generateShot, layoutViolations } from '../../src/game/generator';
 import { makeRng } from '../../src/game/random';
+import { cueSpeedForPower } from '../../src/game/power';
 import { ShotSession } from '../../src/game/shot-session';
+import { pocketById } from '../../src/geometry/table';
+
+/** The ideal shot at a layout, on normal cloth at the recommended stroke. */
+const analyse = (layout: ShotLayout): ShotAnalysis =>
+  analyseShot({ cue: layout.cue, object: layout.object, pocket: pocketById(layout.targetPocket), obstacles: [] });
 
 const toDeg = (r: number) => (r * 180) / Math.PI;
 
@@ -126,7 +132,7 @@ describe('generated layouts', () => {
     for (const level of LEVELS) {
       for (let seed = 100; seed < 140; seed++) {
         const { layout } = generateShot(level, seed);
-        const cut = toDeg(cutAngle(layout.cue, layout.object, aimTarget(layout)));
+        const cut = toDeg(analyse(layout).cutAngle);
         expect(cut, `level ${level.id} seed ${seed}`).toBeGreaterThanOrEqual(level.cutRange[0] - 1e-6);
         expect(cut, `level ${level.id} seed ${seed}`).toBeLessThanOrEqual(level.cutRange[1] + 1e-6);
       }
@@ -138,8 +144,8 @@ describe('generated layouts', () => {
     for (let seed = 0; seed < 30; seed++) {
       const left = generateShot(level, seed, { preferredSide: 'left' }).layout;
       const right = generateShot(level, seed, { preferredSide: 'right' }).layout;
-      expect(cutSide(left.cue, left.object, aimTarget(left))).toBe('left');
-      expect(cutSide(right.cue, right.object, aimTarget(right))).toBe('right');
+      expect(analyse(left).cutSide).toBe('left');
+      expect(analyse(right).cutSide).toBe('right');
     }
   });
 
@@ -150,6 +156,17 @@ describe('generated layouts', () => {
       const toLongRail = TABLE.playWidth / 2 - Math.abs(layout.object.y);
       const toShortRail = TABLE.playLength / 2 - Math.abs(layout.object.x);
       expect(Math.min(toLongRail, toShortRail)).toBeLessThanOrEqual(level.railBand);
+    }
+  });
+
+  /** See `sampleNearRail`: a frozen ball is a shot the model cannot play straight. */
+  test('but never frozen to it', () => {
+    const level = levelById(6);
+    for (let seed = 0; seed < 200; seed++) {
+      const { layout } = generateShot(level, seed);
+      const toLongRail = TABLE.playWidth / 2 - Math.abs(layout.object.y);
+      const toShortRail = TABLE.playLength / 2 - Math.abs(layout.object.x);
+      expect(Math.min(toLongRail, toShortRail), `seed ${seed}`).toBeGreaterThan(BALL_RADIUS);
     }
   });
 
@@ -215,8 +232,7 @@ describe('shots must actually be playable', () => {
         const { layout } = generateShot(level, seed, {
           preferredSide: seed % 2 === 0 ? 'left' : 'right',
         });
-        const ghost = ghostBallCenter(layout.object, aimTarget(layout));
-        const swallowed = pocketOnPath(layout.cue, ghost);
+        const swallowed = pocketOnPath(layout.cue, analyse(layout).ghostCenter);
         expect(swallowed?.id, `level ${level.id} seed ${seed} loses the cue ball`).toBeUndefined();
       }
     }
@@ -277,7 +293,9 @@ describe('shots must actually be playable', () => {
             toleranceDegrees: level.toleranceDegrees,
             cloth: SLOWEST_CLOTH,
           });
-          session.aimTo(idealAimAngle(layout));
+          // Throw moves with the stroke, so the line to aim at does too.
+          const stroke = { rollingFriction: clothRollingFriction(SLOWEST_CLOTH), cueSpeed: cueSpeedForPower(power) };
+          session.aimTo(idealAimAngle(layout, stroke));
           session.beginCharge();
           session.setPower(power);
           session.release();
@@ -298,8 +316,7 @@ describe('shots must actually be playable', () => {
         preferredSide: seed % 2 === 0 ? 'left' : 'right',
       });
       expect(layoutViolations(layout, level), `L${levelId}-s${seed}`).toEqual([]);
-      const ghost = ghostBallCenter(layout.object, aimTarget(layout));
-      expect(pocketOnPath(layout.cue, ghost)).toBeUndefined();
+      expect(pocketOnPath(layout.cue, analyse(layout).ghostCenter)).toBeUndefined();
       expect(isInPocketMouth(layout.cue)).toBe(false);
     }
   });

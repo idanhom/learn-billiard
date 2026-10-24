@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { idealAimAngle, layoutWithCut } from '../../src/game/drills';
-import { ShotSession } from '../../src/game/shot-session';
+import { layoutWithCut } from '../../src/game/drills';
 import { aimPoint, cleanDrop, pocketWindow } from '../../src/geometry/pocket-window';
-import { ghostBallCenter } from '../../src/geometry/shot';
+import { analyseShot } from '../../src/geometry/shot';
 import { BALL_RADIUS, type Pocket, TABLE, pocketById } from '../../src/geometry/table';
 import {
   type Vec2,
@@ -15,6 +14,7 @@ import {
   lerp,
   normalize,
   scale,
+  signedAngleBetween,
   sub,
   vec,
 } from '../../src/geometry/vec2';
@@ -136,39 +136,34 @@ describe('the pocket window', () => {
   });
 
   /**
-   * Frozen to a rail and sent along it: hit the rail and the ball together.
-   * The band is the rail's own line, and its middle leaves the ghost ball
-   * frozen too, a hair clear of the rubber, so the cue ball meets the object
-   * ball before the rail rather than in a dead heat.
+   * Frozen to a rail and sent along it, the band runs from the rail's own
+   * line, where the ball just runs along the rubber, out to where it would
+   * catch the far facing.
    */
-  test('a ball frozen to a rail is sent straight along it, the ghost ball frozen beside it', () => {
+  test('a ball frozen to a rail has a band that starts at the rail', () => {
     for (const object of [vec(0.25, TABLE.bounds.maxY), vec(-0.3, TABLE.bounds.minY)]) {
       const pocket = object.y > 0 ? corner : pocketById('bottom-left');
       const window = pocketWindow(object, pocket)!;
-      expect(window.high - window.low).toBeLessThan(1e-8);
-      const ghost = ghostBallCenter(object, window.target);
-      const gap = TABLE.playWidth / 2 - Math.abs(ghost.y) - BALL_RADIUS;
-      expect(gap).toBeGreaterThan(0);
-      expect(gap).toBeLessThan(1e-9);
+      const alongRail = pocket === corner ? 0 : Math.PI;
+      const edges = [window.low, window.high].map((edge) => Math.abs(signedAngleBetween(fromAngle(edge), fromAngle(alongRail))));
+      expect(Math.min(...edges)).toBeLessThan(1e-8);
+      expect(window.high - window.low).toBeGreaterThan(1e-4);
     }
   });
 
-  test('aimed at the middle of its band, a frozen rail ball runs down the rail and drops', () => {
+  /**
+   * But no cue ball can send it that way. Throw turns the object ball toward
+   * the cue ball's sideways motion, which comes from the table side and so
+   * points into the rail, and correcting for it puts the ghost ball inside
+   * the rubber. The generator does not deal frozen balls for this reason.
+   */
+  test('and throw puts the ghost ball that would send it there inside the rail', () => {
     const object = vec(0.25, TABLE.bounds.maxY);
-    let played = 0;
-    for (const cut of [10, 30, -10, -30]) {
-      const layout = layoutWithCut(`frozen-${cut}`, object, 'top-right', cut, 0.6);
-      // One way round, the cue ball would sit behind the rail.
-      if (layout.cue.y > TABLE.bounds.maxY) continue;
-      played++;
-      const session = new ShotSession(layout);
-      session.aimTo(idealAimAngle(layout));
-      session.beginCharge();
-      session.setPower(session.recommendedPower!);
-      session.release();
-      for (let i = 0; i < 60 * 40 && session.phase === 'simulating'; i++) session.advance(1 / 60);
-      expect(session.evaluate()?.pottedTarget, `cut ${cut}`).toBe(true);
+    for (const cut of [10, 30]) {
+      const { cue } = layoutWithCut(`frozen-${cut}`, object, 'top-right', -cut, 0.6);
+      const analysis = analyseShot({ cue, object, pocket: corner, obstacles: [] });
+      expect(analysis.throwAngle).toBeGreaterThan(0);
+      expect(analysis.blockers, `${cut}`).toContain('ghost-off-table');
     }
-    expect(played).toBe(2);
   });
 });

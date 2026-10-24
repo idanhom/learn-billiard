@@ -12,20 +12,8 @@
  * stays on for good.
  */
 
-import {
-  DROP_MARGIN,
-  MAX_CUE_SPEED,
-  MIN_CUE_SPEED,
-  NORMAL_TRANSFER,
-  POWER_CURVE_EXPONENT,
-  ROLLING_FRICTION,
-} from '../constants';
-import {
-  type ShotAnalysis,
-  launchSpeedFor,
-  objectRollFraction,
-  speedForStoppingDistance,
-} from '../geometry/shot';
+import { MAX_CUE_SPEED, MIN_CUE_SPEED, POWER_CURVE_EXPONENT, ROLLING_FRICTION } from '../constants';
+import { type ShotAnalysis, recommendedLaunchSpeed } from '../geometry/shot';
 
 /**
  * How a stroke reads out loud. The boundaries follow the published shot-speed
@@ -60,41 +48,27 @@ export function powerForCueSpeed(speed: number): number {
 }
 
 /**
- * The meter reading that would leave the object ball dying in the pocket.
+ * The meter reading that would leave the object ball dying in the pocket: the
+ * stroke `recommendedLaunchSpeed` works out, read off the meter.
  *
- * Chains what the geometry already knows, backwards from where the ball has to
- * finish: the departure speed that dies just past the pocket, the cue-ball
- * speed at contact that produces it after the cut throws cos(theta) of it
- * away, and the launch speed that still has that left after the trip to the
- * ghost ball.
- *
- * Null when no legal stroke can do it — a cut too thin to drive the ball that
- * far — so the HUD omits the marker rather than pinning it at 100% and
+ * Null when no legal stroke can do it (a cut too thin to drive the ball that
+ * far), so the HUD omits the marker rather than pinning it at 100% and
  * implying a shot that is not there.
  *
  * Takes the cloth it is played on, unlike shot generation, which validates
  * against the slowest cloth on offer. This is advice for the table you are on.
- *
- * The object ball is assumed to leave the contact with the backspin a ROLLING
- * cue ball gears onto it, while the simulation resolves whatever spin the cue
- * ball actually had. On a very short shot the cue ball is still sliding, so it
- * transfers less backspin than assumed and the object ball runs slightly long.
- * That is the safe direction: `DROP_MARGIN` already aims past the pocket.
  */
 export function recommendedPower(
   analysis: ShotAnalysis,
   rollingFriction: number = ROLLING_FRICTION,
 ): number | null {
-  const transfer = NORMAL_TRANSFER * Math.cos(analysis.cutAngle);
-  if (transfer <= 0) return null;
-
-  const objectSpeed = speedForStoppingDistance(
-    analysis.objectToPocket * DROP_MARGIN,
+  const launch = recommendedLaunchSpeed(
+    analysis.cutAngle,
+    analysis.objectToPocket,
+    analysis.cueToGhost,
     rollingFriction,
-    objectRollFraction(analysis.cutAngle),
   );
-  const launch = launchSpeedFor(objectSpeed / transfer, analysis.cueToGhost, rollingFriction);
-  if (!Number.isFinite(launch) || launch > MAX_CUE_SPEED) return null;
+  if (launch === undefined || launch > MAX_CUE_SPEED) return null;
   return powerForCueSpeed(launch);
 }
 

@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 import {
-  BALL_CONTACT_FRICTION,
   type ClothPreset,
   CLOTH_PRESET_IDS,
   GRAVITY,
@@ -8,12 +7,15 @@ import {
   ROLLING_FRICTION,
   SLIDING_FRICTION,
   clothRollingFriction,
+  contactFriction,
 } from '../../src/constants';
+import { layoutWithCut as placeCue } from '../../src/game/drills';
 import { aimPoint } from '../../src/geometry/pocket-window';
 import { BALL_RADIUS, TABLE, pocketById } from '../../src/geometry/table';
 import {
   aimError,
   analyseShot,
+  contactState,
   cutAngle,
   cutSide,
   fullness,
@@ -24,11 +26,26 @@ import {
   objectRollFraction,
   objectSpeedAfterCut,
   rollPhaseDistance,
+  recommendedLaunchSpeed,
   speedForStoppingDistance,
   stoppingDistance,
 } from '../../src/geometry/shot';
-import { createBall, simulateToRest } from '../../src/physics/world';
-import { type Vec2, add, angleOf, fromAngle, len, normalize, rotate, scale, sub, vec } from '../../src/geometry/vec2';
+import { createBall, simulateToRest, stepWorld } from '../../src/physics/world';
+import {
+  type Vec2,
+  add,
+  angleBetween,
+  angleOf,
+  dist,
+  fromAngle,
+  len,
+  normalize,
+  rotate,
+  scale,
+  signedAngleBetween,
+  sub,
+  vec,
+} from '../../src/geometry/vec2';
 
 const deg = (d: number) => (d * Math.PI) / 180;
 const toDeg = (r: number) => (r * 180) / Math.PI;
@@ -268,16 +285,21 @@ describe('speed and roll-out', () => {
    * is shorter than a pure slide's, not longer.
    */
   test('the object ball comes off a contact with backspin, which shortens its run', () => {
-    expect(objectRollFraction(0)).toBeLessThan(0);
-    expect(objectRollFraction(0)).toBeCloseTo(-2.5 * BALL_CONTACT_FRICTION, 12);
-    expect(stoppingDistance(1, ROLLING_FRICTION, objectRollFraction(0))).toBeLessThan(
+    expect(objectRollFraction(0, 1)).toBeLessThan(0);
+    expect(objectRollFraction(0, 1)).toBeCloseTo(-2.5 * contactFriction(1), 12);
+    expect(stoppingDistance(1, ROLLING_FRICTION, objectRollFraction(0, 1))).toBeLessThan(
       stoppingDistance(1, ROLLING_FRICTION, 0),
     );
   });
 
   test('and less of it the thinner the cut, vanishing at a right angle', () => {
-    expect(Math.abs(objectRollFraction(deg(60)))).toBeLessThan(Math.abs(objectRollFraction(0)));
-    expect(objectRollFraction(deg(90))).toBeCloseTo(0, 12);
+    expect(Math.abs(objectRollFraction(deg(60), 1))).toBeLessThan(Math.abs(objectRollFraction(0, 1)));
+    expect(objectRollFraction(deg(90), 1)).toBeCloseTo(0, 12);
+  });
+
+  test('and more of it the slower the contact, but none from a cue ball with no topspin', () => {
+    expect(objectRollFraction(0, 0.5)).toBeLessThan(objectRollFraction(0, 2));
+    expect(objectRollFraction(deg(30), 1, 0)).toBeCloseTo(0, 12);
   });
 
   test('a firm stroke can send an object ball the length of the table', () => {
@@ -359,7 +381,7 @@ describe('inverting the roll-out', () => {
    * `recommendedPower` actually calls.
    */
   test('and inverts just as exactly with a negative roll fraction', () => {
-    const k = objectRollFraction(0);
+    const k = objectRollFraction(0, 1);
     for (const friction of CLOTH_PRESET_IDS.map(clothRollingFriction)) {
       for (const speed of [0.05, 0.16, 0.3, 1, 3]) {
         const distance = stoppingDistance(speed, friction, k);
@@ -422,6 +444,56 @@ describe('inverting the roll-out', () => {
   });
 });
 
+describe('the cue ball at contact', () => {
+  test('arrives still sliding over a short run, and rolling over a long one', () => {
+    const short = contactState(3, 0.2);
+    expect(short.speed).toBeCloseTo(Math.sqrt(9 - 2 * SLIDING_FRICTION * GRAVITY * 0.2), 12);
+    expect(short.rollFraction).toBeGreaterThan(0);
+    expect(short.rollFraction).toBeLessThan(1);
+    expect(contactState(1.2, 1).rollFraction).toBe(1);
+  });
+
+  test('is what launchSpeedFor solved for', () => {
+    for (const [arrival, distance] of [[2, 0.1], [1.2, 0.25], [0.5, 1], [0.35, 1.5]] as const) {
+      expect(contactState(launchSpeedFor(arrival, distance), distance).speed).toBeCloseTo(arrival, 9);
+    }
+  });
+
+  /** Speed and roll, read off the simulation at the distance asked about. */
+  test('matches the simulation, sliding and rolling', () => {
+    for (const [launch, distance] of [[3, 0.3], [1.5, 0.12], [1.2, 0.8], [0.8, 0.5]] as const) {
+      const start = vec(-0.8, 0);
+      let balls = [createBall(0, start, vec(launch, 0))];
+      for (let tick = 0; tick < 2400 && balls[0]!.pos.x - start.x < distance; tick++) balls = stepWorld(balls).balls;
+      expect(balls[0]!.pos.x - start.x).toBeGreaterThanOrEqual(distance);
+      const predicted = contactState(launch, balls[0]!.pos.x - start.x);
+      expect(Math.abs(balls[0]!.vel.x - predicted.speed)).toBeLessThan(0.002);
+      expect(Math.abs(balls[0]!.roll.x / balls[0]!.vel.x - predicted.rollFraction)).toBeLessThan(0.002);
+    }
+  });
+});
+
+describe('the recommended stroke', () => {
+  /** A fixed point: run the chain once more from its own contact and nothing moves. */
+  test('settles: the contact it assumes is the contact it produces', () => {
+    for (const [cut, toPocket, toGhost] of [[0, 0.6, 0.5], [deg(40), 0.9, 0.3], [deg(70), 0.4, 0.8]] as const) {
+      const launch = recommendedLaunchSpeed(cut, toPocket, toGhost)!;
+      const contact = contactState(launch, toGhost);
+      const objectSpeed = speedForStoppingDistance(
+        toPocket * 1.15,
+        ROLLING_FRICTION,
+        objectRollFraction(cut, contact.speed, contact.rollFraction),
+      );
+      expect(objectSpeedAfterCut(contact.speed, cut)).toBeCloseTo(objectSpeed, 9);
+    }
+  });
+
+  test('is undefined past the strongest legal stroke', () => {
+    expect(recommendedLaunchSpeed(deg(84), 1.6, 0.3)).toBeUndefined();
+    expect(recommendedLaunchSpeed(deg(95), 0.5, 0.3)).toBeUndefined();
+  });
+});
+
 describe('analyseShot', () => {
   const pocket = pocketById('top-right');
 
@@ -463,11 +535,7 @@ describe('analyseShot', () => {
   });
 
   test('a cut steeper than the physical limit is rejected', () => {
-    const object = vec(0.59, 0.44);
-    const departure = normalize(sub(aimPoint(object, pocket), object));
-    const ghost = ghostBallCenter(object, aimPoint(object, pocket));
-    // Approach the ghost 87 degrees off the object's departure line.
-    const cue = add(ghost, scale(rotate(departure, deg(-93)), 0.3));
+    const { cue, object } = placeCue('steep', vec(0.59, 0.44), pocket.id, -87, 0.3);
     const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
     expect(toDeg(analysis.cutAngle)).toBeCloseTo(87, 6);
     expect(analysis.reachable).toBe(false);
@@ -493,15 +561,66 @@ describe('analyseShot', () => {
   });
 
   test('a thin cut the length of the table is flagged as underpowered', () => {
-    const object = vec(-0.85, 0.4);
-    const departure = normalize(sub(aimPoint(object, pocket), object));
-    const ghost = ghostBallCenter(object, aimPoint(object, pocket));
     // 84 degrees: inside the steepness limit, but too thin to carry that far.
-    const cue = add(ghost, scale(rotate(departure, deg(-96)), 0.3));
+    const { cue, object } = placeCue('thin', vec(-0.85, 0.4), pocket.id, -84, 0.3);
     const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
     expect(toDeg(analysis.cutAngle)).toBeCloseTo(84, 6);
     expect(analysis.blockers).toContain('underpowered');
     expect(analysis.blockers).not.toContain('cut-too-steep');
+  });
+
+  /**
+   * Throw turns the object ball off the line of centres toward the way the cue
+   * ball was going, so the ghost ball sits the throw's width further round:
+   * an over-cut. Straight in, there is no throw and nothing to correct.
+   */
+  test('the ghost ball is over-cut by the throw', () => {
+    for (const cut of [0, 15, 30, -30, 60]) {
+      const { cue, object } = placeCue('throw', vec(0.2, 0.05), pocket.id, cut, 0.6);
+      const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
+      const line = normalize(sub(object, analysis.ghostCenter));
+      const departure = normalize(sub(analysis.target, object));
+      const turned = Math.abs(signedAngleBetween(line, departure));
+      expect(turned, `${cut}`).toBeCloseTo(analysis.throwAngle, 9);
+      if (cut === 0) expect(analysis.throwAngle).toBeCloseTo(0, 9);
+      else expect(toDeg(analysis.throwAngle), `${cut}`).toBeGreaterThan(0.1);
+      // Over-cut: the line of centres is further from the cue ball's line than the departure is.
+      expect(toDeg(analysis.cutAngle)).toBeCloseTo(Math.abs(cut), 6);
+      expect(angleBetween(analysis.aimDirection, departure)).toBeLessThanOrEqual(analysis.cutAngle + 1e-12);
+    }
+  });
+
+  /**
+   * The whole point of the correction, run through the solver: fire along the
+   * analysed line at the stroke it assumed, and the object ball leaves for the
+   * target, not for where the line of centres points.
+   *
+   * To within a twentieth of a degree rather than exactly. The solver holds a
+   * ball's state through each 1/240 s tick, so a contact in the middle of one
+   * meets the cue ball's spin from the start of it, up to a tick of the cloth's
+   * grip short of where the closed form has it; on a firm stroke, still sliding
+   * at contact, that is a few hundredths of a degree of throw.
+   */
+  test('struck along the analysed line, the object ball leaves for the target', () => {
+    for (const cut of [10, 30, -45, 65]) {
+      for (const cueSpeed of [undefined, 0.8, 3]) {
+        const { cue, object } = placeCue('fired', vec(0.1, 0), pocket.id, cut, 0.5);
+        const analysis = analyseShot({ cue, object, pocket, obstacles: [], ...(cueSpeed ? { cueSpeed } : {}) });
+        const launch = cueSpeed ?? recommendedLaunchSpeed(analysis.cutAngle, analysis.objectToPocket, analysis.cueToGhost)!;
+        let balls = [createBall(0, cue, scale(analysis.aimDirection, launch)), createBall(1, object)];
+        for (let tick = 0; tick < 2400 && len(balls[1]!.vel) === 0; tick++) balls = stepWorld(balls).balls;
+        const leaving = signedAngleBetween(balls[1]!.vel, sub(analysis.target, object));
+        expect(Math.abs(toDeg(leaving)), `${cut} ${cueSpeed}`).toBeLessThan(0.05);
+      }
+    }
+  });
+
+  test('the ghost ball moves with the stroke, since the throw does', () => {
+    const { cue, object } = placeCue('stroke', vec(0.1, 0), pocket.id, 30, 0.5);
+    const soft = analyseShot({ cue, object, pocket, obstacles: [], cueSpeed: 0.8 });
+    const firm = analyseShot({ cue, object, pocket, obstacles: [], cueSpeed: 3.5 });
+    expect(soft.throwAngle).toBeGreaterThan(firm.throwAngle);
+    expect(dist(soft.ghostCenter, firm.ghostCenter)).toBeGreaterThan(1e-4);
   });
 
   test('the ideal aim direction points from the cue ball at the ghost ball', () => {

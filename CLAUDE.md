@@ -58,11 +58,18 @@ values that go stale silently:
   cannot shed speed faster rolling than skidding. A fast step that took ten
   times 0.022 above 1 m/s broke that and was removed; long cue-ball run-outs
   are the session's fast-forward to handle, not the cloth's.
-- `BALL_CONTACT_FRICTION` is published-typical (0.03-0.08, at the middle) and
-  should stay that way. If holding the square-hit travel ratio near Alciatore's
-  "about 7 times as far" ever needs it dragged off that range, the collision
-  model has a structural error rather than a calibration one. That is exactly
-  how an inverted spin-transfer sign was caught: it needed 0.045.
+- The ball-to-ball friction is `contactFriction`, Alciatore's TP A.14 fit to
+  Marlow's measurements, and none of its three constants is tuned. At an
+  ordinary pot's contact speed it puts the square-hit travel ratio at 7.2x,
+  near Alciatore's "about 7 times as far"; faster contacts read lower as the
+  friction falls, which is a prediction, not a fit. If holding the ratio near 7
+  at ordinary speeds ever needs those constants moved, the collision model has
+  a structural error rather than a calibration one. That is exactly how an
+  inverted spin-transfer sign was caught: it needed a constant 0.045 where 0.06
+  is published.
+- Throw is the same friction's sideways share, and the ideal line is corrected
+  for it (`analyseShot`), so the ghost ball, the cut a layout is generated at
+  and the recommended stroke all move with the contact model.
 - `CUSHION_RESTITUTION` / `CUSHION_FRICTION` are a fitted pair: the best
   match to Alciatore's measured square rebounds (HSV B.15) and rebound angles
   (TP B.11). Refit them together if either moves, against the same data;

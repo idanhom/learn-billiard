@@ -240,7 +240,7 @@ export class Hud {
       // Say plainly what this simulation is not, so nothing learned here comes
       // as a surprise on a real table.
       '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
-      'no english, no throw between balls, no sidespin off the cushions.</div>';
+      'no english, no sidespin off the cushions. The ghost ball allows for throw.</div>';
 
     this.#levels.addEventListener('click', (event) => {
       const target = (event.target as HTMLElement).closest('[data-level], [data-action]');

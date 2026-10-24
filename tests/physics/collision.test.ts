@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { BALL_CONTACT_FRICTION, BALL_RESTITUTION } from '../../src/constants';
+import { BALL_RESTITUTION, contactFriction } from '../../src/constants';
+import { objectRollFraction, throwAngle } from '../../src/geometry/shot';
 import { BALL_RADIUS } from '../../src/geometry/table';
 import { type Vec2, add, angleOf, dot, len, lenSq, normalize, scale, vec } from '../../src/geometry/vec2';
 import {
@@ -17,6 +18,7 @@ const D = 2 * BALL_RADIUS;
 const STILL = vec(0, 0);
 
 const toDeg = (r: number) => (r * 180) / Math.PI;
+const deg = (d: number) => (d * Math.PI) / 180;
 
 describe('ball-ball time of impact', () => {
   test('finds the moment two closing balls touch', () => {
@@ -100,21 +102,28 @@ describe('ball-ball resolution', () => {
     expect(r!.velB.y).toBeCloseTo(0, 12);
   });
 
-  test('the struck ball leaves along the line of centres', () => {
+  /**
+   * Along the line of centres, turned by the throw toward the way the cue ball
+   * was going: here, clockwise, toward +x.
+   */
+  test('the struck ball leaves along the line of centres, turned by the throw', () => {
     for (const offsetFraction of [0, 0.25, 0.5, 0.75]) {
       const offset = D * offsetFraction;
       const posB = vec(Math.sqrt(D * D - offset * offset), offset);
       const r = resolveBallPair(vec(0, 0), vec(2, 0), STILL, posB, vec(0, 0), STILL);
-      const lineOfCentres = normalize(posB);
-      expect(toDeg(angleOf(normalize(r!.velB)))).toBeCloseTo(toDeg(angleOf(lineOfCentres)), 9);
+      const lineOfCentres = angleOf(normalize(posB));
+      const thrown = throwAngle(lineOfCentres, 2, 0);
+      expect(toDeg(angleOf(normalize(r!.velB)))).toBeCloseTo(toDeg(lineOfCentres - thrown), 9);
+      if (offsetFraction === 0) expect(thrown).toBe(0);
+      else expect(thrown).toBeGreaterThan(0);
     }
   });
 
-  test('a half-ball hit sends the object ball off at thirty degrees', () => {
+  test('a half-ball hit sends the object ball off at thirty degrees, less the throw', () => {
     // Perpendicular offset of one radius: half the object ball is covered.
     const posB = vec(Math.sqrt(D * D - BALL_RADIUS * BALL_RADIUS), BALL_RADIUS);
     const r = resolveBallPair(vec(0, 0), vec(2, 0), STILL, posB, vec(0, 0), STILL);
-    expect(toDeg(angleOf(r!.velB))).toBeCloseTo(30, 9);
+    expect(toDeg(angleOf(r!.velB))).toBeCloseTo(30 - toDeg(throwAngle(deg(30), 2, 0)), 9);
   });
 
   test('momentum along the line of centres is conserved', () => {
@@ -127,10 +136,12 @@ describe('ball-ball resolution', () => {
     expect(after).toBeCloseTo(before, 12);
   });
 
-  test('the cue ball keeps its tangential component untouched', () => {
-    const posB = vec(0, D);
-    const r = resolveBallPair(vec(0, 0), vec(1, 1), STILL, posB, vec(0, 0), STILL);
-    expect(r!.velA.x).toBeCloseTo(1, 12);
+  test('the cue ball gives up across the line of centres exactly what the object ball gains', () => {
+    const posB = vec(Math.sqrt(D * D - 0.02 * 0.02), 0.02);
+    const velA = vec(2, 0.3);
+    const r = resolveBallPair(vec(0, 0), velA, STILL, posB, vec(0, 0), STILL)!;
+    expect(r.velA.x + r.velB.x).toBeCloseTo(velA.x, 12);
+    expect(r.velA.y + r.velB.y).toBeCloseTo(velA.y, 12);
   });
 
   test('is undefined when the balls are separating', () => {
@@ -161,7 +172,17 @@ describe('contact friction', () => {
 
   test('by exactly the closed form the analytic layer assumes', () => {
     const r = squareHit(2);
-    expect(r.rollB.x / r.velB.x).toBeCloseTo(-2.5 * BALL_CONTACT_FRICTION, 12);
+    // Square on, a rolling ball's contact slides at its whole speed.
+    expect(r.rollB.x / r.velB.x).toBeCloseTo(-2.5 * contactFriction(2), 12);
+    expect(r.rollB.x / r.velB.x).toBeCloseTo(objectRollFraction(0, 2), 12);
+  });
+
+  /** TP A.14's friction law: grips harder the slower the surfaces slide. */
+  test('and lays on more of it the slower the contact', () => {
+    const fraction = (speed: number) => squareHit(speed).rollB.x / squareHit(speed).velB.x;
+    expect(fraction(0.5)).toBeLessThan(fraction(1));
+    expect(fraction(1)).toBeLessThan(fraction(3));
+    expect(contactFriction(0.71)).toBeCloseTo(0.06, 3);
   });
 
   test('takes topspin off the cue ball at the same time', () => {
@@ -189,8 +210,7 @@ describe('contact friction', () => {
 
   /**
    * Passive by construction, in the same spirit as the cushion model: the
-   * contact can only take roll energy out. The linear energy cannot rise
-   * either — the friction's linear impulse is discarded, not applied.
+   * contact can only take energy out, rolling or moving.
    */
   test('never adds roll energy, at any spin state or cut angle', () => {
     const random = lcg(20260729);
@@ -208,19 +228,78 @@ describe('contact friction', () => {
     }
   });
 
-  /**
-   * Only the vertical share is applied, so the horizontal share — which is
-   * exactly throw — never reaches the object ball. The trainer scores aim to
-   * within a degree or two against the ghost-ball line, so this has to stay
-   * exact rather than merely small.
-   */
-  test('produces no throw: the object ball still leaves along the line of centres', () => {
-    for (const offsetFraction of [0.1, 0.4, 0.7, 0.95]) {
-      const offset = D * offsetFraction;
+  /** Kinetic energy, linear and rolling together: m(v^2 + (2/5)roll^2)/2 per ball. */
+  test('never adds energy at all, throw included', () => {
+    const energy = (v: Vec2, roll: Vec2): number => lenSq(v) + 0.4 * lenSq(roll);
+    const random = lcg(20261024);
+    for (let i = 0; i < 500; i++) {
+      const offset = D * random() * 0.99;
       const posB = vec(Math.sqrt(D * D - offset * offset), offset);
-      const r = resolveBallPair(vec(0, 0), vec(2, 0), vec(2, 0), posB, vec(0, 0), vec(0, 0))!;
-      expect(toDeg(angleOf(normalize(r.velB)))).toBeCloseTo(toDeg(angleOf(normalize(posB))), 9);
+      const velA = vec(0.2 + 4 * random(), 2 * random() - 1);
+      const rollA = vec(4 * random() - 2, 4 * random() - 2);
+      const rollB = vec(4 * random() - 2, 4 * random() - 2);
+      const r = resolveBallPair(vec(0, 0), velA, rollA, posB, vec(0, 0), rollB);
+      if (!r) continue;
+      const before = energy(velA, rollA) + energy(vec(0, 0), rollB);
+      const after = energy(r.velA, r.rollA) + energy(r.velB, r.rollB);
+      expect(after).toBeLessThanOrEqual(before + 1e-12);
     }
+  });
+
+  /**
+   * The horizontal share of the friction is throw, and the analytic layer
+   * corrects the ideal line for it, so the two have to agree exactly: at every
+   * cut, speed and spin state a cue ball can arrive in.
+   */
+  test('throws the object ball by exactly the angle the analytic layer assumes', () => {
+    for (const cut of [5, 15, 30, 45, 60, 80]) {
+      for (const speed of [0.4, 1, 2.5, 4.5]) {
+        for (const rollFraction of [0, 0.3, 1]) {
+          const posB = vec(D * Math.cos(deg(cut)), D * Math.sin(deg(cut)));
+          const r = resolveBallPair(vec(0, 0), vec(speed, 0), vec(speed * rollFraction, 0), posB, vec(0, 0), STILL)!;
+          const thrown = deg(cut) - angleOf(r.velB);
+          expect(thrown, `${cut} ${speed} ${rollFraction}`).toBeCloseTo(throwAngle(deg(cut), speed, rollFraction), 12);
+          const n = normalize(posB);
+          const k = dot(r.rollB, n) / dot(r.velB, n);
+          expect(k).toBeCloseTo(objectRollFraction(deg(cut), speed, rollFraction), 12);
+        }
+      }
+    }
+  });
+
+  /**
+   * TP A.14's bottom lines. Slower throws more; a sliding (stun) cue ball
+   * throws more than a rolling one, whose friction goes partly into the
+   * vertical slide; stun throw is the same at every speed at a small cut,
+   * where the slide across stops before the contact ends; and it is largest
+   * around a half-ball hit.
+   */
+  test('behaves as TP A.14 describes', () => {
+    const [slow, medium, fast] = [0.447, 1.341, 3.129];
+    expect(throwAngle(deg(30), slow)).toBeGreaterThan(throwAngle(deg(30), medium));
+    expect(throwAngle(deg(30), medium)).toBeGreaterThan(throwAngle(deg(30), fast));
+    expect(throwAngle(deg(30), medium, 0)).toBeGreaterThan(throwAngle(deg(30), medium, 1));
+    for (const speed of [medium, fast]) {
+      expect(throwAngle(deg(5), speed, 0)).toBeCloseTo(throwAngle(deg(5), slow, 0), 12);
+    }
+    expect(throwAngle(deg(30), medium, 0)).toBeGreaterThan(throwAngle(deg(10), medium, 0));
+    expect(throwAngle(deg(30), medium, 0)).toBeGreaterThan(throwAngle(deg(60), medium, 0));
+    // A slow stun shot near half-ball throws by several degrees.
+    expect(toDeg(throwAngle(deg(30), slow, 0))).toBeGreaterThan(4);
+    expect(toDeg(throwAngle(deg(30), slow, 0))).toBeLessThan(6);
+  });
+
+  /**
+   * |H|/7 stops the slide across the contact once both balls' turning about
+   * the vertical is counted. A slow stun contact at a small cut reaches it.
+   */
+  test('caps the throw at the impulse that stops the slide across', () => {
+    const posB = vec(D * Math.cos(deg(5)), D * Math.sin(deg(5)));
+    const r = resolveBallPair(vec(0, 0), vec(0.4, 0), STILL, posB, vec(0, 0), STILL)!;
+    const n = normalize(posB);
+    const across = vec(-n.y, n.x);
+    const slide = dot(vec(0.4, 0), across);
+    expect(dot(r.velB, across)).toBeCloseTo(slide / 7, 12);
   });
 
   /**
@@ -248,7 +327,8 @@ describe('contact friction', () => {
     const r = resolveBallPair(vec(0, 0), vec(10, 0.01), rollA, vec(D, 0), vec(0, 0), STILL)!;
     const n = vec(1, 0);
     // Uncapped, Coulomb would have taken far more than this.
-    expect(BALL_CONTACT_FRICTION * 0.975 * 10).toBeGreaterThan(Math.abs(rollA.x) / 5);
+    const slip = Math.hypot(rollA.x, 0.01);
+    expect((contactFriction(slip) * 0.975 * 10 * rollA.x) / slip).toBeGreaterThan(Math.abs(rollA.x) / 5);
     expect(dot(add(r.rollA, r.rollB), n)).toBeCloseTo(0, 12);
   });
 });

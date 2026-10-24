@@ -110,7 +110,7 @@ export const LEVELS: readonly LevelDefinition[] = [
   {
     id: 6,
     name: 'Distance and rails',
-    description: 'The same angles, but long, and with the object ball on a cushion.',
+    description: 'The same angles, but long, and with the object ball near a cushion.',
     cutRange: [0, 45],
     toleranceDegrees: 1,
     cueDistance: [0.8, 1.5],

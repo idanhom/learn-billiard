@@ -10,15 +10,7 @@
  */
 
 import { type ClothPreset, DEFAULT_CLOTH, clothRollingFriction } from '../constants';
-import {
-  type AimError,
-  type CutSide,
-  type ShotAnalysis,
-  aimError,
-  analyseShot,
-  cutAngle,
-  cutSide,
-} from '../geometry/shot';
+import { type AimError, type CutSide, type ShotAnalysis, aimErrorAt, analyseShot } from '../geometry/shot';
 import { type PocketId, pocketById } from '../geometry/table';
 import { type Vec2, dist, fromAngle, vec } from '../geometry/vec2';
 import {
@@ -109,6 +101,7 @@ export class ShotSession {
   #settled = false;
   #cloth: ClothPreset;
   readonly #target: Vec2;
+  #analysis: ShotAnalysis | undefined;
 
   constructor(layout: ShotLayout, options: ShotSessionOptions = {}) {
     this.layout = layout;
@@ -140,6 +133,7 @@ export class ShotSession {
   setCloth(cloth: ClothPreset): boolean {
     if (this.#phase !== 'aiming' && this.#phase !== 'charging') return false;
     this.#cloth = cloth;
+    this.#analysis = undefined;
     return true;
   }
 
@@ -213,22 +207,28 @@ export class ShotSession {
     return this.#target;
   }
 
-  /** The teaching geometry for this layout: ghost ball, cut angle, reachability. */
+  /**
+   * The teaching geometry for this layout: ghost ball, cut angle, reachability.
+   * On the cloth in play, which sets the stroke and so the throw the ghost ball
+   * allows for.
+   */
   get analysis(): ShotAnalysis {
-    return analyseShot({
+    this.#analysis ??= analyseShot({
       cue: this.layout.cue,
       object: this.layout.object,
       pocket: pocketById(this.layout.targetPocket),
       obstacles: this.layout.obstacles ?? [],
+      rollingFriction: clothRollingFriction(this.#cloth),
     });
+    return this.#analysis;
   }
 
   /** Live aim error for the guide readout, before the shot is taken. */
   get currentAimError(): AimError {
-    return aimError(
+    return aimErrorAt(
       this.layout.cue,
       this.layout.object,
-      this.#target,
+      this.analysis.ghostCenter,
       fromAngle(this.#aimAngle),
     );
   }
@@ -322,15 +322,15 @@ export class ShotSession {
     if (this.#phase !== 'settled') return undefined;
     this.#phase = 'evaluated';
 
-    const target = this.#target;
-    const error = aimError(this.layout.cue, this.layout.object, target, fromAngle(this.#aimAngle));
+    const analysis = this.analysis;
+    const error = aimErrorAt(this.layout.cue, this.layout.object, analysis.ghostCenter, fromAngle(this.#aimAngle));
     const objectPocket = this.objectBall.potted ? this.objectBall.pocket : undefined;
 
     this.#outcome = {
       shotId: this.layout.id,
       aimError: error,
-      cutAngle: cutAngle(this.layout.cue, this.layout.object, target),
-      cutSide: cutSide(this.layout.cue, this.layout.object, target),
+      cutAngle: analysis.cutAngle,
+      cutSide: analysis.cutSide,
       toleranceDegrees: this.toleranceDegrees,
       qualifying: this.#contacted && error.degrees <= this.toleranceDegrees,
       contacted: this.#contacted,

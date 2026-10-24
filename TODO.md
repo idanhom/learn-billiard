@@ -1,95 +1,39 @@
 # TODO
 
-## `isPowerFeasible` judges full-power shots with the wrong cue ball
+## `isPowerFeasible` judged full-power shots with the wrong cue ball
 
-**Status:** not started. Known, and safe in direction. Binds on level 5 and
-nowhere else. Needs a signature change, so it is a decision rather than a
-patch.
+**Status:** resolved in roadmap step B4, which had to change the signature
+anyway. Kept as a record of what the check is now.
 
-`src/geometry/shot.ts` — `isPowerFeasible` asks whether *any* legal stroke can
-drive the object ball to the pocket, so it evaluates the object ball's run at
-`MAX_CUE_SPEED`. Since `5c12fbc` it also passes `objectRollFraction(cut)`, the
-backspin a contact gears onto the object ball, which costs about 9% of its
-reach on a full hit and 4% at 60 degrees.
+`isPowerFeasible` asks whether any legal stroke can drive the object ball to
+the pocket, so it plays the shot out at `MAX_CUE_SPEED`. It used to take the
+cue ball as arriving at that speed and rolling, which at full power it never
+is: 4.5 m/s slides 2.53 m before its slip closes, and this table is 1.98 m
+long. One half of that was optimistic (no speed lost on the run-up) and the
+other pessimistic (the backspin a rolling cue ball gears on).
 
-But that roll fraction is the one a **rolling** cue ball transfers, and at
-`MAX_CUE_SPEED` the cue ball is not rolling. 4.5 m/s slides 2.53 m before its
-slip closes; this table is 1.98 m long. A cue ball at full power is always
-still sliding when it arrives, so it transfers *less* backspin than the check
-assumes, and the object ball reaches slightly further than the check allows.
-
-The direction is the safe one — it under-promises, so the failure mode is
-declaring a makeable layout unmakeable, never the reverse, and `POWER_MARGIN`
-exists to prevent exactly the reverse.
-
-**Where it actually bites: level 5, and only level 5.** Measured over 1500
-generated layouts per level, against the slowest cloth (which is what
-generation validates against), as the ratio of the feasibility limit to the
-distance the layout actually asks for:
+It now takes the cue-to-ghost distance and plays out the cue ball as it really
+arrives: slowed by the run-up, only partly rolling, and gearing on only the
+topspin the cloth has given it by then, with the contact friction falling with
+speed as TP A.14 has it. Measured over 1500 generated layouts per level,
+against the slowest cloth (which is what generation validates against), as the
+ratio of the feasibility limit to the distance the layout actually asks for:
 
 ```
-L1 Straight in         max cut  5.0 deg   tightest headroom 15.17x
-L2 Gentle cuts         max cut 20.0 deg   tightest headroom 12.30x
-L3 Half ball           max cut 40.0 deg   tightest headroom  8.35x
-L4 Steep cuts          max cut 60.0 deg   tightest headroom  4.61x
-L5 Thin cuts           max cut 80.0 deg   tightest headroom  1.01x   <-- binding
-L6 Distance and rails  max cut 45.0 deg   tightest headroom  5.33x
-L7 Exam                max cut 54.8 deg   tightest headroom  4.49x
+L1 Straight in         max cut  5.0 deg   tightest headroom 13.08x
+L2 Gentle cuts         max cut 20.0 deg   tightest headroom 11.38x
+L3 Half ball           max cut 40.0 deg   tightest headroom  7.78x
+L4 Steep cuts          max cut 60.0 deg   tightest headroom  4.14x
+L5 Thin cuts           max cut 80.0 deg   tightest headroom  1.00x   <-- binding
+L6 Distance and rails  max cut 45.0 deg   tightest headroom  4.85x
+L7 Exam                max cut 54.8 deg   tightest headroom  4.14x
 ```
 
 (`MEASURE=1 npx vitest run tests/zz-calibration.test.ts --reporter=verbose`
-prints this table, seeded. Re-measured when the fast roll step was removed:
-while it stood it cut full-hit reach by 3x on the near-straight levels and
-the slack to a third or a half of this — 4.97x / 4.13x / 3.15x / 2.57x /
-1.00x / 2.10x / 2.10x. Re-measured again when the pockets got jaws and the
-ideal line moved to the middle of each pocket's clean band, which shifted
-every row but the binding one by a few percent. Which row binds never
-changed.)
-
-Everywhere but level 5 the check has 4x to 15x of slack and could not change a
-decision if it tried. Level 5 generates right up against the limit, so the
-understatement directly shrinks the space of thin cuts the curriculum can
-offer — by 1.6% at 80 degrees and 3.0% at 70, where it reads a maximum potable
-distance of 1.684 m against a true 1.736 m. (While the fast step stood it
-flipped the sign at 70 degrees, to a 0.2% overstatement; with the step gone
-the check is safe in direction again everywhere.)
-
-So: small, but not nothing, and it lands precisely on the hardest level rather
-than being spread harmlessly around. (An earlier note here said the effect was
-nil. It is not — that claim was never measured per level.)
-
-### Why it is not a one-line fix
-
-The honest roll fraction depends on how much of its slide the cue ball has used
-up on the way in, which is a function of the cue-to-ghost distance. The current
-signature has no room for it:
-
-```ts
-isPowerFeasible(cut: number, objectToPocket: number, rollingFriction?: number)
-```
-
-Adding `cueToGhost` ripples into `analyseShot` (which calls it from a
-`ShotLayoutQuery` that does have the distance, so that part is easy) and into
-the generator's feasibility filter. Worth doing together with any other change
-to that signature rather than on its own.
-
-Three ways to close it, roughly in order of effort:
-
-- **Pass `cueToGhost` and compute the cue ball's roll at contact.** Correct,
-  and the machinery is already there — `slidePhase` in the same file gives the
-  exit speed, so the cue ball's roll fraction on arrival is a short derivation.
-- **Interpolate between the sliding and rolling roll fractions** on the
-  fraction of the slide phase spent. Cheaper, still needs the distance.
-- **Drop the roll fraction from this call only**, back to `k = 0`. Restores the
-  pre-`5c12fbc` reach exactly, at the cost of the check no longer matching the
-  physics it is checking. Simplest, and arguably the wrong direction — it
-  overstates rather than understates.
-
-The comment above `isPowerFeasible` states the premise plainly rather than
-claiming the check is exact. Whatever gets built, re-run the headroom table
-above — level 5 is the only row that can move — and check the per-level pot
-rate at the recommended power, since a longer legal thin cut is a harder one.
-`tests/game/generator.test.ts:161` asserts generated layouts are never
+prints this table, seeded.) Level 5 still generates right up against the
+limit, so the check still decides which thin cuts the curriculum can offer;
+it is now the real limit rather than an estimate erring one way.
+`tests/game/generator.test.ts` asserts generated layouts are never
 `underpowered`, which is the invariant that must survive.
 
 ## Mobile browsers (Android and iOS), and hosting on GitHub Pages

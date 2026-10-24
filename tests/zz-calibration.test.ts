@@ -19,14 +19,14 @@ import {
   SLOWEST_CLOTH,
   clothRollingFriction,
 } from '../src/constants';
-import { aimTarget, idealAimAngle } from '../src/game/drills';
+import { idealAimAngle } from '../src/game/drills';
 import { generateShot } from '../src/game/generator';
 import { LEVELS } from '../src/game/levels';
 import { cueSpeedForPower, recommendedPower } from '../src/game/power';
 import { ShotSession } from '../src/game/shot-session';
 import {
   POWER_MARGIN,
-  cutAngle,
+  contactState,
   objectRollFraction,
   objectSpeedAfterCut,
   stoppingDistance,
@@ -179,11 +179,14 @@ test.runIf(import.meta.env.MEASURE)('the coupled calibration list', () => {
     for (let seed = 0; seed < 1500; seed++) {
       const shot = generateShot(level, seed, { preferredSide: seed % 2 === 0 ? 'left' : 'right' });
       if (shot.fromTemplate) fallbacks++;
-      const { cue, object } = shot.layout;
-      const target = aimTarget(shot.layout);
-      const cut = cutAngle(cue, object, target);
-      const reach = stoppingDistance(objectSpeedAfterCut(MAX_CUE_SPEED, cut), slowest, objectRollFraction(cut));
-      const asked = Math.hypot(target.x - object.x, target.y - object.y) * POWER_MARGIN;
+      const { cutAngle: cut, objectToPocket, cueToGhost } = new ShotSession(shot.layout).analysis;
+      const contact = contactState(MAX_CUE_SPEED, cueToGhost, slowest);
+      const reach = stoppingDistance(
+        objectSpeedAfterCut(contact.speed, cut),
+        slowest,
+        objectRollFraction(cut, contact.speed, contact.rollFraction),
+      );
+      const asked = objectToPocket * POWER_MARGIN;
       maxCut = Math.max(maxCut, (cut * 180) / Math.PI);
       tightest = Math.min(tightest, reach / asked);
     }

@@ -114,14 +114,14 @@ describe('the power meter', () => {
    * run-up. While a fast step took ten times the resistance above 1 m/s, most of
    * that run-up was paid at the boosted rate and it asked 2.75 m/s.
    */
-  test('an ordinary pot is a 1.22 m/s stroke, the longest one 1.93', () => {
+  test('an ordinary pot is a 1.22 m/s stroke, the longest one 1.90', () => {
     expect(strokeFor(typical)).toBeCloseTo(1.22, 2);
-    expect(strokeFor(longest)).toBeCloseTo(1.93, 2);
+    expect(strokeFor(longest)).toBeCloseTo(1.9, 2);
   });
 
-  test('which a linear bar would put at 21% and 38%', () => {
+  test('which a linear bar would put at 21% and 37%', () => {
     expect(linearMeter(strokeFor(typical))).toBeCloseTo(0.21, 2);
-    expect(linearMeter(strokeFor(longest))).toBeCloseTo(0.38, 2);
+    expect(linearMeter(strokeFor(longest))).toBeCloseTo(0.37, 2);
   });
 
   /**
@@ -130,7 +130,7 @@ describe('the power meter', () => {
    * rather than laid out on the table, because the recommendation reads only
    * the cut and the two distances.
    */
-  test('but an 80 degree cut with 0.4 m to the pocket wants 3.86 m/s, 85% of one', () => {
+  test('but an 80 degree cut with 0.4 m to the pocket wants 3.83 m/s, 84% of one', () => {
     const cut = (80 * Math.PI) / 180;
     const thin: ReturnType<typeof analyseShot> = {
       ...typical,
@@ -140,13 +140,13 @@ describe('the power meter', () => {
       objectToPocket: 0.4,
       cueToGhost: 0.5,
     };
-    expect(strokeFor(thin)).toBeCloseTo(3.86, 2);
-    expect(linearMeter(strokeFor(thin))).toBeCloseTo(0.85, 2);
+    expect(strokeFor(thin)).toBeCloseTo(3.83, 2);
+    expect(linearMeter(strokeFor(thin))).toBeCloseTo(0.84, 2);
   });
 
-  test('the curve moves the same two shots to 40% and 57%', () => {
+  test('the curve moves the same two shots to 40% and 56%', () => {
     expect(recommendedPower(typical, ROLLING_FRICTION)!).toBeCloseTo(0.4, 2);
-    expect(recommendedPower(longest, ROLLING_FRICTION)!).toBeCloseTo(0.57, 2);
+    expect(recommendedPower(longest, ROLLING_FRICTION)!).toBeCloseTo(0.56, 2);
   });
 
   /**
@@ -154,7 +154,7 @@ describe('the power meter', () => {
    * `tests/zz-calibration.test.ts` prints it from: what each level asks of the
    * meter, on normal cloth.
    */
-  test('levels ask 32% to 91% of the meter, the median climbing 38/40/44/50/64%', () => {
+  test('levels ask 32% to 88% of the meter, the median climbing 39/40/44/50/64%', () => {
     const asked = LEVELS.slice(0, 5).map((level) =>
       Array.from({ length: 200 }, (_, seed) => {
         const { layout } = generateShot(level, 50_000 + seed * 7919, {
@@ -164,9 +164,9 @@ describe('the power meter', () => {
       }).sort((a, b) => a - b),
     );
     const median = (sorted: number[]): number => (sorted[99]! + sorted[100]!) / 2;
-    expect(asked.map(median).map((p) => Math.round(p * 100))).toEqual([38, 40, 44, 50, 64]);
+    expect(asked.map(median).map((p) => Math.round(p * 100))).toEqual([39, 40, 44, 50, 64]);
     expect(Math.round(asked[0]![0]! * 100)).toBe(32);
-    expect(Math.round(asked[4]![199]! * 100)).toBe(91);
+    expect(Math.round(asked[4]![199]! * 100)).toBe(88);
   });
 
   /**
@@ -176,7 +176,7 @@ describe('the power meter', () => {
    * the same pot asks for — and the comment on POWER_CURVE_EXPONENT names where
    * it would land if the cloth ever went back to the published value.
    */
-  test('the exponent is 1.70 for this cloth and would be 2.251 at mu = 0.010', () => {
+  test('the exponent is 1.71 for this cloth and would be 2.240 at mu = 0.010', () => {
     const exponentFor = (rollingFriction: number): number => {
       const stroke = cueSpeedForPower(recommendedPower(typical, rollingFriction)!);
       return Math.log(linearMeter(stroke)) / Math.log(0.4);
@@ -185,7 +185,7 @@ describe('the power meter', () => {
     // tolerates 1.65-1.75 and the constant could drift out from under the prose
     // without failing, which is the one thing this file exists to stop.
     expect(exponentFor(ROLLING_FRICTION)).toBeCloseTo(POWER_CURVE_EXPONENT, 2);
-    expect(exponentFor(0.01)).toBeCloseTo(2.251, 3);
+    expect(exponentFor(0.01)).toBeCloseTo(2.24, 3);
   });
 });
 

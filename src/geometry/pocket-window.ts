@@ -15,13 +15,9 @@
  * the drop line before it comes within a radius of any cushion or facing. A
  * ball touching a rail and running along it, or away from it, never meets it.
  *
- * One more condition only matters on or near a rail: the cue ball has to be
- * able to send the ball that way. The ghost ball sits a diameter behind the
- * object ball, so turning the line away from a rail the object ball is frozen
- * to puts the ghost ball into the rubber. For a frozen ball sent along its own
- * rail the band closes to the one line along the rail, with the ghost ball
- * frozen too: hit the rail and the ball together, which is what a player is
- * taught for that shot.
+ * This is the pocket's half of the question only: where the object ball can
+ * go. Whether a cue ball can send it there is `analyseShot`'s, which turns the
+ * line of centres for throw and checks the ghost ball that leaves.
  *
  * Pure geometry, like the rest of this directory. Nothing here runs the
  * simulation.
@@ -51,30 +47,19 @@ export interface PocketWindow {
   readonly target: Vec2;
 }
 
-/**
- * Allowance on "a radius from the rubber" for the object ball's own path, so a
- * ball frozen to a rail can run along it. The ghost ball gets none: the cue
- * ball has to reach the object ball before it reaches the rail, or the rail
- * takes its share of the stroke first.
- */
+/** Allowance on "a radius from the rubber", so a ball frozen to a rail can run along it. */
 const TOUCHING = 1e-9;
 
 /** Spacing of the headings tried across the drop line. A band narrower than this is not worth playing. */
 const SCAN_STEP = (0.05 * Math.PI) / 180;
 
-/**
- * How finely the edges of the band are found, in radians. Fine enough to
- * resolve the band of a ball frozen to a rail and sent along it, which is about
- * a nanoradian wide: `TOUCHING` over the length of the rail run. Its middle
- * leaves the ghost ball a few hundredths of a nanometre clear of the rail, so
- * the cue ball reaches the object ball first rather than in a dead heat.
- */
-const EDGE_PRECISION = 1e-12;
+/** How finely the edges of the band are found, in radians. */
+const EDGE_PRECISION = 1e-9;
 
 /**
- * A ball within this of touching a rail tries the rail's own line as well. Its
- * band can be far narrower than the scan step, and for a frozen ball it is the
- * rail's line and nothing else.
+ * A ball within this of touching a rail tries the rail's own line as well. For
+ * a ball frozen to the rail that line is the edge of its band, and the band
+ * beside it can be narrower than the scan step.
  */
 const NEAR_RAIL = 0.002;
 
@@ -98,10 +83,7 @@ export function aimPoint(object: Vec2, pocket: Pocket): Vec2 {
   return pocketWindow(object, pocket)?.target ?? pocket.center;
 }
 
-/**
- * Where a ball sent from `object` along `heading` crosses `pocket`'s drop line,
- * if it gets there without meeting rubber and a cue ball could have sent it.
- */
+/** Where a ball sent from `object` along `heading` crosses `pocket`'s drop line, if it gets there without meeting rubber. */
 export function cleanDrop(object: Vec2, heading: number, pocket: Pocket): Vec2 | undefined {
   const { a, b, normal } = pocket.drop;
   const direction = fromAngle(heading);
@@ -114,10 +96,8 @@ export function cleanDrop(object: Vec2, heading: number, pocket: Pocket): Vec2 |
   const span = dot(sub(at, a), along) / dot(along, along);
   if (span <= 0 || span >= 1) return undefined;
 
-  const ghost = sub(object, scale(direction, 2 * BALL_RADIUS));
   for (const cushion of TABLE.cushions) {
     if (distanceBetweenSegments(object, at, cushion.a, cushion.b) < BALL_RADIUS - TOUCHING) return undefined;
-    if (distanceToSegment(ghost, cushion.a, cushion.b) < BALL_RADIUS) return undefined;
   }
   return at;
 }
