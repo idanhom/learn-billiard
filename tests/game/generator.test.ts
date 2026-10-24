@@ -46,11 +46,13 @@ describe('the seeded random source', () => {
 });
 
 describe('the curriculum', () => {
-  test('runs seven levels, ending in the exam', () => {
-    expect(LEVELS).toHaveLength(7);
+  test('runs five fraction levels, distance and rails, the exam, then a mixed review', () => {
+    expect(LEVELS).toHaveLength(8);
+    expect(LEVELS.slice(0, 5).map((l) => l.fraction)).toEqual(['full', 'three-quarter', 'half', 'quarter', 'eighth']);
     expect(LEVELS[6]!.exam).toBe(true);
     expect(examLevel().id).toBe(7);
-    expect(LEVELS.slice(0, 6).every((l) => !l.exam)).toBe(true);
+    expect(LEVELS[7]!.review).toBe(true);
+    expect(LEVELS.filter((l) => l.exam)).toHaveLength(1);
   });
 
   test('cut ranges climb from straight-in to thin', () => {
@@ -87,6 +89,22 @@ describe('the curriculum', () => {
     const level = levelById(6);
     expect(level.railAdjacent).toBe(true);
     expect(level.potDistance[0]).toBeGreaterThan(levelById(3).potDistance[0]);
+  });
+
+  /** It reaches past the practice levels: thinner than an eighth-ball cut, and longer. */
+  test('the exam mixes in thin cuts and long shots', () => {
+    const exam = examLevel();
+    let thin = 0;
+    let long = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      const shot = generateShot(exam, seed);
+      expect(shot.fromTemplate, `seed ${seed}`).toBe(false);
+      const analysis = analyse(shot.layout);
+      if ((analysis.cutAngle * 180) / Math.PI > 62) thin++;
+      if (analysis.cueToGhost > 1.1 || analysis.objectToPocket > 1.1) long++;
+    }
+    expect(thin).toBeGreaterThan(10);
+    expect(long).toBeGreaterThan(10);
   });
 
   test('the exam is exempt from tiers and scored on pots', () => {

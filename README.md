@@ -48,7 +48,7 @@ by that.
 | `C` | cycle fast / normal / slow cloth |
 | `R` | retry the same layout |
 | `N` | next shot |
-| `1`–`7` | jump to a level |
+| `1`–`8` | jump to a level |
 | `F` | call the fraction the shot needs |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
@@ -168,7 +168,13 @@ object ball the cue ball covers at contact, as seen down the cue.
 
 Each level's shots run halfway to the fraction either side of it, so the one it
 is named for is always the nearest. Level 6 is long shots with the object ball
-near a cushion, and level 7 the exam.
+near a cushion, and level 7 the exam, which mixes in thin cuts to 70° and shots
+of up to 1.3 m. Level 8 is a mixed review of the five fractions, dealing more
+of the ones whose shots you miss most.
+
+Once you reach the last tier of a fraction level, two shots in five come from
+the fractions before it. Telling a half-ball cut from a three-quarter one is
+part of the skill, and a level that only ever deals one kind never tests it.
 
 Before a shot you can call the fraction you think it needs (`F`, or the
 buttons in the shot panel once the numbers are hidden); the report says

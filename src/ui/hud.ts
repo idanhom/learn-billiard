@@ -247,7 +247,7 @@ export class Hud {
       '<div class="hud-keys kbd-hint"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
-      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level &middot; ' +
+      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>8</b> level &middot; ' +
       '<b>F</b> call the fraction</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
       '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +

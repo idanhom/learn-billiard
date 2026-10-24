@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import { analyseShot } from '../../src/geometry/shot';
 import { pocketById } from '../../src/geometry/table';
-import { Campaign, type ScoredShot } from '../../src/game/campaign';
+import { Campaign, INTERLEAVE_SHARE, type ScoredShot } from '../../src/game/campaign';
 import { layoutViolations } from '../../src/game/generator';
 import { LEVELS, examLevel, levelById } from '../../src/game/levels';
 import {
   PROGRESS_KEY,
+  PROGRESS_VERSION,
+  type LevelProgress,
   type ProgressStore,
   type StorageLike,
   createProgressStore,
@@ -52,6 +54,7 @@ describe('starting out', () => {
   test('hands out a layout the level would accept', () => {
     const subject = campaign();
     for (let i = 0; i < 20; i++) {
+      expect(subject.layoutLevel).toBe(subject.level);
       expect(layoutViolations(subject.layout, subject.level)).toEqual([]);
       subject.nextShot();
     }
@@ -229,7 +232,7 @@ describe('level select', () => {
     expect(subject.selectLevel(4)).toBe(true);
     expect(subject.level.id).toBe(4);
     expect(subject.pocketAllowance).toBe(levelById(4).pocketAllowance);
-    expect(layoutViolations(subject.layout, subject.level)).toEqual([]);
+    expect(layoutViolations(subject.layout, subject.layoutLevel)).toEqual([]);
   });
 
   test('refuses a level that does not exist', () => {
@@ -408,5 +411,70 @@ describe('persistence', () => {
       subject.nextShot();
       expect(layoutViolations(subject.layout, level), `level ${level.id} second shot`).toEqual([]);
     }
+  });
+});
+
+/** A campaign resumed at a level and tier, with whatever level records are given. */
+function resumed(level: number, tier: 0 | 1 | 2 | 3, records: Record<string, Partial<LevelProgress>> = {}): Campaign {
+  const storage = new FakeStorage();
+  const base = { tier: 0, completed: false, attempts: 0, qualified: 0, potted: 0 };
+  const levels: Record<string, LevelProgress> = {};
+  for (const [id, record] of Object.entries(records)) levels[id] = { ...base, ...record } as LevelProgress;
+  levels[String(level)] = { ...base, ...(records[String(level)] ?? {}), tier } as LevelProgress;
+  storage.setItem(
+    PROGRESS_KEY,
+    JSON.stringify({ version: PROGRESS_VERSION, currentLevel: level, levels, examBest: null }),
+  );
+  return new Campaign(createProgressStore(storage), { seed: 4000 });
+}
+
+/** The levels a campaign deals its next n layouts from. */
+function sources(subject: Campaign, n: number): number[] {
+  const ids: number[] = [];
+  for (let i = 0; i < n; i++) {
+    ids.push(subject.layoutLevel.id);
+    expect(layoutViolations(subject.layout, subject.layoutLevel)).toEqual([]);
+    subject.nextShot();
+  }
+  return ids;
+}
+
+describe('interleaving', () => {
+  test('from the last tier, a share of shots come from the fractions before', () => {
+    const ids = sources(resumed(4, 3), 200);
+    const mixed = ids.filter((id) => id !== 4);
+    expect(mixed.every((id) => id >= 1 && id <= 3)).toBe(true);
+    expect(mixed.length / ids.length).toBeGreaterThan(INTERLEAVE_SHARE - 0.1);
+    expect(mixed.length / ids.length).toBeLessThan(INTERLEAVE_SHARE + 0.1);
+    for (const id of [1, 2, 3]) expect(ids, `level ${id}`).toContain(id);
+  });
+
+  test('not before the last tier, and never on the first fraction or off them', () => {
+    expect(sources(resumed(4, 2), 60).every((id) => id === 4)).toBe(true);
+    expect(sources(resumed(1, 3), 60).every((id) => id === 1)).toBe(true);
+    expect(sources(resumed(6, 3), 60).every((id) => id === 6)).toBe(true);
+  });
+
+  test('scores a mixed-in shot at the allowance of the level in play', () => {
+    const subject = resumed(5, 3);
+    expect(subject.pocketAllowance).toBe(levelById(5).pocketAllowance);
+  });
+});
+
+describe('the mixed review', () => {
+  const review = LEVELS.find((level) => level.review)!;
+
+  test('deals from all five fractions, and nothing else', () => {
+    const ids = sources(resumed(review.id, 0), 120);
+    expect(new Set(ids)).toEqual(new Set([1, 2, 3, 4, 5]));
+  });
+
+  test('leans on the fraction whose shots miss most', () => {
+    const records: Record<string, Partial<LevelProgress>> = {};
+    for (const id of [1, 2, 3, 4, 5]) records[String(id)] = { attempts: 20, qualified: id === 3 ? 2 : 19 };
+    const ids = sources(resumed(review.id, 0, records), 300);
+    const share = (id: number): number => ids.filter((x) => x === id).length / ids.length;
+    expect(share(3)).toBeGreaterThan(0.5);
+    for (const id of [1, 2, 4, 5]) expect(share(id), `level ${id}`).toBeGreaterThan(0.02);
   });
 });

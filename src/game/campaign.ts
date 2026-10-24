@@ -28,7 +28,8 @@ import {
   emptyProgress,
   levelProgress,
 } from './progress-store';
-import { type GuideVisibility, type Tier, TierTracker } from './tiers';
+import { makeRng } from './random';
+import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
 /** The part of a shot outcome the campaign scores. */
 export interface ScoredShot {
@@ -79,6 +80,8 @@ export class Campaign {
   #level: LevelDefinition;
   #tiers: TierTracker;
   #layout: ShotLayout;
+  /** The level the current layout was dealt from: the one in play, unless it is mixing in others. */
+  #source: LevelDefinition;
   /** A shot at the current layout has been scored, so any further one is a retry. */
   #layoutPlayed = false;
   #shotCounter = 0;
@@ -95,6 +98,7 @@ export class Campaign {
     this.#level = levelById(this.#state.currentLevel);
     this.#tiers = this.#trackerFor(this.#level);
     this.#exam = this.#level.exam ? freshExam(this.#level) : undefined;
+    this.#source = this.#level;
     this.#layout = this.#generate();
   }
 
@@ -108,6 +112,15 @@ export class Campaign {
 
   get levels(): readonly LevelDefinition[] {
     return LEVELS;
+  }
+
+  /**
+   * The level the current layout was dealt from, whose band and invariants it
+   * meets. The level in play, except when interleaving or reviewing draws a
+   * shot from another; it is still scored at the level in play's allowance.
+   */
+  get layoutLevel(): LevelDefinition {
+    return this.#source;
   }
 
   get tier(): Tier {
@@ -302,14 +315,65 @@ export class Campaign {
     // Alternate the cut side rather than leaving it to chance, so a run of
     // shots cannot all fall the same way.
     const side = this.#shotCounter % 2 === 0 ? 'left' : 'right';
-    return generateShot(this.#level, this.#baseSeed + this.#shotCounter * 7919, {
-      preferredSide: side,
-    }).layout;
+    const seed = this.#baseSeed + this.#shotCounter * 7919;
+    this.#source = this.#sourceFor(seed);
+    return generateShot(this.#source, seed, { preferredSide: side }).layout;
+  }
+
+  /**
+   * Which level a shot is dealt from. Interleaving: at the last tier of a
+   * fraction level, a share of the shots come from the fractions before it,
+   * so telling them apart becomes part of the test. The review deals from all
+   * five, weighted to the ones missed most. Seeded, like the layout itself.
+   */
+  #sourceFor(seed: number): LevelDefinition {
+    const rng = makeRng((seed ^ SOURCE_SEED_MIX) >>> 0);
+    const fractions = LEVELS.filter((level) => level.fraction !== undefined);
+    if (this.#level.review) {
+      return pickWeighted(fractions, fractions.map((level) => this.#missRate(level)), rng());
+    }
+
+    // Only a fraction level with others before it has anything to mix in.
+    const at = fractions.indexOf(this.#level);
+    if (at > 0 && this.#tiers.tier >= INTERLEAVE_FROM_TIER && rng() < INTERLEAVE_SHARE) {
+      return fractions[Math.floor(rng() * at)]!;
+    }
+    return this.#level;
+  }
+
+  /**
+   * How often a level's shots miss, smoothed so a level never played counts
+   * as a coin toss, and floored so a mastered one still turns up in review.
+   */
+  #missRate(level: LevelDefinition): number {
+    const { attempts, qualified } = levelProgress(this.#state, level.id);
+    return Math.max(REVIEW_FLOOR, 1 - (qualified + 1) / (attempts + 2));
   }
 
   #persist(): void {
     this.#store.save(this.#state);
   }
+}
+
+/** From the last tier of a fraction level on, this share of shots come from the fractions before it. */
+export const INTERLEAVE_SHARE = 0.4;
+export const INTERLEAVE_FROM_TIER = FINAL_TIER;
+
+/** The least weight a fraction level carries in review, however well it goes. */
+const REVIEW_FLOOR = 0.1;
+
+/** Keeps the choice of level independent of the layout drawn from the same seed. */
+const SOURCE_SEED_MIX = 0x5bd1e995;
+
+/** One of `items`, each as likely as its weight; `draw` is uniform in [0, 1). */
+function pickWeighted<T>(items: readonly T[], weights: readonly number[], draw: number): T {
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  let left = draw * total;
+  for (let i = 0; i < items.length; i++) {
+    left -= weights[i]!;
+    if (left < 0) return items[i]!;
+  }
+  return items[items.length - 1]!;
 }
 
 function freshExam(level: LevelDefinition): ExamRun {

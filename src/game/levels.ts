@@ -11,7 +11,8 @@
  * shot lengthens, so the share allowed only tightens a little on top. Level 6
  * changes distance rather than angle. Level 7 is the exam: no guides, no tiers,
  * scored on pots, because at some point the question stops being "is your aim
- * good" and starts being "can you make the ball".
+ * good" and starts being "can you make the ball". Level 8 is a mixed review of
+ * the five fractions, leaning on the ones missed most.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
@@ -39,6 +40,13 @@ export interface LevelDefinition {
   readonly exam: boolean;
   /** Shots in one exam run. Zero for the practice levels. */
   readonly examShots: number;
+  /** The ball fraction a practice level is built on, for the five that are. */
+  readonly fraction?: FractionName;
+  /**
+   * Deals from the fraction levels rather than a band of its own, more often
+   * from the ones whose shots miss most.
+   */
+  readonly review?: boolean;
   /** Fallback used when generation cannot satisfy the brief. */
   readonly template: ShotLayout;
 }
@@ -66,6 +74,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Full ball',
     description: 'Straight in: the cue ball covers the whole of the object ball.',
     cutRange: bandAround('full'),
+    fraction: 'full',
     pocketAllowance: 1,
     cueDistance: [0.35, 0.9],
     potDistance: [0.3, 0.9],
@@ -80,6 +89,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Three-quarter ball',
     description: 'About 15 degrees: the cue ball covers three quarters of the object ball.',
     cutRange: bandAround('three-quarter'),
+    fraction: 'three-quarter',
     pocketAllowance: 0.9,
     cueDistance: [0.35, 1],
     potDistance: [0.3, 1],
@@ -94,6 +104,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Half ball',
     description: 'About 30 degrees: the centre of the cue ball at the edge of the object ball.',
     cutRange: bandAround('half'),
+    fraction: 'half',
     pocketAllowance: 0.8,
     cueDistance: [0.35, 1],
     potDistance: [0.3, 1],
@@ -108,6 +119,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Quarter ball',
     description: 'About 49 degrees: a quarter of the object ball covered.',
     cutRange: bandAround('quarter'),
+    fraction: 'quarter',
     pocketAllowance: 0.8,
     cueDistance: [0.3, 0.9],
     potDistance: [0.25, 0.8],
@@ -122,6 +134,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Eighth ball',
     description: 'About 61 degrees: barely more than an edge.',
     cutRange: bandAround('eighth'),
+    fraction: 'eighth',
     pocketAllowance: 0.7,
     cueDistance: [0.3, 0.8],
     potDistance: [0.2, 0.6],
@@ -148,16 +161,33 @@ export const LEVELS: readonly LevelDefinition[] = [
   {
     id: 7,
     name: 'Exam',
-    description: 'No guides, no tiers. Ten shots, scored on what you pot.',
-    cutRange: [0, 55],
+    description: 'No guides, no tiers. Ten shots, thin cuts and long ones among them, scored on what you pot.',
+    cutRange: [0, 70],
     pocketAllowance: 0.8,
-    cueDistance: [0.4, 1.1],
-    potDistance: [0.3, 1.1],
+    cueDistance: [0.4, 1.3],
+    potDistance: [0.3, 1.3],
     railAdjacent: false,
     railBand: NO_RAIL_CONSTRAINT,
     exam: true,
     examShots: 10,
     template: layoutWithCut('level-7-template', { x: 0.1, y: -0.1 }, 'top-right', 25, 0.7),
+  },
+  {
+    id: 8,
+    name: 'Mixed review',
+    description: 'All five fractions, mixed, with more of the ones you miss most.',
+    // The span of the five fraction levels. The campaign deals this level's
+    // shots from those levels; the band is what the generator would use alone.
+    cutRange: [0, bandAround('eighth')[1]],
+    pocketAllowance: 0.8,
+    cueDistance: [0.35, 1],
+    potDistance: [0.2, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    review: true,
+    template: layoutWithCut('level-8-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
   },
 ];
 
