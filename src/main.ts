@@ -148,6 +148,9 @@ function recordOutcome(outcome: ShotOutcome): void {
     startShot();
   } else if (event.levelCompleted) {
     notice = `Level complete. Moving on to ${campaign.level.name}.`;
+    // The campaign has moved to a new level, exactly as a level select would,
+    // and the calibration starts afresh for the same reason.
+    history.clear();
     startShot();
   } else if (event.advancedTier) {
     notice = `Tier ${campaign.tier}: one more guide comes away.`;

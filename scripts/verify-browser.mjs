@@ -533,6 +533,21 @@ check(
       .join(', '),
 );
 
+// Clearing the last tier completes the level and moves on by itself. The
+// calibration history has to go with it, as it does on a level select: a
+// tendency measured on straight-ins says nothing about gentle cuts.
+await page.evaluate(() => window.localStorage.clear());
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+for (let shot = 0; shot < 12; shot++) await playPerfect({ fresh: shot > 0 });
+const advanced = await state();
+check('twelve qualifying shots complete level 1 and move on', advanced.levelId === 2, `level=${advanced.levelId}`);
+check(
+  'the calibration history does not follow the player to the next level',
+  advanced.historyLength === 0,
+  `n=${advanced.historyLength}`,
+);
+
 // A clean aiming shot of a half-ball cut, guides up, numbered object ball.
 // From a fresh load, so no stale notice or report is left on screen.
 await page.evaluate(() => window.localStorage.clear());
