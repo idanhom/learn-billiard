@@ -89,53 +89,94 @@ rate at the recommended power, since a longer legal thin cut is a harder one.
 `tests/game/generator.test.ts:161` asserts generated layouts are never
 `underpowered`, which is the invariant that must survive.
 
-## Touch controls, so the trainer is playable on a phone
+## Mobile browsers (Android and iOS), and hosting on GitHub Pages
 
-**Status:** not started. Wanted; design decision outstanding.
+**Status:** next, straight after roadmap step B2 (the cushion model), ahead of
+B3. Asked for on 2026-10-24. It absorbs roadmap steps E8 (HUD density) and E9
+(touch), which were the mobile work in all but name.
 
-The app already serves fine to a phone — `npm run preview -- --host`, then
-`http://<pi-lan-ip>:4173` — and aiming already works there, because
-`src/game/input.ts:161-164` uses pointer events and pointer events fire for
-touch. The canvas carries `tabindex="0"` and takes focus, and the level
-buttons in the HUD are click handlers, so those work too.
+The goal: one URL — the repo's GitHub Pages site — that plays properly on a
+desktop browser, on Android (Chrome, Samsung Internet, Firefox) and on iOS.
+There is one build for all of them. The page adapts to what the device can do,
+not to which browser it is: screen size through CSS media queries, touch
+versus mouse through pointer events and `(pointer: coarse)`. On iOS every
+browser is Safari's WebKit underneath, so iOS Safari stands in for all of
+them.
 
-**What does not work: firing.** Charging the cue is bound to Space and to
-nothing else — `src/game/input.ts:93` starts the charge on keydown,
-`src/game/input.ts:138` releases it on keyup. There is no touch or pointer
-path into `beginCharge` / `setPower` / `release`. On a phone you can line a
-shot up perfectly and then have no way to take it.
+### Where it stands: not mobile compatible
 
-A Bluetooth keyboard paired to the phone works today and needs no code. This
-entry is about not needing one.
+Measured with the production build in Chromium emulating an iPhone 13
+(390x664 CSS px, touch, device scale 3), portrait and landscape:
 
-### The decision to make first
+- **Nothing can fire a shot.** Charging is bound to Space and nothing else:
+  `src/game/input.ts` starts the charge on keydown and releases it on keyup.
+  There is no touch path into `beginCharge` / `setPower` / `release`.
+- **Every other action is keyboard-only too:** `V` camera, `.` slow motion,
+  `C` cloth, `R` retry, `N` next, `1`-`7` level, the arrow-key nudges, and
+  Shift for fine aim. The level list and the summary card's Continue are the
+  only things a finger can press.
+- **The HUD covers about 60% of the screen** in both orientations. The panels
+  are fixed-pixel and placed for a 1280x760 window. In portrait the controls
+  panel's `max-width: min(360px, calc(50% - 149px))` comes out at 46 px, so it
+  renders one word per line down the whole left edge, over the status and
+  level panels.
+- **A drag can move the page.** The canvas has no `touch-action: none`, so
+  touch drags are free to scroll or pinch-zoom, and double-tap zoom is live.
+  iOS ignores viewport zoom locks, so `touch-action` is the fix, not the
+  viewport meta.
+- The controls panel names keys, which mean nothing on a phone.
 
-Aiming already owns the drag gesture on the canvas, so charging has to live
-somewhere that does not fight it. Three candidates, none obviously right:
+What already works: three.js renders through WebGL on mobile Chrome and
+Safari, and the device pixel ratio is capped at 1.5, which also keeps a
+phone's GPU load down. Pointer events fire for touch, so dragging on the table
+already aims. And the production build is static files with Vite's
+`base: './'`, so it serves correctly from a sub-path such as
+`/learn-billiard/`.
 
-- **A dedicated power strip.** Press and hold on the existing power meter to
-  charge, lift to release. Cleanest separation — aim on the table, power on
-  the bar — and the meter is already on screen showing exactly what the hold
-  is doing. Costs vertical space on a phone in portrait.
-- **Second finger.** Keep one finger on the table for aim, tap-and-hold with
-  another to charge. Preserves the whole screen for the table, but
-  multi-touch while aiming is fiddly and easy to trigger by accident.
-- **Tap to aim, hold to fire.** Change the gesture model: a tap sets the aim
-  line, a hold anywhere charges. Simplest to use, but it breaks the
-  drag-to-aim feel the desktop version is built around, and fine-tuning aim
-  by tapping is much worse than by dragging.
+### The work
 
-Whichever wins, the power value still has to come from somewhere — hold
-duration, or drag distance along the strip. Hold duration matches the
-keyboard behaviour and the existing charge loop; drag distance is more
-directly controllable and is what the meter already looks like.
+1. **Firing by touch.** Settled in the roadmap (E9): a power strip on the
+   right edge. Press and drag along it to set the power, lift to strike, slide
+   off it to cancel. Fine-aim buttons, since Shift-drag has no touch
+   equivalent.
+2. **A toolbar for the keyboard-only actions:** retry, next, camera, slow
+   motion, cloth, level.
+3. **A HUD that fits a phone** (E8). Collapse the controls behind `?`, move
+   view, speed and cloth into a chip row, and lay out portrait and landscape
+   separately. Touch targets at least 44 px. Respect the notch with
+   `env(safe-area-inset-*)`, and size with `dvh` rather than `100%`, so a
+   mobile browser's address bar never sits over the power strip.
+4. **Input hygiene:** `touch-action: none` on the canvas, no double-tap zoom,
+   no pull-to-refresh mid-drag.
+5. **Feature detection, not browser detection.** Show the on-screen controls
+   for a coarse pointer and key hints where there is a keyboard, and keep both
+   working on a touch laptop.
+6. **Hosting:** a GitHub Actions workflow that runs typecheck, tests and the
+   build, then publishes `dist/` to GitHub Pages. For this repo
+   (`idanhom/learn-billiard`) that is `https://idanhom.github.io/learn-billiard/`
+   by default, or the same path under the account's custom domain if it has
+   one.
+7. **Verification:** a phone pass in `verify:browser` — Chromium emulation at
+   iPhone and Pixel sizes, with touch — that fires a shot by touch, reaches
+   every toolbar action, and checks that no panel covers the middle of the
+   table. Then a real iPhone and a real Android phone, because this machine's
+   emulation is Chromium and iOS is WebKit. `npm run preview -- --host` serves
+   to a phone on the LAN (E9's `preview:lan` script).
 
-### Also worth handling if this gets built
+### Caveats to carry into it
 
-- Everything else is keyboard-only too: `V` camera, `C` cloth, `.` slow
-  motion, `R` retry, `N` next shot, `1`-`7` level. Levels are clickable in
-  the HUD; the rest are not reachable by touch at all.
-- The controls panel in `src/ui/hud.ts` names keys, and would need to say
-  something different on a touch device.
-- `npm run preview` binds to loopback, so serving to a phone needs `--host`
-  every time. Worth a `preview:lan` script if this becomes routine.
+- **iOS can wipe progress.** Safari deletes a site's script-writable storage,
+  `localStorage` included, once the user has gone 7 days of Safari use
+  without interacting with it. An occasional iOS player can lose their
+  levels. A web app added to the home screen keeps its own count of days of
+  use, so it is not caught by this; a web app manifest makes that an option.
+- **The origin is shared.** Every Pages site of the account lives on
+  `idanhom.github.io`. The storage keys are namespaced
+  (`pool-angle-trainer/...`), so nothing collides, but any page on that origin
+  can read them.
+- **The `?debug=1` hook ships.** On a public build anyone can use it to set
+  their own local progress. It touches nothing but that player's browser, so
+  it is a cheat, not a risk.
+- **Frame time is unmeasured on a phone.** The budget check in
+  `verify:browser` runs in headless software rendering. Check a mid-range
+  phone.
