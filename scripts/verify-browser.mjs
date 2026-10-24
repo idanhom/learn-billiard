@@ -672,6 +672,105 @@ check('a notice is shown', await noticeShown());
 await sleep(4300);
 check('and fades by itself after about four seconds', !(await noticeShown()));
 
+// Every key has a button, so nothing needs a keyboard.
+const chip = (action) => page.locator(`.hud-chip[data-action="${action}"]`);
+const beforeChips = await state();
+await chip('next').click();
+await sleep(200);
+check('the Next chip deals a new layout', (await state()).shotId !== beforeChips.shotId);
+await chip('retry').click();
+await sleep(200);
+check('the Retry chip deals the same layout again', (await state()).phase === 'aiming');
+await chip('view').click();
+await sleep(150);
+check('the view chip switches the camera', (await state()).view !== beforeChips.view, (await state()).view);
+await chip('view').click();
+await chip('speed').click();
+await sleep(150);
+check('the speed chip slows the replay', (await state()).timeScale === 0.5, String((await state()).timeScale));
+await chip('speed').click();
+await chip('speed').click();
+await chip('cloth').click();
+await sleep(150);
+check('the cloth chip changes the cloth', (await state()).cloth !== beforeChips.cloth, (await state()).cloth);
+check(
+  'the sheet chips are for small screens only',
+  !(await chip('levels').isVisible()) && (await page.locator('#hud-levels').isVisible()),
+);
+const helpShown = () => page.locator('#hud-help').isVisible();
+check('help stays folded away until asked for', !(await helpShown()));
+await chip('help').click();
+check('and ? opens it', await helpShown());
+await chip('help').click();
+check('and closes it again', !(await helpShown()));
+
+/*
+ * On a phone, either way up. Chromium stands in for one here: an iPhone 13's
+ * screen, touch, and the mobile viewport. That checks the layout and the touch
+ * paths, not Safari itself, which still wants a real device.
+ */
+for (const [orientation, viewport] of [
+  ['portrait', { width: 390, height: 664 }],
+  ['landscape', { width: 664, height: 390 }],
+]) {
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  const phone = await context.newPage();
+  phone.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  phone.on('pageerror', (error) => consoleErrors.push(String(error)));
+  await phone.goto(PAGE_URL, { waitUntil: 'load' });
+  await sleep(900);
+
+  const layout = await phone.evaluate(() => {
+    const screen = { w: window.innerWidth, h: window.innerHeight };
+    // The middle third each way: where the shot is, whatever the camera does.
+    const middle = { left: screen.w / 3, right: (2 * screen.w) / 3, top: screen.h / 3, bottom: (2 * screen.h) / 3 };
+    let area = 0;
+    const over = [];
+    for (const panel of document.querySelectorAll('.panel')) {
+      if (getComputedStyle(panel).display === 'none') continue;
+      const r = panel.getBoundingClientRect();
+      area += r.width * r.height;
+      if (r.left < middle.right && r.right > middle.left && r.top < middle.bottom && r.bottom > middle.top) {
+        over.push(panel.id);
+      }
+    }
+    return { share: area / (screen.w * screen.h), over };
+  });
+  check(
+    `phone, ${orientation}: the panels leave most of the screen to the table`,
+    layout.share < 0.3,
+    `${(layout.share * 100).toFixed(0)}% covered`,
+  );
+  check(`phone, ${orientation}: nothing sits over the middle of the table`, layout.over.length === 0, layout.over.join());
+
+  const onScreen = await phone.evaluate(() =>
+    ['retry', 'next', 'view', 'levels', 'help'].every((action) => {
+      const r = document.querySelector(`.hud-chip[data-action="${action}"]`)?.getBoundingClientRect();
+      return Boolean(r) && r.left >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight;
+    }),
+  );
+  check(`phone, ${orientation}: every action chip is on screen without scrolling`, onScreen);
+
+  await phone.locator('.hud-chip[data-action="levels"]').tap();
+  await sleep(150);
+  check(`phone, ${orientation}: Levels opens the level list`, await phone.locator('#hud-levels').isVisible());
+  await phone.locator('.hud-level[data-level="3"]').tap();
+  await sleep(300);
+  const tapped = await phone.evaluate(() => window.__debug.state());
+  check(
+    `phone, ${orientation}: tapping a level selects it and folds the list away`,
+    tapped.levelId === 3 && !(await phone.locator('#hud-levels').isVisible()),
+    `level=${tapped.levelId}`,
+  );
+  await phone.screenshot({ path: `${OUT}phone-${orientation}.png` });
+  await phone.evaluate(() => window.__debug.setView('overhead'));
+  await sleep(300);
+  await phone.screenshot({ path: `${OUT}phone-${orientation}-overhead.png` });
+  await context.close();
+}
+
 // A clean aiming shot of a half-ball cut, guides up, numbered object ball.
 // From a fresh load, so no stale notice or report is left on screen.
 await page.evaluate(() => window.localStorage.clear());

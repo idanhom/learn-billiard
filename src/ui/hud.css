@@ -6,6 +6,11 @@
   --accent: #6fd3a0;
   --warn: #e2a03f;
   --bad: #e06c75;
+  /* Clear of a phone's notch and home bar, and never closer than 14px. */
+  --edge-top: max(14px, env(safe-area-inset-top));
+  --edge-right: max(14px, env(safe-area-inset-right));
+  --edge-bottom: max(18px, env(safe-area-inset-bottom));
+  --edge-left: max(14px, env(safe-area-inset-left));
   color-scheme: dark;
 }
 
@@ -18,22 +23,35 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+  /* A drag that reaches the edge of the table must not pull the page. */
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--ink);
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-text-size-adjust: 100%;
 }
 
+/* The dynamic viewport, so a phone's browser bar never sits over the HUD. */
 #app {
   position: relative;
   width: 100%;
   height: 100%;
+  height: 100dvh;
 }
 
+/*
+ * A drag on the table is aiming, not scrolling or zooming, and a long press
+ * is not a text selection.
+ */
 #game {
   display: block;
   width: 100%;
   height: 100%;
   outline: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 #game:focus-visible {
@@ -45,6 +63,12 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#hud button {
+  touch-action: manipulation;
 }
 
 .panel {
@@ -144,15 +168,68 @@ body {
   color: var(--bad);
 }
 
+/* Where each panel sits. Positions live here rather than inline, so the phone
+ * layout below can move them. */
+#hud-status {
+  top: var(--edge-top);
+  left: var(--edge-left);
+}
+
+#hud-shot {
+  top: var(--edge-top);
+  right: var(--edge-right);
+  text-align: right;
+}
+
+#hud-levels {
+  top: 150px;
+  left: var(--edge-left);
+}
+
+#hud-history {
+  top: 150px;
+  right: var(--edge-right);
+  text-align: right;
+}
+
 #hud-report {
+  top: 86px;
+  left: 50%;
+  transform: translateX(-50%);
   min-width: 280px;
   text-align: center;
 }
 
+#hud-notice {
+  top: var(--edge-top);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 #hud-milestone {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   min-width: 260px;
   text-align: center;
   border-color: rgba(111, 211, 160, 0.45);
+  z-index: 3;
+}
+
+#hud-power {
+  bottom: var(--edge-bottom);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+#hud-toolbar {
+  bottom: var(--edge-bottom);
+  left: var(--edge-left);
+}
+
+#hud-help {
+  bottom: calc(var(--edge-bottom) + 52px);
+  left: var(--edge-left);
 }
 
 .hud-continue {
@@ -173,12 +250,87 @@ body {
 
 /*
  * The power meter is centred and 246px wide, so its left edge sits at
- * 50% - 123px. Cap the controls panel short of that, at any viewport width,
- * rather than trusting the text to stay narrow — the panel is painted after
- * the meter and would otherwise cover it.
+ * 50% - 123px. Cap the toolbar and the controls panel short of that, at any
+ * viewport width, rather than trusting their contents to stay narrow: both
+ * are painted after the meter and would otherwise cover it.
  */
+#hud-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: calc(50% - 149px);
+  padding: 6px;
+}
+
 #hud-help {
-  max-width: min(360px, calc(50% - 149px));
+  max-width: min(380px, calc(50% - 149px));
+}
+
+/* Help is asked for, not furniture. */
+#hud-help:not(.open) {
+  display: none;
+}
+
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hud-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hud-chip[aria-pressed='true'] {
+  border-color: rgba(111, 211, 160, 0.6);
+  background: rgba(111, 211, 160, 0.14);
+}
+
+.hud-chip kbd {
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--ink-dim);
+}
+
+/*
+ * Key hints where there is something to type them on, touch hints where there
+ * is a finger. Decided by what pointers the device has, never by its name: a
+ * touch laptop matches both and shows both.
+ */
+.kbd-hint,
+.touch-hint {
+  display: none;
+}
+
+@media (any-pointer: fine) {
+  .kbd-hint {
+    display: revert;
+  }
+}
+
+@media (any-pointer: coarse) {
+  .touch-hint {
+    display: revert;
+  }
+
+  .hud-chip {
+    min-height: 40px;
+  }
+}
+
+/* Chips for the sheets a small screen folds away; hidden where there is room. */
+.compact-only {
+  display: none;
 }
 
 #hud-notice {
@@ -321,4 +473,145 @@ body {
   text-transform: uppercase;
   color: var(--accent);
   opacity: 0.85;
+}
+
+/*
+ * A phone, either way up, or any window too small for the desktop layout. The
+ * table has to stay visible, so the panels shrink to what is needed to play,
+ * the level list and the recent shots fold into sheets behind toolbar chips,
+ * and the toolbar runs along the bottom as one row that scrolls sideways
+ * rather than wrapping over the meter.
+ */
+@media (max-width: 760px), (max-height: 520px) {
+  :root {
+    --edge-top: max(8px, env(safe-area-inset-top));
+    --edge-right: max(8px, env(safe-area-inset-right));
+    --edge-bottom: max(8px, env(safe-area-inset-bottom));
+    --edge-left: max(8px, env(safe-area-inset-left));
+  }
+
+  .panel {
+    padding: 6px 9px;
+    border-radius: 8px;
+  }
+
+  .hud-label {
+    font-size: 10px;
+    margin-bottom: 1px;
+  }
+
+  .hud-big {
+    font-size: 14px;
+  }
+
+  .hud-sub {
+    font-size: 11.5px;
+  }
+
+  .hud-extra {
+    display: none;
+  }
+
+  #hud-status {
+    max-width: 60vw;
+  }
+
+  #hud-shot {
+    max-width: 36vw;
+  }
+
+  #hud-toolbar {
+    left: var(--edge-left);
+    right: var(--edge-right);
+    max-width: none;
+    flex-wrap: nowrap;
+    justify-content: safe center;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 4px;
+  }
+
+  .hud-chip {
+    flex: none;
+    padding: 4px 9px;
+  }
+
+  /* Actions first, settings last: if the row is too long for the screen, it is
+   * speed and cloth that scroll off, not the level list or the help. */
+  .hud-chip[data-action='levels'] {
+    order: 1;
+  }
+
+  .hud-chip[data-action='history'] {
+    order: 2;
+  }
+
+  .hud-chip[data-action='help'] {
+    order: 3;
+  }
+
+  .hud-chip[data-action='speed'] {
+    order: 4;
+  }
+
+  .hud-chip[data-action='cloth'] {
+    order: 5;
+  }
+
+  .compact-only {
+    display: inline-flex;
+  }
+
+  #hud-power {
+    bottom: calc(var(--edge-bottom) + 58px);
+    padding: 5px 9px;
+  }
+
+  #hud-power .hud-label {
+    display: none;
+  }
+
+  .hud-meter {
+    width: min(220px, 52vw);
+  }
+
+  #hud-report {
+    top: auto;
+    bottom: calc(var(--edge-bottom) + 118px);
+    min-width: 0;
+    width: max-content;
+    max-width: 92vw;
+  }
+
+  #hud-notice {
+    top: auto;
+    bottom: calc(var(--edge-bottom) + 118px);
+    max-width: 92vw;
+  }
+
+  #hud-milestone {
+    min-width: 0;
+    max-width: 92vw;
+  }
+
+  #hud-levels,
+  #hud-history,
+  #hud-help {
+    top: 50%;
+    bottom: auto;
+    left: 50%;
+    right: auto;
+    transform: translate(-50%, -50%);
+    width: min(320px, 92vw);
+    max-width: none;
+    max-height: 78dvh;
+    overflow-y: auto;
+    text-align: left;
+    z-index: 2;
+  }
+
+  #hud-levels:not(.open),
+  #hud-history:not(.open) {
+    display: none;
+  }
 }

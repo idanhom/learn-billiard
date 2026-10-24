@@ -43,6 +43,11 @@ const hud = new Hud(hudRoot, {
   onReset: () => resetProgress(),
   onSelectLevel: (id: number) => selectLevel(id),
   onContinue: () => continueOn(),
+  onRetry: () => retry(),
+  onNext: () => nextShot(),
+  onToggleView: () => scene.toggleView(),
+  onCycleSpeed: () => cycleSpeed(),
+  onCycleCloth: () => cycleCloth(),
   returnFocus: () => canvas.focus(),
 });
 
@@ -383,6 +388,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
         spin: { x: b.spin.x, y: b.spin.y, z: b.spin.z, w: b.spin.w },
         potted: b.potted,
       })),
+      view: scene.view,
       aimAngle: session.aimAngle,
       idealAimAngle: angleOf(session.analysis.aimDirection),
       power: session.power,

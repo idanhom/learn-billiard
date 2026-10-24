@@ -25,7 +25,8 @@ const POCKET_COLOR = 0x08110d;
 const RAIL_HEIGHT = 0.045;
 const RAIL_DEPTH = 0.06;
 const JAW_DEPTH = 0.02;
-const FRAME_MARGIN = 0.14;
+/** How far the wooden frame runs past the playing surface, each side. */
+export const FRAME_MARGIN = 0.14;
 
 export function buildTable(): Group {
   const group = new Group();

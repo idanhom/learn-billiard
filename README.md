@@ -32,6 +32,12 @@ npm run preview    # http://127.0.0.1:4173
 | `N` | next shot |
 | `1`–`7` | jump to a level |
 
+Every key also has a button in the toolbar along the bottom of the screen. On
+a small screen, a phone either way up, the panels shrink, and the level list
+and the recent shots fold away behind toolbar buttons of their own, so the
+table keeps most of the screen. `?` opens the controls and the notes on what
+the physics leaves out.
+
 Aiming is by drag rather than by pointing at the cloth. Pointing reads well on
 paper, but behind the cue the camera sits low and close to the table, so a few
 pixels near the horizon sweep an enormous angle. A drag maps a fixed number of

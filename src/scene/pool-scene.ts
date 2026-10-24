@@ -20,13 +20,13 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { BALL_RADIUS } from '../geometry/table';
+import { BALL_RADIUS, TABLE } from '../geometry/table';
 import { type Vec2, lerp as lerpVec, vec } from '../geometry/vec2';
 import type { Ball } from '../physics/world';
 import { CUE_BALL_NUMBER, ballTexture, companionBallNumber } from './ball-textures';
 import { headingToRotationY, writeHeading, writeWorld, writeWorldQuat } from './coords';
 import { Guides } from './guides';
-import { buildTable } from './table-mesh';
+import { FRAME_MARGIN, buildTable } from './table-mesh';
 
 export type CameraView = 'behind' | 'overhead';
 
@@ -47,6 +47,24 @@ const VIEW_HEIGHT_PER_METRE = 0.16;
  * the ease takes the same wall-clock time on a Pi at 30 fps as at 60.
  */
 const VIEW_SMOOTHING_RATE = 15;
+
+/**
+ * Vertical field of view, in degrees, on a screen wider than it is tall. A
+ * phone held upright would see a 33 degree sliver across at the same setting,
+ * too narrow to keep a cut shot's pocket in view, so there the vertical field
+ * widens until the horizontal one reaches `MIN_ACROSS_FOV`, up to `MAX_FOV`.
+ */
+const BASE_FOV = 52;
+const MIN_ACROSS_FOV = 55;
+const MAX_FOV = 80;
+
+/**
+ * How much room the overhead view leaves around the table, frame included:
+ * enough that the panels down either side of a desktop window clear it. It is
+ * what the view used to be at a fixed 2.15 m on a 1280x760 window, now kept
+ * on any shape of screen.
+ */
+const OVERHEAD_MARGIN = 1.56;
 
 export interface RenderState {
   readonly balls: readonly Ball[];
@@ -140,6 +158,7 @@ export class PoolScene {
     this.#renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.#renderer.setSize(width, height, false);
     this.#camera.aspect = width / height;
+    this.#camera.fov = fieldOfView(this.#camera.aspect);
     this.#camera.updateProjectionMatrix();
   }
 
@@ -236,8 +255,17 @@ export class PoolScene {
 
   #placeCamera(cuePos: Vec2, state: RenderState): void {
     if (this.#view === 'overhead') {
-      this.#camera.up.set(0, 0, -1);
-      this.#camera.position.set(0, 2.15, 0);
+      // The whole table, frame and all, on any shape of screen. Upright, the
+      // table turns so its length runs up the screen rather than off its sides.
+      const upright = this.#camera.aspect < 1;
+      const long = TABLE.playLength + 2 * FRAME_MARGIN;
+      const short = TABLE.playWidth + 2 * FRAME_MARGIN;
+      const halfTall = Math.tan((this.#camera.fov * Math.PI) / 360);
+      const fitTall = (upright ? long : short) / 2 / halfTall;
+      const fitWide = (upright ? short : long) / 2 / (halfTall * this.#camera.aspect);
+      if (upright) this.#camera.up.set(1, 0, 0);
+      else this.#camera.up.set(0, 0, -1);
+      this.#camera.position.set(0, OVERHEAD_MARGIN * Math.max(fitTall, fitWide), 0);
       this.#camera.lookAt(0, 0, 0);
       this.#viewSettled = false;
       return;
@@ -272,6 +300,13 @@ export class PoolScene {
     this.#camera.up.set(0, 1, 0);
     this.#camera.lookAt(this.#cameraTarget);
   }
+}
+
+/** Vertical field of view for a screen of this shape; see `BASE_FOV`. */
+function fieldOfView(aspect: number): number {
+  const across = Math.tan((MIN_ACROSS_FOV * Math.PI) / 360) / aspect;
+  const tall = (360 * Math.atan(across)) / Math.PI;
+  return Math.min(MAX_FOV, Math.max(BASE_FOV, tall));
 }
 
 /** Cue stick lying along +x in its own space, tip at the origin. */

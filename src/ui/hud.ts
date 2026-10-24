@@ -5,6 +5,11 @@
  * What the HUD shows is itself part of the teaching ladder: the readouts fade
  * with the guide tier, and during the exam it shows the shot number and nothing
  * that would help aim it.
+ *
+ * Every action has a button as well as a key, in the toolbar, so the trainer
+ * plays on a phone. Where things sit is `hud.css`'s business, not this file's:
+ * a small screen folds the level list and the recent shots into sheets behind
+ * toolbar chips, and the stylesheet decides when.
  */
 
 import type { AimError, CutSide } from '../geometry/shot';
@@ -100,9 +105,17 @@ export interface HudActions {
   onReset(): void;
   onSelectLevel(id: number): void;
   onContinue(): void;
+  onRetry(): void;
+  onNext(): void;
+  onToggleView(): void;
+  onCycleSpeed(): void;
+  onCycleCloth(): void;
   /** Hand the keyboard back to the table. Called after every click on the HUD. */
   returnFocus(): void;
 }
+
+/** A panel a small screen folds away behind a toolbar chip. */
+type Sheet = 'levels' | 'history';
 
 const TIER_NAMES = ['full guides', 'no pocket line', 'no ghost ball', 'no guides'];
 
@@ -117,6 +130,8 @@ export class Hud {
   readonly #notice: HTMLElement;
   readonly #history: HTMLElement;
   readonly #milestone: HTMLElement;
+  readonly #toolbar: HTMLElement;
+  readonly #help: HTMLElement;
   readonly #actions: HudActions;
 
   // Last markup written to each panel. `update` runs every frame but the
@@ -130,7 +145,11 @@ export class Hud {
   #renderedSpeed = '';
   #renderedMarker = '';
   #renderedMilestone = '';
+  #renderedToolbar = '';
   #reportShown = false;
+  /** The sheet a small screen has open, if any. Ignored where there is room. */
+  #openSheet: Sheet | undefined;
+  #helpOpen = false;
   /** Reset progress has been pressed once, and is waiting to be confirmed. */
   #confirmingReset = false;
   #noticeId = -1;
@@ -142,22 +161,25 @@ export class Hud {
     root.innerHTML = '';
     this.#actions = actions;
 
-    this.#status = panel(root, 'hud-status', 'top:14px; left:14px;');
-    this.#shot = panel(root, 'hud-shot', 'top:14px; right:14px; text-align:right;');
-    this.#levels = panel(root, 'hud-levels', 'top:150px; left:14px;');
+    this.#status = panel(root, 'hud-status');
+    this.#shot = panel(root, 'hud-shot');
+    this.#levels = panel(root, 'hud-levels');
     this.#levels.classList.add('interactive');
-    // Clear of the power meter and the controls panel, both of which sit low.
-    this.#report = panel(root, 'hud-report', 'top:86px; left:50%; transform:translateX(-50%);');
+    this.#report = panel(root, 'hud-report');
     this.#report.style.display = 'none';
-    this.#notice = panel(root, 'hud-notice', 'top:14px; left:50%; transform:translateX(-50%);');
+    this.#notice = panel(root, 'hud-notice');
     this.#notice.style.display = 'none';
-    this.#history = panel(root, 'hud-history', 'top:150px; right:14px; text-align:right;');
+    this.#history = panel(root, 'hud-history');
+    this.#history.classList.add('interactive');
     this.#history.style.display = 'none';
-    this.#milestone = panel(root, 'hud-milestone', 'top:50%; left:50%; transform:translate(-50%, -50%);');
+    this.#milestone = panel(root, 'hud-milestone');
     this.#milestone.classList.add('interactive');
     this.#milestone.style.display = 'none';
+    this.#toolbar = panel(root, 'hud-toolbar');
+    this.#toolbar.classList.add('interactive');
+    this.#toolbar.setAttribute('role', 'toolbar');
 
-    const power = panel(root, 'hud-power', 'bottom:18px; left:50%; transform:translateX(-50%);');
+    const power = panel(root, 'hud-power');
     power.innerHTML =
       '<div class="hud-label">Power</div>' +
       '<div class="hud-meter"><div class="hud-meter-fill"></div>' +
@@ -168,13 +190,16 @@ export class Hud {
     this.#powerSpeed = power.querySelector('.hud-speed') as HTMLElement;
     this.#powerMarker.style.display = 'none';
 
-    const help = panel(root, 'hud-help', 'bottom:18px; left:14px;');
-    help.innerHTML =
+    this.#help = panel(root, 'hud-help');
+    this.#help.classList.add('interactive');
+    this.#help.innerHTML =
       '<div class="hud-label">Controls</div>' +
-      '<div class="hud-keys"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
+      '<div class="hud-keys kbd-hint"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
       '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level</div>' +
+      '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim. The buttons along ' +
+      'the bottom do everything the keys do.</div>' +
       // Say plainly what this simulation is not, so nothing learned here comes
       // as a surprise on a real table.
       '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
@@ -184,6 +209,7 @@ export class Hud {
       const target = (event.target as HTMLElement).closest('[data-level], [data-action]');
       if (!(target instanceof HTMLElement)) return;
       if (target.dataset.level !== undefined) {
+        this.#toggleSheet(undefined);
         this.#actions.onSelectLevel(Number(target.dataset.level));
         return;
       }
@@ -202,6 +228,10 @@ export class Hud {
     this.#milestone.addEventListener('click', (event) => {
       if ((event.target as HTMLElement).closest('.hud-continue')) this.#actions.onContinue();
     });
+    this.#toolbar.addEventListener('click', (event) => {
+      const chip = (event.target as HTMLElement).closest('[data-action]');
+      if (chip instanceof HTMLElement) this.#onChip(chip.dataset.action);
+    });
     // Whatever was clicked, the keyboard belongs to the table afterwards. A
     // clicked button otherwise keeps focus, and the next Space presses it
     // again instead of charging the cue — on Reset progress, of all buttons.
@@ -209,7 +239,38 @@ export class Hud {
     root.addEventListener('click', () => this.#actions.returnFocus());
   }
 
+  #onChip(action: string | undefined): void {
+    switch (action) {
+      case 'retry':
+        return this.#actions.onRetry();
+      case 'next':
+        return this.#actions.onNext();
+      case 'view':
+        return this.#actions.onToggleView();
+      case 'speed':
+        return this.#actions.onCycleSpeed();
+      case 'cloth':
+        return this.#actions.onCycleCloth();
+      case 'levels':
+      case 'history':
+        return this.#toggleSheet(this.#openSheet === action ? undefined : action);
+      case 'help':
+        this.#helpOpen = !this.#helpOpen;
+        this.#help.classList.toggle('open', this.#helpOpen);
+        this.#renderedToolbar = '';
+    }
+  }
+
+  /** Open one sheet, or none. They share the middle of a small screen. */
+  #toggleSheet(sheet: Sheet | undefined): void {
+    this.#openSheet = sheet;
+    this.#levels.classList.toggle('open', sheet === 'levels');
+    this.#history.classList.toggle('open', sheet === 'history');
+    this.#renderedToolbar = '';
+  }
+
   update(state: HudState): void {
+    this.#renderToolbar(state);
     this.#renderStatus(state);
     this.#renderShot(state);
     this.#renderLevels(state);
@@ -252,7 +313,7 @@ export class Hud {
       this.#noticeShown = true;
       this.#notice.style.display = '';
       this.#notice.style.opacity = '';
-      this.#notice.innerHTML = `<div class="hud-sub">${escape(notice.text)} &middot; click to dismiss</div>`;
+      this.#notice.innerHTML = `<div class="hud-sub">${escape(notice.text)} <span class="hud-note">&times;</span></div>`;
     }
     if (!this.#noticeShown || this.#noticeSticky) return;
 
@@ -299,6 +360,27 @@ export class Hud {
     this.#milestone.style.display = html === '' ? 'none' : '';
   }
 
+  /**
+   * Everything the keyboard does, as buttons. The chips that change a setting
+   * name the setting they are on, so the status line no longer has to.
+   */
+  #renderToolbar(state: HudState): void {
+    const html =
+      chip('retry', 'Retry', { key: 'R' }) +
+      chip('next', 'Next', { key: 'N' }) +
+      chip('view', state.view === 'overhead' ? 'Overhead' : 'Behind', { key: 'V' }) +
+      chip('speed', speedLabel(state.timeScale), { key: '.' }) +
+      chip('cloth', `${escape(state.clothLabel)} cloth`, { key: 'C' }) +
+      chip('levels', 'Levels', { compactOnly: true, pressed: this.#openSheet === 'levels' }) +
+      (state.history.length > 0
+        ? chip('history', 'Shots', { compactOnly: true, pressed: this.#openSheet === 'history' })
+        : '') +
+      chip('help', '?', { pressed: this.#helpOpen, label: 'Controls and model notes' });
+    if (html === this.#renderedToolbar) return;
+    this.#renderedToolbar = html;
+    this.#toolbar.innerHTML = html;
+  }
+
   #renderStatus(state: HudState): void {
     const heading = state.exam
       ? `Exam &mdash; shot ${Math.min(state.exam.shotsTaken + 1, state.exam.total)} of ${state.exam.total}`
@@ -310,16 +392,13 @@ export class Hud {
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
       : `${state.windowQualified}/${state.windowNeeded} toward the next tier &middot; within ${state.toleranceDegrees}&deg;`;
 
-    const speed = state.timeScale === 1 ? '' : ` &middot; ${formatSpeed(state.timeScale)}`;
-    const cloth = ` &middot; ${escape(state.clothLabel.toLowerCase())} cloth`;
-
     const html =
       `<div class="hud-label">${escape(state.levelName)}</div>` +
       `<div class="hud-big">${heading}</div>` +
       `<div class="hud-sub">${line}</div>` +
       (state.practice ? '<div class="hud-sub hud-practice">Retry: practice, not counted</div>' : '') +
-      `<div class="hud-sub">${state.qualified}/${state.attempts} on aim &middot; ` +
-      `${state.potted} potted &middot; ${escape(state.view)} view${speed}${cloth}</div>`;
+      `<div class="hud-sub hud-extra">${state.qualified}/${state.attempts} on aim &middot; ` +
+      `${state.potted} potted</div>`;
     if (html === this.#renderedStatus) return;
     this.#renderedStatus = html;
     this.#status.innerHTML = html;
@@ -502,17 +581,36 @@ function renderReport(
   );
 }
 
-function formatSpeed(timeScale: number): string {
-  if (timeScale === 0.5) return 'half speed';
-  if (timeScale === 0.25) return 'quarter speed';
-  return `${timeScale}x speed`;
+function speedLabel(timeScale: number): string {
+  if (timeScale === 0.5) return 'Half speed';
+  if (timeScale === 0.25) return 'Quarter speed';
+  return timeScale === 1 ? 'Full speed' : `${timeScale}x speed`;
 }
 
-function panel(root: HTMLElement, id: string, style: string): HTMLElement {
+interface ChipOptions {
+  /** The key that does the same, shown where there is a keyboard. */
+  readonly key?: string;
+  /** Only on a small screen, where the panel it opens is folded away. */
+  readonly compactOnly?: boolean;
+  /** For a toggle: whether it is on. */
+  readonly pressed?: boolean;
+  /** Spoken name, for a chip whose text is a symbol. */
+  readonly label?: string;
+}
+
+/** One toolbar button. */
+function chip(action: string, text: string, options: ChipOptions = {}): string {
+  const classes = options.compactOnly ? 'hud-chip compact-only' : 'hud-chip';
+  const pressed = options.pressed === undefined ? '' : ` aria-pressed="${options.pressed}"`;
+  const label = options.label === undefined ? '' : ` aria-label="${escape(options.label)}"`;
+  const hint = options.key === undefined ? '' : ` <kbd class="kbd-hint">${escape(options.key)}</kbd>`;
+  return `<button type="button" class="${classes}" data-action="${action}"${pressed}${label}>${text}${hint}</button>`;
+}
+
+function panel(root: HTMLElement, id: string): HTMLElement {
   const element = document.createElement('div');
   element.id = id;
   element.className = 'panel';
-  element.setAttribute('style', style);
   root.appendChild(element);
   return element;
 }
