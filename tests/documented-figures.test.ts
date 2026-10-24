@@ -14,14 +14,15 @@ import {
   MIN_CUE_SPEED,
   POWER_CURVE_EXPONENT,
   ROLLING_FRICTION,
-  ROLL_FAST_BOOST,
-  ROLL_FAST_SPEED,
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
   clothRollingFriction,
 } from '../src/constants';
+import { generateShot } from '../src/game/generator';
+import { LEVELS } from '../src/game/levels';
 import { cueSpeedForPower, recommendedPower } from '../src/game/power';
-import { analyseShot } from '../src/geometry/shot';
+import { ShotSession } from '../src/game/shot-session';
+import { analyseShot, fullness } from '../src/geometry/shot';
 import { BALL_RADIUS, PLAY_LENGTH, pocketById } from '../src/geometry/table';
 import { normalize, scale, sub, vec } from '../src/geometry/vec2';
 import { rollOutSeconds, terminalDrift } from './support/roll-time';
@@ -37,12 +38,12 @@ describe('the cloth timings quoted for each preset', () => {
   });
 
   /**
-   * A trip this long launches at 2.79 m/s and starts its roll at 1.99 m/s, so
-   * unlike the single-length roll it spends its first half-second on the fast
-   * step. It read 5.7 s before the step existed.
+   * A trip this long launches at 1.74 m/s and starts its roll at 1.25. While a
+   * fast step took ten times the resistance above 1 m/s it read 5.2 s, and with
+   * the step gone it reads what it did before the step existed.
    */
-  test('down the table and back takes 5.2 seconds on normal cloth', () => {
-    expect(rollOutSeconds(2 * PLAY_LENGTH, ROLLING_FRICTION)).toBeCloseTo(5.2, 1);
+  test('down the table and back takes 5.75 seconds on normal cloth', () => {
+    expect(rollOutSeconds(2 * PLAY_LENGTH, ROLLING_FRICTION)).toBeCloseTo(5.75, 2);
   });
 
   /**
@@ -53,11 +54,8 @@ describe('the cloth timings quoted for each preset', () => {
    * The comparison is not quite like for like and the prose says so: the
    * terminal knee applies on both sides, and the published model has no knee at
    * all. Taking it out of the published side would widen the gap, not close it.
-   * At 0.01 neither trip ever rolls above 1 m/s, so the fast step never
-   * engages on the published side — which is why the double trip's gap grew to
-   * 1.6x when the step landed while the single length stayed at 1.45x.
    */
-  test('at the published 0.01 the table length takes 1.45x as long, the double trip 1.6x', () => {
+  test('at the published 0.01 a table length takes 5.8 s and the double trip 8.4', () => {
     expect(rollOutSeconds(PLAY_LENGTH, 0.01)).toBeCloseTo(5.8, 1);
     expect(rollOutSeconds(2 * PLAY_LENGTH, 0.01)).toBeCloseTo(8.4, 1);
   });
@@ -74,7 +72,7 @@ describe('the cloth timings quoted for each preset', () => {
 });
 
 /**
- * The four numbers with no published value behind them at all. `README.md` and
+ * The two numbers with no published value behind them at all. `README.md` and
  * `src/constants.ts` quote them outright, so they are claims like any other
  * and belong here.
  *
@@ -84,15 +82,10 @@ describe('the cloth timings quoted for each preset', () => {
  * 0.15 and every one of those still passes while the prose goes stale, which
  * is the failure this file exists to prevent.
  */
-describe('the roll ladder, which is quoted but not published', () => {
+describe('the terminal knee, which is quoted but not published', () => {
   test('the terminal knee sits at 0.12 m/s, and doubles the resistance below it', () => {
     expect(TERMINAL_ROLL_SPEED).toBe(0.12);
     expect(TERMINAL_ROLL_BOOST).toBe(2);
-  });
-
-  test('the fast step sits at 1 m/s, and takes ten times the resistance above it', () => {
-    expect(ROLL_FAST_SPEED).toBe(1);
-    expect(ROLL_FAST_BOOST).toBe(10);
   });
 });
 
@@ -131,31 +124,63 @@ describe('the power meter', () => {
   });
 
   /**
-   * The long one crosses the fast step on its 1.5 m run-up — its cue ball has
-   * to arrive rolling at 1.2 m/s, so most of that run is paid at ten times the
-   * resistance. It asked 1.93 m/s before the step existed.
+   * The long one's cue ball has to arrive rolling at 1.2 m/s after a 1.5 m
+   * run-up. While a fast step took ten times the resistance above 1 m/s, most of
+   * that run-up was paid at the boosted rate and it asked 2.75 m/s.
    */
-  test('an ordinary pot is a 1.22 m/s stroke, the longest one 2.75', () => {
+  test('an ordinary pot is a 1.22 m/s stroke, the longest one 1.93', () => {
     expect(strokeFor(typical)).toBeCloseTo(1.22, 2);
-    expect(strokeFor(longest)).toBeCloseTo(2.75, 2);
+    expect(strokeFor(longest)).toBeCloseTo(1.93, 2);
   });
 
-  test('which a linear bar would put at 21% and 58%', () => {
+  test('which a linear bar would put at 21% and 38%', () => {
     expect(linearMeter(strokeFor(typical))).toBeCloseTo(0.21, 2);
-    expect(linearMeter(strokeFor(longest))).toBeCloseTo(0.58, 2);
+    expect(linearMeter(strokeFor(longest))).toBeCloseTo(0.38, 2);
   });
 
   /**
    * And why the range itself stays: the thin cuts at the top of the curriculum
-   * genuinely want three quarters of it, so only the shape is wrong.
+   * genuinely want most of it, so only the shape is wrong. Built as an analysis
+   * rather than laid out on the table, because the recommendation reads only
+   * the cut and the two distances.
    */
-  test('but a thin cut wants 3.5 m/s, which is 76% of one', () => {
-    expect(linearMeter(3.5)).toBeCloseTo(0.76, 2);
+  test('but an 80 degree cut with 0.4 m to the pocket wants 3.86 m/s, 85% of one', () => {
+    const cut = (80 * Math.PI) / 180;
+    const thin: ReturnType<typeof analyseShot> = {
+      ...typical,
+      cutAngle: cut,
+      cutSide: 'left',
+      fullness: fullness(cut),
+      objectToPocket: 0.4,
+      cueToGhost: 0.5,
+    };
+    expect(strokeFor(thin)).toBeCloseTo(3.86, 2);
+    expect(linearMeter(strokeFor(thin))).toBeCloseTo(0.85, 2);
   });
 
-  test('the curve moves the same two shots to 40% and 72%', () => {
+  test('the curve moves the same two shots to 40% and 57%', () => {
     expect(recommendedPower(typical, ROLLING_FRICTION)!).toBeCloseTo(0.4, 2);
-    expect(recommendedPower(longest, ROLLING_FRICTION)!).toBeCloseTo(0.72, 2);
+    expect(recommendedPower(longest, ROLLING_FRICTION)!).toBeCloseTo(0.57, 2);
+  });
+
+  /**
+   * The spread the README quotes, over the same seeded layouts
+   * `tests/zz-calibration.test.ts` prints it from: what each level asks of the
+   * meter, on normal cloth.
+   */
+  test('levels ask 32% to 89% of the meter, the median climbing 38/40/43/50/64%', () => {
+    const asked = LEVELS.slice(0, 5).map((level) =>
+      Array.from({ length: 200 }, (_, seed) => {
+        const { layout } = generateShot(level, 50_000 + seed * 7919, {
+          preferredSide: seed % 2 === 0 ? 'left' : 'right',
+        });
+        return new ShotSession(layout).recommendedPower!;
+      }).sort((a, b) => a - b),
+    );
+    const median = (sorted: number[]): number => (sorted[99]! + sorted[100]!) / 2;
+    expect(asked.map(median).map((p) => Math.round(p * 100))).toEqual([38, 40, 43, 50, 64]);
+    expect(Math.round(asked[0]![0]! * 100)).toBe(32);
+    expect(Math.round(asked[4]![199]! * 100)).toBe(89);
   });
 
   /**

@@ -45,6 +45,17 @@ export const MAX_FRAME_DT = 0.1;
 /** Physics ticks one frame may run, so a slow frame cannot spiral. */
 export const MAX_CATCHUP_TICKS = 30;
 
+/**
+ * How much faster a shot plays once the object ball's part in it is over: it
+ * has been struck, and it is down or has stopped. Off a thin cut the cue ball
+ * keeps nearly all its speed and runs on for seconds and two or three rails
+ * after that, which is the part nobody is waiting to see. The ticks are the
+ * same ticks, so it is the same shot — only the wall clock changes — and if
+ * the cue ball comes back and sets the object ball moving again, the pace
+ * drops back to normal with it.
+ */
+export const FAST_FORWARD = 4;
+
 export interface ShotSessionOptions {
   /** Aim deviation, in degrees, that still counts as a qualifying shot. */
   readonly toleranceDegrees?: number;
@@ -186,6 +197,15 @@ export class ShotSession {
     return this.#balls[1]!;
   }
 
+  /** The object ball has been struck, and is now down or stopped. */
+  get objectBallDone(): boolean {
+    const ball = this.objectBall;
+    return (
+      this.#contacted &&
+      (ball.potted || (ball.vel.x === 0 && ball.vel.y === 0 && ball.roll.x === 0 && ball.roll.y === 0))
+    );
+  }
+
   get targetPocketCenter(): Vec2 {
     return pocketById(this.layout.targetPocket).center;
   }
@@ -255,7 +275,8 @@ export class ShotSession {
   advance(frameSeconds: number): void {
     if (this.#phase !== 'simulating') return;
 
-    this.#accumulator += Math.min(frameSeconds, MAX_FRAME_DT);
+    const pace = this.objectBallDone ? FAST_FORWARD : 1;
+    this.#accumulator += Math.min(frameSeconds, MAX_FRAME_DT) * pace;
     let ticks = 0;
     while (this.#accumulator >= TICK && ticks < MAX_CATCHUP_TICKS) {
       this.#previousBalls = this.#balls.map(cloneBall);

@@ -122,11 +122,11 @@ describe('the recommended power', () => {
   /**
    * Seeded, so this is exact rather than a rate. One caveat if it ever starts
    * failing on level 5 alone: on a thin cut the cue ball keeps nearly all of
-   * its speed, and about one such layout in a hundred sends it off two
-   * cushions and back into the object ball before the ball has finished
-   * creeping in. That is the cue-ball path spoiling a correct stroke, not a
-   * wrong recommendation — check the shot for a second ball-ball event before
-   * blaming the arithmetic.
+   * its speed, and it can come back off two cushions into the object ball
+   * before the ball has finished creeping in — once in 500 seeded level-5
+   * layouts, measured when the fast roll step went. That is the cue-ball path
+   * spoiling a correct stroke, not a wrong recommendation — check the shot for
+   * a second ball-ball event before blaming the arithmetic.
    */
   test('pots the target across generated layouts, on every level', () => {
     for (const level of LEVELS) {

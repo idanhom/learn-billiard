@@ -50,9 +50,10 @@ The simulation runs on a fixed 1/240 s tick, and wall-clock time only decides
 *how many ticks a rendered frame is allowed to run*. So `.` changes how long you
 watch a shot for, not what the shot does — quarter speed replays identical
 physics, collision for collision. The browser verification asserts exactly this:
-the same shot at 1x and 0.25x takes over four times as long on the clock, and
+the same shot at 0.25x takes several times as long on the clock as at 1x, and
 differs in simulated duration, in outcome and in the final orientation of every
-ball by nothing at all.
+ball by nothing at all. (Not quite four times: once the object ball has dropped
+or stopped, the rest of a shot fast-forwards at either speed.)
 
 The setting is remembered between sessions, stored separately from your
 progress so a bad preference can never cost you a level.
@@ -65,12 +66,11 @@ A cue can send a ball anywhere from a touch shot to a break, but almost nothing
 in this trainer wants a break. An ordinary pot — 0.6 m to the pocket, half a
 metre of cue-ball travel — is a 1.22 m/s stroke, which on a bar spread linearly
 across 0.35–4.5 m/s is 21% of the travel. The longest pot in the curriculum,
-level 6's 1.4 m, asks 2.75 m/s, or 58% — its cue ball crosses the fast step on
-the way in, and pays for it.
+level 6's 1.4 m, asks 1.93 m/s, or 38%.
 
-Not every shot, though, and that is why the range itself stays: a level-5 thin
-cut throws away cos(80°) at contact and genuinely needs about 3.5 m/s, which is
-76% of a linear bar. The problem is the shape, not the ends.
+Not every shot, though, and that is why the range itself stays: an 80° cut
+with 0.4 m to the pocket throws away cos(80°) at contact and genuinely needs
+3.86 m/s, which is 85% of a linear bar. The problem is the shape, not the ends.
 
 So the bar is a curve — `speed = 0.35 + 4.15 × power^1.7` — set so an ordinary
 pot lands near 40%:
@@ -85,18 +85,18 @@ pot lands near 40%:
 | 100% | 4.50 m/s | power |
 
 Measured over 200 generated layouts per level, the stroke each one asks for now
-runs from 31% on a straight-in to 94% on the worst thin cut, with the median
-climbing 39% → 41% → 44% → 54% → 67% as the cut angle opens up. What pushes you
+runs from 32% on a straight-in to 89% on the worst thin cut, with the median
+climbing 38% → 40% → 43% → 50% → 64% as the cut angle opens up. What pushes you
 up the meter is the *cut*, which is worth feeling: a thin cut throws away
-`cos(θ)` of the speed at contact, so a 70° cut needs roughly three times the
-stroke of a straight-in over the same distance.
+`cos(θ)` of the speed at contact, so a 70° cut has to arrive almost three times
+as fast as a straight-in to send the object ball the same distance.
 
 The exponent follows the cloth rather than taste: it is whatever puts that
 typical pot at 40%, and it has to be re-derived if the rolling resistance
 moves.
 
-The range itself is unchanged — a level-5 cut at 80° genuinely needs ~3.5 m/s,
-and shot generation uses that ceiling to decide a layout is makeable at all.
+The range itself is unchanged — an 80° cut genuinely needs most of it, and shot
+generation uses that ceiling to decide a layout is makeable at all.
 
 Under the meter, always, is what you just charged, in the same units and the
 same words a real table uses: `0.81 m/s · slow`. That is a speedometer, not an
@@ -108,10 +108,17 @@ a guide, and it comes away with the ghost ball at tier 1. It is absent when no
 legal stroke can make the ball, rather than pinned at 100% implying one can.
 
 It answers for the object ball, not for the cue ball. On a thin cut the cue
-ball keeps nearly all its speed, and about one level-5 layout in a hundred
-sends it off two cushions and back into the object ball before that ball has
-finished creeping in. The stroke was right; the cue ball spoiled it. That is
-the part of the game this trainer does not teach.
+ball keeps nearly all its speed, and it can come back off two cushions into the
+object ball before that ball has finished creeping in — the stroke was right,
+and the cue ball spoiled it. Over 500 level-5 layouts at the recommended power
+that happened once, and that ball still dropped; on every level all 500
+potted. Where the cue ball goes is the part of the game this trainer does not
+teach.
+
+Once the object ball has dropped or stopped, the rest of the shot plays at four
+times the speed: off a thin cut the cue ball can run on for three seconds and
+as many rails after the part you were watching. It is the same shot, tick for
+tick — only the clock is faster.
 
 ## How it scores you
 
@@ -195,17 +202,21 @@ quoted range is 0.005–0.015, and Alciatore's TP B.2 derives μ_r = 0.01 by
 timing a rolling ball to a stop under `a = μ_r·g`. Normal cloth here is over
 twice that.
 
-On top of it sit two more departures with no published value behind them at
-all. Below 0.12 m/s the rolling resistance doubles — real cloth does something
+On top of it sits one more departure, with no published value behind it at
+all: below 0.12 m/s the rolling resistance doubles. Real cloth does something
 like this as the ball settles into the pile while it dies, but the number here
-is not measured. And above 1 m/s it is ten times larger, which real cloth does
-not do at all: it exists so a cue ball that keeps nearly all of its speed
-through a thin cut does not sail the table several times over. Both are
-calibrated by eye against how a ball ought to behave. Treat them as
-judgements, not citations.
+is not measured — it is calibrated by eye against how a ball ought to stop.
+Treat it as a judgement, not a citation.
 
-What the three buy, on this 7-foot table: a table length of free roll in 4.0 s
-instead of 5.8, down and back in 5.2 s instead of 8.4, and a ball that spends
+There used to be a second one. Above 1 m/s the rolling resistance was ten times
+larger, so the cue ball off a thin cut, which keeps nearly all of its speed,
+would not run on round the table. Real cloth does nothing like it, and it was
+not merely unmeasured but impossible: ten times 0.022 is more than the 0.2
+sliding friction, and no ball loses speed faster rolling than skidding. It is
+gone, and the cue ball now runs as far as the cloth says.
+
+What the two buy, on this 7-foot table: a table length of free roll in 4.0 s
+instead of 5.8, down and back in 5.75 s instead of 8.4, and a ball that spends
 its last 0.2 m/s dying over 0.65 s and 7.6 cm instead of 1.4 s and 17 cm. That
 terminal crawl is what the "it feels like ice" reports kept landing on. The
 three presets come out at 4.7 s, 4.0 s and 3.4 s for a table length.
@@ -214,27 +225,27 @@ Whether it has gone too far the other way is open — nobody has timed it agains
 a real table. **Do that.** Roll a ball the length of your table so it just dies
 at the far cushion, and time it: about 5.8 s means the published value is right
 and this is wrong, about 4 s means this is. Every figure above is held to the
-code by `tests/documented-figures.test.ts`, the ladder's own four numbers
+code by `tests/documented-figures.test.ts`, the knee's own two numbers
 included. That the simulation actually behaves that way — rather than merely
 being configured to — is `tests/physics/world.test.ts`'s job.
 
-After a rolling cue ball hits an object ball square, the object should travel
-6.5–8x farther than the cue ball. It mostly does: 7.4x at an ordinary pot's
-contact speed of 0.79 m/s, 6.8x at 1.20 m/s — but 6.45x at 1.55 m/s, just
-below the band, because at that speed the object ball's run clips the fast
-step while the cue ball's short follow does not. This used to be 5.2x
-everywhere, and used to be listed here as a known deviation; contact friction
-is what closed it, and the fast step is what has now reopened the top end.
-The failing test in `tests/physics/world.test.ts` is the record of that —
-unresolved, deliberately, until the step is either retuned or the claim
-re-scoped.
+After a rolling cue ball hits an object ball square, the object ball should
+travel about seven times as far as the cue ball follows. That is Alciatore's
+figure (*Billiards Digest*, June 2020, "Speed Control"), and he adds that it
+varies some with the balls and the cloth. Here it is 7.3x at an ordinary pot's
+contact speed of 0.79 m/s, 6.8x at 1.20, 6.6x at 1.55 and 6.5x at 2.5 —
+settling toward the 6.4x that the slide-then-roll arithmetic gives with this
+restitution and contact friction, and above the 6.25x of the frictionless
+textbook case. It was 5.2x everywhere before contact friction, and used to be
+listed here as a known deviation. (An earlier version of this section held
+the ratio to a 6.5–8x band that nobody had a source for.)
 
-It is no longer a ratio the cloth setting leaves alone, and that is the price
-of the terminal knee: below the knee every ball loses speed at a fixed extra
-rate, which takes a proportionally bigger bite out of the cue ball's short
-follow than the object ball's long run. On the softest shots — 0.50 m/s at
-contact — it reaches 9.7x, outside the published band. There the cue ball
-follows under 3 cm, and nobody can see where it stopped.
+Alciatore's ratio holds at every speed, and this one does not — that is the
+price of the terminal knee. Below the knee every ball loses speed at a fixed
+extra rate, which takes a proportionally bigger bite out of the cue ball's
+short follow than the object ball's long run. On the softest shots — 0.50 m/s
+at contact — it reaches 9.6x. There the cue ball follows under 3 cm, and nobody
+can see where it stopped.
 
 This matters, and the app says so on screen. Everything the guides teach is
 consistent with what the simulation does — which is why there is no static 90°

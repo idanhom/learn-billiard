@@ -4,8 +4,6 @@ import {
   type ClothPreset,
   GRAVITY,
   MAX_CUE_SPEED,
-  ROLL_FAST_BOOST,
-  ROLL_FAST_SPEED,
   SLIDING_FRICTION,
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
@@ -52,6 +50,11 @@ function rollingSpeedOf(ball: Ball): number {
  * so there is nowhere to measure it. The substitution is only as good as the
  * agreement between the two, which this asserts on the way past at every speed
  * that does fit.
+ *
+ * Each ball runs on alone after the contact. On a square hit they leave along
+ * the same line, the object ball ahead and faster, so they never meet again —
+ * unless the object ball comes back off the far rail, which above about
+ * 1.5 m/s it does, straight into the cue ball's follow.
  */
 function squareHitRatio(arrival: number): {
   impact: number;
@@ -65,19 +68,18 @@ function squareHitRatio(arrival: number): {
     events.some((e) => e.type === 'ball-ball'),
   );
 
-  const result = simulateToRest(atImpact, { maxDuration: 40 });
-  const ranOutOf = (id: number): boolean =>
-    result.events.some((e) => e.type !== 'ball-ball' && e.ball === id);
+  const cueRun = simulateToRest([atImpact[0]!], { maxDuration: 40 });
+  const objectRun = simulateToRest([atImpact[1]!], { maxDuration: 40 });
 
   // Only the OBJECT ball is allowed to reach the end of the table. If the cue
   // ball does, its own travel is measured across a rebound and the ratio is
   // meaningless — and the object ball's cross-check below would have been
   // switched off by the same flag that hid it.
-  expect(ranOutOf(0), 'the cue ball reached a cushion; its travel is not measurable').toBe(false);
-  const ranOut = ranOutOf(1);
+  expect(cueRun.events, 'the cue ball reached a cushion; its travel is not measurable').toEqual([]);
+  const ranOut = objectRun.events.length > 0;
 
-  const cueTravel = result.balls[0]!.pos.x - atImpact[0]!.pos.x;
-  const simulated = result.balls[1]!.pos.x - atImpact[1]!.pos.x;
+  const cueTravel = cueRun.balls[0]!.pos.x - atImpact[0]!.pos.x;
+  const simulated = objectRun.balls[0]!.pos.x - atImpact[1]!.pos.x;
 
   const struck = atImpact[1]!;
   const analytic = stoppingDistance(
@@ -161,9 +163,9 @@ describe('cushions', () => {
    * driven square into a rail should come back having lost about half its
    * speed. Measured after it has settled, because most of that loss is the skid
    * that follows the rebound, not the rebound itself — and measured against the
-   * speed AT the rail, per `CLAUDE.md`: this ball launches above the fast step
-   * and sheds a third of its speed on the run-up, and dividing by the launch
-   * speed would bill the cushion for what the cloth took.
+   * speed AT the rail, per `CLAUDE.md`: this ball sheds speed to the cloth on
+   * its run-up, and dividing by the launch speed would bill the cushion for
+   * what the cloth took.
    */
   test('take about half the speed of a rolling ball hit square', () => {
     const start = rollingBall(0, vec(0.4, -0.2), vec(0, 1.4));
@@ -364,37 +366,52 @@ describe('ball on ball', () => {
   });
 
   /**
-   * The number this contact model exists to move, measured across the range of
-   * shots the curriculum actually asks for.
+   * The number this contact model exists to move, measured across the contact
+   * speeds the curriculum produces.
    *
-   * Published tables put a square hit from a rolling cue ball at 6.5-8x, and
-   * frictionless collisions put it at 5.2x whatever the speed. With contact
-   * friction AND the terminal knee it lands in band from an ordinary pot
-   * upward, and runs high on the very softest shots — where the cue ball
-   * follows under 3 cm and nobody can see where it stopped. It is no longer
-   * scale-free, and `README.md` says so.
+   * A rolling cue ball hit square sends the object ball "about 7 times as far"
+   * as the cue ball follows, and Alciatore adds that it "can vary some with
+   * ball and cloth conditions" (Billiards Digest, June 2020, "Speed Control",
+   * tip 4). One either side of seven is the reading held here. That is not
+   * decoration: the frictionless textbook case is (5/2)^2 = 6.25, this model
+   * gave 5.2x before it had contact friction, and with the spin transfer
+   * inverted it reads 8.2x at 1.2 m/s — each one outside.
+   *
+   * The model settles toward 6.4x as the knee's share shrinks, which is what
+   * the slide-then-roll arithmetic gives with this restitution and contact
+   * friction. An earlier version of this test held 6.5-8x, a band nobody had a
+   * source for; the fast step took the 1.55 m/s contact under it, and the step
+   * has since gone.
    *
    * Measured against the speed AT CONTACT, per `CLAUDE.md`: measuring a
    * collision property against a launch speed folds in whatever the cloth took
    * on the run-up.
    */
-  test('sends the object ball 6.5-8x further than the cue ball, over ordinary pots', () => {
+  test('sends the object ball about seven times as far as the cue ball follows', () => {
     for (const [arrival, expected] of [
-      [0.787, 7.36],
-      [1.2, 6.77],
+      [0.787, 7.34],
+      [1.2, 6.76],
       [1.55, 6.6],
+      [2.5, 6.47],
     ] as const) {
       const { ratio, impact } = squareHitRatio(arrival);
       expect(impact).toBeCloseTo(arrival, 2);
       expect(ratio).toBeCloseTo(expected, 1);
-      expect(ratio).toBeGreaterThan(6.5);
-      expect(ratio).toBeLessThan(8);
+      expect(Math.abs(ratio - 7)).toBeLessThan(1);
     }
   });
 
-  test('and runs above the band on a touch shot, which is the cost of the knee', () => {
+  /**
+   * Alciatore's ratio holds at every speed. This one does not: below the
+   * terminal knee every ball loses a fixed extra distance, which is a far
+   * bigger share of the cue ball's short follow than of the object ball's long
+   * run, so a touch shot reads high. The knee is unpublished — see the
+   * constants — and this is what it costs. The cue ball follows under 3 cm
+   * here, and nobody can see where it stopped.
+   */
+  test('but runs high on a touch shot, which is the cost of the knee', () => {
     const { ratio } = squareHitRatio(0.5);
-    expect(ratio).toBeCloseTo(9.67, 1);
+    expect(ratio).toBeCloseTo(9.63, 1);
     expect(ratio).toBeGreaterThan(8);
   });
 
@@ -625,47 +642,6 @@ describe('the terminal roll knee', () => {
       (TERMINAL_ROLL_SPEED * TERMINAL_ROLL_SPEED) / (2 * mu * GRAVITY) -
       rollPhaseDistance(TERMINAL_ROLL_SPEED, mu);
     expect((predicted + savedByTheKnee) / travelled).toBeGreaterThan(1.4);
-  });
-});
-
-/**
- * The fast step, the ladder's other unpublished half — same status as the
- * knee: what these pin is that the code does what the comment says, not that
- * the comment is right about real cloth.
- */
-describe('the fast roll step', () => {
-  const plainDecel = clothRollingFriction('normal') * GRAVITY;
-
-  /** Deceleration over one tick of a ball already rolling at `speed`. */
-  function decelAt(speed: number): number {
-    const { balls } = stepWorld([rollingBall(0, vec(-0.5, 0), vec(speed, 0))]);
-    return (speed - len(balls[0]!.vel)) / TICK;
-  }
-
-  test('costs a fast ball ten times the rolling resistance', () => {
-    expect(decelAt(2)).toBeCloseTo(ROLL_FAST_BOOST * plainDecel, 6);
-  });
-
-  /** The mirror of the knee's split: exact on both sides of the crossing. */
-  test('splits a tick that straddles the step, rather than picking one rate', () => {
-    const speed = ROLL_FAST_SPEED + (ROLL_FAST_BOOST * plainDecel * TICK) / 2;
-    const { balls } = stepWorld([rollingBall(0, vec(-0.5, 0), vec(speed, 0))]);
-    const expected = ROLL_FAST_SPEED - (plainDecel * TICK) / 2;
-    expect(len(balls[0]!.vel)).toBeCloseTo(expected, 9);
-  });
-
-  /**
-   * Above the step a free roll outruns this table on the normal cloth — any
-   * rolling start past 1 m/s covers at least 2.3 m — so the one on-table probe
-   * of the crossing is the slow cloth, where 1.05 m/s rolls out in 1.66 m.
-   */
-  test('and the simulation matches the closed form across the crossing', () => {
-    const speed = 1.05;
-    const start = vec(-0.9, 0);
-    const { balls } = simulateToRest([rollingBall(0, start, vec(speed, 0))], { cloth: 'slow' });
-    const travelled = balls[0]!.pos.x - start.x;
-    const predicted = rollPhaseDistance(speed, clothRollingFriction('slow'));
-    expect(Math.abs(travelled - predicted) / predicted).toBeLessThan(0.01);
   });
 });
 

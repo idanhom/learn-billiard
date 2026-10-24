@@ -3,7 +3,8 @@ import { MAX_CUE_SPEED, MIN_CUE_SPEED } from '../../src/constants';
 import { idealAimDirection } from '../../src/geometry/shot';
 import { pocketById } from '../../src/geometry/table';
 import { angleOf, fromAngle, len, signedAngleBetween, sub, vec } from '../../src/geometry/vec2';
-import { ShotSession } from '../../src/game/shot-session';
+import { FAST_FORWARD, ShotSession } from '../../src/game/shot-session';
+import { TICK } from '../../src/physics/world';
 import { cueSpeedForPower } from '../../src/game/power';
 import {
   CUT_30_DRILL,
@@ -13,7 +14,7 @@ import {
   layoutWithCut,
 } from '../../src/game/drills';
 import { generateShot } from '../../src/game/generator';
-import { LEVELS } from '../../src/game/levels';
+import { LEVELS, levelById } from '../../src/game/levels';
 
 const deg = (d: number) => (d * Math.PI) / 180;
 
@@ -373,6 +374,38 @@ describe('the simulation clock', () => {
     const before = session.elapsed;
     session.advance(10); // a huge stall
     expect(session.elapsed - before).toBeLessThan(1);
+  });
+
+  /**
+   * Off a thin cut the cue ball runs on for seconds after the pot. Once the
+   * object ball's part is over the clock runs FAST_FORWARD times as fast — and
+   * only then: never before contact, when the object ball is also at rest.
+   */
+  test('plays out faster once the object ball is down, and only then', () => {
+    // The object ball drops 0.92 s in and the cue ball runs on to 4.48 s: three
+    // and a half seconds of watching nothing, spent in under one instead.
+    const { layout } = generateShot(levelById(5), 4243, { preferredSide: 'left' });
+    const session = new ShotSession(layout);
+    session.aimTo(idealAimAngle(layout));
+    session.beginCharge();
+    session.setPower(session.recommendedPower!);
+    session.release();
+    expect(session.objectBallDone).toBe(false);
+
+    let fastFrames = 0;
+    for (let i = 0; i < 60 * 30 && session.phase === 'simulating'; i++) {
+      const done = session.objectBallDone;
+      const before = session.elapsed;
+      session.advance(1 / 60);
+      if (session.phase !== 'simulating') break;
+      // Four ticks to a 60 Hz frame, give or take one for the accumulator's
+      // rounding from one frame to the next.
+      const ticks = Math.round((session.elapsed - before) / TICK);
+      expect(Math.abs(ticks - (done ? 4 * FAST_FORWARD : 4)), `frame ${i}`).toBeLessThanOrEqual(1);
+      if (done) fastFrames++;
+    }
+    expect(session.evaluate()!.pottedTarget).toBe(true);
+    expect(fastFrames).toBeGreaterThan(50);
   });
 
   test('ignores advance outside the simulating phase', () => {

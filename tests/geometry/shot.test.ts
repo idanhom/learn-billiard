@@ -239,8 +239,7 @@ describe('speed and roll-out', () => {
     };
 
     rung(0.04, 0.08, 0.12); // below the knee: launch under 3.5*0.12/2.5 = 0.168
-    rung(0.4, 0.8, 1.2); //    between: launch 0.168 to 3.5*1.0/2.5 = 1.4
-    rung(2, 3, 4); //           above the fast step
+    rung(0.4, 1.2, 4); //      above it, all the way to the hardest stroke
     expect(stoppingDistance(0)).toBe(0);
   });
 
@@ -254,19 +253,6 @@ describe('speed and roll-out', () => {
     const d2 = stoppingDistance(1);
     expect(d2 / d1).toBeGreaterThan(4);
     expect(d2 / d1).toBeLessThan(4.2);
-  });
-
-  /**
-   * And the fast step makes a hard stroke markedly LESS than quadratic, which
-   * is the whole point of it: the cue ball off a thin cut leaves at close to
-   * its full speed, and a single deceleration turns that into most of a dozen
-   * metres. The step's offset is a refund, not a bite, and at ten times the
-   * resistance it is a large one — it dominates both of these runs, so
-   * doubling the speed does not even double the distance.
-   */
-  test('while the fast step makes a hard stroke much less than quadratic', () => {
-    expect(stoppingDistance(4) / stoppingDistance(2)).toBeLessThan(2.2);
-    expect(stoppingDistance(4) / stoppingDistance(2)).toBeGreaterThan(1.8);
   });
 
   test('and is exactly quadratic below the knee, where the boost applies throughout', () => {
@@ -359,24 +345,6 @@ describe('inverting the roll-out', () => {
   test('and stays an exact inverse across the terminal knee', () => {
     for (const friction of CLOTH_PRESET_IDS.map(clothRollingFriction)) {
       for (const speed of [0.02, 0.08, 0.15, 0.167, 0.168, 0.169, 0.25, 0.6]) {
-        expect(speedForStoppingDistance(stoppingDistance(speed, friction), friction)).toBeCloseTo(
-          speed,
-          9,
-        );
-      }
-    }
-  });
-
-  /**
-   * Same straddle at the other crossing: a launch of 3.5/2.5 = 1.4 m/s leaves
-   * its slide exactly at the fast step, so these bracket the top rung's
-   * boundary. The 1.2 is there for the stretch where the top branch's bracket
-   * goes negative and has to fall through as NaN rather than answer — its
-   * distance sits below the fast offset on every cloth.
-   */
-  test('and across the fast step', () => {
-    for (const friction of CLOTH_PRESET_IDS.map(clothRollingFriction)) {
-      for (const speed of [1.2, 1.35, 1.39, 1.4, 1.41, 1.45, 2.2]) {
         expect(speedForStoppingDistance(stoppingDistance(speed, friction), friction)).toBeCloseTo(
           speed,
           9,

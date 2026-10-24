@@ -484,12 +484,13 @@ await page.screenshot({ path: `${OUT}calibration-history.png` });
  * and long ones as well as easy ones.
  *
  * Judged in aggregate, and not to the last shot, because of one known way an
- * honest recommendation still misses: on a thin cut the cue ball keeps almost
- * all of its speed, and roughly one level-5 layout in a hundred sends it off
- * two cushions and back into the object ball a second and a half later, before
- * the ball has finished creeping into the pocket. That is the cue-ball path,
- * not the power, and it is the same thing this trainer says on screen it does
- * not teach. The seeded sweep in tests/game/power.test.ts is the strict one.
+ * honest recommendation can still miss: on a thin cut the cue ball keeps almost
+ * all of its speed and can come back off two cushions into the object ball
+ * before that ball has finished creeping into the pocket. That is the cue-ball
+ * path, not the power, and it is the same thing this trainer says on screen it
+ * does not teach. Over 500 seeded level-5 layouts it happened once, and that
+ * ball still dropped. The seeded sweep in tests/game/power.test.ts is the
+ * strict one.
  */
 const potShots = [];
 for (const levelId of [1, 3, 5, 6]) {

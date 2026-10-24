@@ -1,0 +1,191 @@
+/**
+ * Measurement harness, not a test: the coupled-calibration list in `CLAUDE.md`,
+ * measured in one place, so a physics change re-measures every figure it moves
+ * rather than the ones somebody remembered. It asserts nothing and is gated out
+ * of the default run — invoke it with
+ * `MEASURE=1 npx vitest run tests/zz-calibration.test.ts` when recalibrating,
+ * then carry what moved into `README.md`, `TODO.md` and the comments, and
+ * `tests/documented-figures.test.ts` will hold them there.
+ *
+ * Seeded throughout, so two runs of the same code print the same numbers.
+ */
+import { test } from 'vitest';
+import {
+  CLOTH_PRESET_IDS,
+  MAX_CUE_SPEED,
+  MIN_CUE_SPEED,
+  POWER_CURVE_EXPONENT,
+  ROLLING_FRICTION,
+  SLOWEST_CLOTH,
+  clothRollingFriction,
+} from '../src/constants';
+import { idealAimAngle } from '../src/game/drills';
+import { generateShot } from '../src/game/generator';
+import { LEVELS } from '../src/game/levels';
+import { cueSpeedForPower, recommendedPower } from '../src/game/power';
+import { ShotSession } from '../src/game/shot-session';
+import {
+  POWER_MARGIN,
+  analyseShot,
+  cutAngle,
+  objectRollFraction,
+  objectSpeedAfterCut,
+  stoppingDistance,
+} from '../src/geometry/shot';
+import { BALL_RADIUS, PLAY_LENGTH, TABLE, pocketById } from '../src/geometry/table';
+import { len, normalize, scale, sub, vec } from '../src/geometry/vec2';
+import { type Ball, createBall, simulateToRest, stepWorld } from '../src/physics/world';
+import { rollOutSeconds, terminalDrift } from './support/roll-time';
+
+const pct = (x: number): string => `${(x * 100).toFixed(1)}%`;
+const linearMeter = (speed: number): number => (speed - MIN_CUE_SPEED) / (MAX_CUE_SPEED - MIN_CUE_SPEED);
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/** Straight-in, laid out backwards from a corner pocket: the documented-figures shot. */
+function straightShot(potDistance: number, cueDistance: number): ReturnType<typeof analyseShot> {
+  const pocket = pocketById('top-right');
+  const toPocket = normalize(vec(2, 1));
+  const object = sub(pocket.center, scale(toPocket, potDistance));
+  const ghost = sub(object, scale(toPocket, 2 * BALL_RADIUS));
+  return analyseShot({ cue: sub(ghost, scale(toPocket, cueDistance)), object, pocket, obstacles: [] });
+}
+
+/** A square hit from a ROLLING cue ball arriving at `arrival`: object travel over cue travel. */
+function squareHitRatio(arrival: number): number {
+  const object = createBall(1, vec(-0.9, 0));
+  const cue = createBall(0, vec(-0.9 - 2 * BALL_RADIUS - 0.001, 0), vec(arrival, 0), vec(arrival, 0));
+  let balls: Ball[] = [cue, object];
+  for (let i = 0; i < 240 * 5; i++) {
+    const step = stepWorld(balls);
+    balls = step.balls;
+    if (step.events.some((e) => e.type === 'ball-ball')) break;
+  }
+  // The cue ball alone from here: above about 1.5 m/s the object ball comes
+  // back off the far rail and runs into it, which is not a follow distance.
+  const result = simulateToRest([balls[0]!], { maxDuration: 40 });
+  const cueTravel = result.balls[0]!.pos.x - balls[0]!.pos.x;
+  const struck = balls[1]!;
+  // The object ball's run outgrows the table above about 1.2 m/s, so it is read
+  // from the closed form, fed the ball's measured post-contact state.
+  const objectTravel = stoppingDistance(struck.vel.x, ROLLING_FRICTION, struck.roll.x / struck.vel.x);
+  return objectTravel / cueTravel;
+}
+
+/** One generated layout, fired perfectly at the recommended power on normal cloth. */
+function fireRecommended(layoutSeed: number, levelIndex: number) {
+  const level = LEVELS[levelIndex]!;
+  const shot = generateShot(level, layoutSeed, { preferredSide: layoutSeed % 2 === 0 ? 'left' : 'right' });
+  const session = new ShotSession(shot.layout);
+  const power = session.recommendedPower;
+  if (power === null) return { potted: false, duration: Number.NaN, settled: false, power };
+  session.aimTo(idealAimAngle(shot.layout));
+  session.beginCharge();
+  session.setPower(power);
+  session.release();
+  for (let i = 0; i < 60 * 40 && session.phase === 'simulating'; i++) session.advance(1 / 60);
+  const outcome = session.evaluate()!;
+  return { potted: outcome.pottedTarget, duration: outcome.duration, settled: outcome.settled, power };
+}
+
+test.runIf(import.meta.env.MEASURE)('the coupled calibration list', () => {
+  const out: string[] = [];
+
+  out.push('== roll times (tests/support/roll-time.ts)');
+  for (const cloth of CLOTH_PRESET_IDS) {
+    out.push(`  ${cloth.padEnd(6)} mu ${clothRollingFriction(cloth)}  table length ${rollOutSeconds(PLAY_LENGTH, clothRollingFriction(cloth)).toFixed(3)} s`);
+  }
+  out.push(`  down and back, normal       ${rollOutSeconds(2 * PLAY_LENGTH, ROLLING_FRICTION).toFixed(3)} s`);
+  out.push(`  published 0.01: length ${rollOutSeconds(PLAY_LENGTH, 0.01).toFixed(3)} s, down and back ${rollOutSeconds(2 * PLAY_LENGTH, 0.01).toFixed(3)} s`);
+  const here = terminalDrift(0.2, ROLLING_FRICTION);
+  const published = terminalDrift(0.2, 0.01);
+  out.push(`  last 0.2 m/s: here ${here.seconds.toFixed(3)} s / ${(here.metres * 100).toFixed(2)} cm, published ${published.seconds.toFixed(3)} s / ${(published.metres * 100).toFixed(2)} cm`);
+
+  out.push('== power meter (POWER_CURVE_EXPONENT)');
+  for (const [name, shot] of [['typical 0.6/0.5', straightShot(0.6, 0.5)], ['longest 1.4/1.5', straightShot(1.4, 1.5)]] as const) {
+    const power = recommendedPower(shot, ROLLING_FRICTION);
+    const speed = power === null ? Number.NaN : cueSpeedForPower(power);
+    out.push(`  ${name}: ${speed.toFixed(3)} m/s, linear ${pct(linearMeter(speed))}, curved ${power === null ? 'none' : pct(power)}`);
+  }
+  {
+    const typical = straightShot(0.6, 0.5);
+    const exponentFor = (mu: number): number => {
+      const power = recommendedPower(typical, mu)!;
+      return Math.log(linearMeter(cueSpeedForPower(power))) / Math.log(0.4);
+    };
+    out.push(`  exponent that puts the typical pot at 40%: ${exponentFor(ROLLING_FRICTION).toFixed(4)} (set: ${POWER_CURVE_EXPONENT}); at mu 0.010: ${exponentFor(0.01).toFixed(4)}`);
+  }
+
+  out.push('== recommended power per level, 200 layouts each, normal cloth');
+  for (const level of LEVELS) {
+    const powers: number[] = [];
+    let missing = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      const { layout } = generateShot(level, 50_000 + seed * 7919, { preferredSide: seed % 2 === 0 ? 'left' : 'right' });
+      const power = new ShotSession(layout).recommendedPower;
+      if (power === null) missing++;
+      else powers.push(power);
+    }
+    out.push(`  L${level.id} min ${pct(Math.min(...powers))}  median ${pct(median(powers))}  max ${pct(Math.max(...powers))}  none ${missing}`);
+  }
+
+  out.push('== template fallback and isPowerFeasible headroom, 1500 layouts each, slowest cloth');
+  const slowest = clothRollingFriction(SLOWEST_CLOTH);
+  for (const level of LEVELS) {
+    let fallbacks = 0;
+    let maxCut = 0;
+    let tightest = Number.POSITIVE_INFINITY;
+    for (let seed = 0; seed < 1500; seed++) {
+      const shot = generateShot(level, seed, { preferredSide: seed % 2 === 0 ? 'left' : 'right' });
+      if (shot.fromTemplate) fallbacks++;
+      const { cue, object, targetPocket } = shot.layout;
+      const pocket = pocketById(targetPocket);
+      const cut = cutAngle(cue, object, pocket.center);
+      const reach = stoppingDistance(objectSpeedAfterCut(MAX_CUE_SPEED, cut), slowest, objectRollFraction(cut));
+      const asked = Math.hypot(pocket.center.x - object.x, pocket.center.y - object.y) * POWER_MARGIN;
+      maxCut = Math.max(maxCut, (cut * 180) / Math.PI);
+      tightest = Math.min(tightest, reach / asked);
+    }
+    out.push(`  L${level.id} ${level.name.padEnd(20)} fallback ${pct(fallbacks / 1500).padStart(6)}  max cut ${maxCut.toFixed(1)} deg  tightest headroom ${tightest.toFixed(2)}x`);
+  }
+
+  out.push('== square hit from a rolling cue ball: object travel / cue travel');
+  for (const arrival of [0.5, 0.787, 1.2, 1.55, 2.5]) {
+    out.push(`  at ${arrival.toFixed(3)} m/s: ${squareHitRatio(arrival).toFixed(3)}x`);
+  }
+
+  out.push('== recommended power, fired perfectly: pot rate and shot length, 60 layouts per level');
+  for (let index = 0; index < LEVELS.length; index++) {
+    const shots = Array.from({ length: 60 }, (_, i) => fireRecommended(90_000 + i * 104729, index));
+    const durations = shots.map((s) => s.duration).filter(Number.isFinite);
+    out.push(
+      `  L${LEVELS[index]!.id} potted ${shots.filter((s) => s.potted).length}/60  ` +
+        `shot median ${median(durations).toFixed(2)} s  longest ${Math.max(...durations).toFixed(2)} s  ` +
+        `cut short ${shots.filter((s) => !s.settled).length}`,
+    );
+  }
+
+  // Half a millimetre from the rail, so the cloth has no time to change the
+  // spin on the way in: a stun ball that slid 6 cm first arrives half-rolling.
+  out.push('== cushion, square hit at 1.0 m/s at the rail');
+  for (const [name, roll] of [['rolling', 1], ['stun', 0], ['draw', -0.5]] as const) {
+    let balls: Ball[] = [createBall(0, vec(0.4, TABLE.bounds.maxY - 0.0005), vec(0, 1), vec(0, roll))];
+    let before = balls;
+    for (let i = 0; i < 240; i++) {
+      before = balls;
+      const next = stepWorld(balls);
+      balls = next.balls;
+      if (next.events.some((e) => e.type === 'cushion')) break;
+    }
+    const inSpeed = len(before[0]!.vel);
+    const off = len(balls[0]!.vel) / inSpeed;
+    const settledSpeed = len(vec((5 * balls[0]!.vel.x + 2 * balls[0]!.roll.x) / 7, (5 * balls[0]!.vel.y + 2 * balls[0]!.roll.y) / 7));
+    out.push(`  ${name.padEnd(8)} straight off ${off.toFixed(3)}  settled ${(settledSpeed / inSpeed).toFixed(3)}`);
+  }
+
+  console.log(out.join('\n'));
+});
