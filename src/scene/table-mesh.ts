@@ -3,7 +3,8 @@
  * dimension: rails and facings sit exactly where the solver's cushion segments
  * are, the cloth runs on through each mouth over the shelf, and each hole opens
  * at the drop line the solver tests against, so what the player sees is what
- * the physics does.
+ * the physics does. Behind each cushion is a wooden rail cap with the sights
+ * set into it where the WPA puts them.
  */
 
 import {
@@ -16,21 +17,31 @@ import {
   Vector2,
   type Vector3,
 } from 'three';
+import { SIGHTS } from '../geometry/diamonds';
 import { TABLE } from '../geometry/table';
 import type { Segment } from '../geometry/table';
-import { type Vec2, add, dist, lerp, normalize, scale, sub } from '../geometry/vec2';
+import { type Vec2, add, dist, lerp, normalize, perp, scale, sub } from '../geometry/vec2';
 import { headingBetween, headingToRotationY, toWorld } from './coords';
 
 const CLOTH_COLOR = 0x1f6b4a;
 const RAIL_COLOR = 0x2c5f45;
 const FRAME_COLOR = 0x5a3a24;
+const CAP_COLOR = 0x6e4529;
+const SIGHT_COLOR = 0xefe8d6;
 const POCKET_COLOR = 0x08110d;
 
 const RAIL_HEIGHT = 0.045;
-const RAIL_DEPTH = 0.06;
+/** WPA: the cloth-covered cushion is 1 7/8" to 2" from its featherstrip to the nose. */
+const CUSHION_DEPTH = 0.05;
 const JAW_DEPTH = 0.02;
+/** WPA: a diamond-shaped sight is between 1 x 7/16" and 1 1/4 x 5/8". */
+const SIGHT_LENGTH = 0.028;
+const SIGHT_WIDTH = 0.013;
 const HOLE_SEGMENTS = 24;
-/** How far the wooden frame runs past the playing surface, each side. */
+/**
+ * How far the wooden frame runs past the playing surface, each side, and so
+ * the rail, cushion included: 5.5", inside the WPA's 4" to 7.5".
+ */
 export const FRAME_MARGIN = 0.14;
 
 export function buildTable(): Group {
@@ -58,12 +69,26 @@ export function buildTable(): Group {
   group.add(cloth);
 
   const railMaterial = new MeshStandardMaterial({ color: RAIL_COLOR, roughness: 0.7 });
+  const capMaterial = new MeshStandardMaterial({ color: CAP_COLOR, roughness: 0.6 });
   for (const rail of TABLE.rails) {
-    group.add(cushionMesh(rail, RAIL_DEPTH, RAIL_HEIGHT, railMaterial));
+    group.add(railBox(rail, 0, CUSHION_DEPTH, RAIL_HEIGHT, railMaterial));
+    group.add(railBox(rail, CUSHION_DEPTH, FRAME_MARGIN, RAIL_HEIGHT, capMaterial));
   }
   for (const jaw of TABLE.jaws) {
-    group.add(cushionMesh(jaw, JAW_DEPTH, RAIL_HEIGHT, railMaterial));
+    group.add(railBox(jaw, 0, JAW_DEPTH, RAIL_HEIGHT, railMaterial));
   }
+
+  // The sights, flush on the caps: diamond-shaped, lying along their rails.
+  const sightMaterial = new MeshStandardMaterial({ color: SIGHT_COLOR, roughness: 0.35 });
+  const sights = new Group();
+  sights.name = 'sights';
+  for (const { position, along } of SIGHTS) {
+    const tip = scale(along, SIGHT_LENGTH / 2);
+    const side = scale(perp(along), SIGHT_WIDTH / 2);
+    const outline = [add(position, tip), add(position, side), sub(position, tip), sub(position, side)];
+    sights.add(flatPolygon(outline, RAIL_HEIGHT + 0.0005, sightMaterial));
+  }
+  group.add(sights);
 
   const pocketMaterial = new MeshStandardMaterial({ color: POCKET_COLOR, roughness: 1 });
   const shelfMaterial = new MeshStandardMaterial({ color: CLOTH_COLOR, roughness: 0.95 });
@@ -107,20 +132,26 @@ function flatPolygon(points: readonly Vec2[], height: number, material: MeshStan
   return mesh;
 }
 
-/** A cushion segment as a box sitting on the outside of its collision line. */
-function cushionMesh(
+/**
+ * A box along a cushion segment, from `inner` to `outer` out beyond its
+ * collision line: from 0, the cushion, whose face is the collision line.
+ */
+function railBox(
   segment: Segment,
-  depth: number,
+  inner: number,
+  outer: number,
   height: number,
   material: MeshStandardMaterial,
 ): Mesh {
   const length = Math.hypot(segment.b.x - segment.a.x, segment.b.y - segment.a.y);
+  const depth = outer - inner;
   const mesh = new Mesh(new BoxGeometry(length, height, depth), material);
 
+  const out = (inner + outer) / 2;
   const midpoint = {
-    // Offset outward (against the normal) so the visible face is the collision line.
-    x: (segment.a.x + segment.b.x) / 2 - (segment.normal.x * depth) / 2,
-    y: (segment.a.y + segment.b.y) / 2 - (segment.normal.y * depth) / 2,
+    // Outward is against the normal, which faces the playing surface.
+    x: (segment.a.x + segment.b.x) / 2 - segment.normal.x * out,
+    y: (segment.a.y + segment.b.y) / 2 - segment.normal.y * out,
   };
   const position: Vector3 = toWorld(midpoint, height / 2);
   mesh.position.copy(position);

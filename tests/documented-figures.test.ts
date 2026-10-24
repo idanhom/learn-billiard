@@ -25,7 +25,7 @@ import { LEVELS, levelById } from '../src/game/levels';
 import { potWindow } from '../src/game/pot-window';
 import { cueSpeedForPower, recommendedPower } from '../src/game/power';
 import { ShotSession } from '../src/game/shot-session';
-import { analyseShot, fullness, objectDeparture } from '../src/geometry/shot';
+import { analyseShot, cutAngle, fullness, objectDeparture } from '../src/geometry/shot';
 import { PLAY_LENGTH } from '../src/geometry/table';
 import { add, fromAngle, len, scale, signedAngleBetween, vec } from '../src/geometry/vec2';
 import { type CushionImpulse, resolveCushion } from '../src/physics/collision';
@@ -261,5 +261,40 @@ describe('scoring on the pocket', () => {
     const rail = medianAimRoom(6);
     expect(rail).toBeGreaterThan(0.07);
     expect(rail).toBeLessThan(0.15);
+  });
+});
+
+describe('the diamonds, taken to a bigger table', () => {
+  /**
+   * The same diamond coordinates on a bigger table scale the positions but
+   * not the balls, so the cut moves. Over the generated layouts of levels 1
+   * to 7, as the median and the ninetieth percentile of the change, in
+   * degrees. The README's "a third of a degree" on an 8-foot table, "half a
+   * degree" on a 9-foot, and "over a degree for one shot in ten" there.
+   */
+  function cutChange(factor: number): { median: number; p90: number } {
+    const changes: number[] = [];
+    for (const level of LEVELS.slice(0, 7)) {
+      for (let i = 0; i < 60; i++) {
+        const { layout } = generateShot(level, 777_000 + i * 7919);
+        const target = new ShotSession(layout).analysis.target;
+        const here = cutAngle(layout.cue, layout.object, target);
+        const there = cutAngle(scale(layout.cue, factor), scale(layout.object, factor), scale(target, factor));
+        changes.push((Math.abs(there - here) * 180) / Math.PI);
+      }
+    }
+    changes.sort((a, b) => a - b);
+    const at = (p: number): number => changes[Math.floor(p * (changes.length - 1))]!;
+    return { median: at(0.5), p90: at(0.9) };
+  }
+
+  test('move the cut by a third of a degree on an 8-foot table, half a degree on a 9-foot', () => {
+    const eight = cutChange(92 / 78);
+    expect(eight.median).toBeGreaterThan(0.25);
+    expect(eight.median).toBeLessThan(0.42);
+    const nine = cutChange(100 / 78);
+    expect(nine.median).toBeGreaterThan(0.38);
+    expect(nine.median).toBeLessThan(0.6);
+    expect(nine.p90).toBeGreaterThan(1);
   });
 });

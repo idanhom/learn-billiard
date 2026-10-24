@@ -415,6 +415,26 @@ you something this table then contradicts.
 
 Angles transfer to a real table. Cue ball control does not.
 
+## Diamonds
+
+The rail caps carry the eighteen sights of the WPA's specification (section
+6): three between each pair of pockets, an eighth of the playing length apart,
+each centred 3 11/16" (93.7 mm) back from the cushion nose. Lines between
+opposite sights divide the playing surface into squares, eight along and four
+across, so a diamond is 24.75 cm on this 7-foot table.
+
+The shot panel says where the balls start in diamonds, so a layout can be set
+up on a real table: counted from the bottom-left corner pocket as the overhead
+view shows the table on a wide screen, first along the long rails, 0 to 8,
+then across, 0 to 4. A tenth of a diamond is 2.5 cm here, a little under a
+ball's radius. On a bigger table the same diamonds lay the shot out larger,
+but the balls do not grow with it, so the cut comes out different: by a third
+of a degree for a typical shot on an 8-foot table and half a degree on a
+9-foot, and by over a degree for one shot in ten on a 9-foot. That is more
+than the aim a shot here allows, so set it up on a 7-foot table to play the
+shot you saw. The coordinates are left off on a phone, where the panel has no
+room for them.
+
 ## Pockets
 
 The pockets follow the WPA's equipment specification (section 9). A corner

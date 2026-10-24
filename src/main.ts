@@ -7,6 +7,7 @@
  */
 
 import type { ClothPreset } from './constants';
+import { formatDiamonds } from './geometry/diamonds';
 import { FRACTIONS, type FractionName } from './geometry/fractions';
 import { firstTouch, fullness as fullnessOf } from './geometry/shot';
 import { type Vec2, add, angleOf, fromAngle, signedAngleBetween } from './geometry/vec2';
@@ -521,6 +522,11 @@ function frame(now: number): void {
     cutSide: analysis.cutSide,
     fullness: fullnessOf(analysis.cutAngle),
     aimOverlap: overlapOfLine(),
+    // Not while a drill is unanswered: after a flash, they would put the balls back.
+    diamonds:
+      drill && !drill.result
+        ? null
+        : { cue: formatDiamonds(session.layout.cue), object: formatDiamonds(session.layout.object) },
     call: session.call,
     calling: aiming && !drill && !campaign.guides.readout,
     guides: campaign.guides,

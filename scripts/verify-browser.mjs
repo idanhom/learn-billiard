@@ -126,6 +126,20 @@ check(
 const initial = await state();
 check('starts in the aiming phase', initial.phase === 'aiming', initial.phase);
 check('starts on level 1 at tier 0', initial.levelId === 1 && initial.tier === 0);
+
+// Where the balls start, in diamonds, for setting the layout up at a table.
+const diamonds = await page.evaluate(() => {
+  const line = document.querySelector('#hud-shot .hud-diamonds')?.textContent ?? '';
+  const [cue, object] = window.__debug.state().balls;
+  const at = (p) => `${((p.x + 0.99) / 0.2475).toFixed(1)}, ${((p.y + 0.495) / 0.2475).toFixed(1)}`;
+  return { line, expected: `cue ${at(cue.pos)} \u00b7 object ${at(object.pos)}` };
+});
+check('the shot panel gives where the balls start, in diamonds', diamonds.line === diamonds.expected, JSON.stringify(diamonds));
+await page.evaluate(() => window.__debug.setView('overhead'));
+await sleep(200);
+await page.screenshot({ path: `${OUT}diamonds-overhead.png` });
+await page.evaluate(() => window.__debug.setView('behind'));
+await sleep(100);
 check('starts with every guide showing', initial.guides.objectPath && initial.guides.ghostBall);
 check('a fresh start carries no recovery notice', initial.notice === null, String(initial.notice));
 // Space alone must not be the answer: the cue is dealt off the line.

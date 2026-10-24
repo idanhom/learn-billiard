@@ -81,6 +81,11 @@ export interface HudState {
    * line misses the object ball.
    */
   readonly aimOverlap: { readonly fullness: number; readonly side: 'left' | 'right' } | null;
+  /**
+   * Where the balls start, in diamonds, to set the layout up on a real table.
+   * Null while a perception drill is still to be answered.
+   */
+  readonly diamonds: { readonly cue: string; readonly object: string } | null;
   /** The fraction called for this shot, and whether calling one is offered now. */
   readonly call: FractionName | null;
   readonly calling: boolean;
@@ -570,7 +575,8 @@ export class Hud {
         `<div class="hud-label">This shot</div><div class="hud-big">${left}</div>` +
           `<div class="hud-sub">${hint}</div>` +
           (state.guides.overlap ? overlapPicture(state.aimOverlap) : '') +
-          (state.calling ? callButtons(state.call) : ''),
+          (state.calling ? callButtons(state.call) : '') +
+          diamondLine(state.diamonds),
       );
       return;
     }
@@ -580,7 +586,8 @@ export class Hud {
     this.#writeShot(
       '<div class="hud-label">This shot</div>' +
         `<div class="hud-big">${cut}&deg; ${side}</div>` +
-        `<div class="hud-sub">${(state.fullness * 100).toFixed(0)}% full ball</div>`,
+        `<div class="hud-sub">${(state.fullness * 100).toFixed(0)}% full ball</div>` +
+        diamondLine(state.diamonds),
     );
   }
 
@@ -674,6 +681,16 @@ function pocketShareLabel(entry: HistoryEntry): string {
   const side = entry.cutSide === 'straight' ? (share > 0 ? 'left' : 'right') : share > 0 ? 'thick' : 'thin';
   const used = Math.abs(share);
   return `${used <= 1 ? percent(used) : `${used.toFixed(1)}&times;`} ${side}`;
+}
+
+/** Where the balls start, in diamonds from the bottom-left corner pocket. */
+function diamondLine(diamonds: HudState['diamonds']): string {
+  if (!diamonds) return '';
+  return (
+    '<div class="hud-sub hud-extra hud-diamonds" title="In diamonds from the bottom-left corner pocket, ' +
+    'as the overhead view shows it: along the long rail, then across">' +
+    `cue ${diamonds.cue} &middot; object ${diamonds.object}</div>`
+  );
 }
 
 function renderMilestone(milestone: Milestone): string {
