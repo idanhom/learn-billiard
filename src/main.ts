@@ -20,7 +20,7 @@ import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session
 import { ADVANCE_REQUIRED } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
 import { PoolScene } from './scene/pool-scene';
-import { Hud, type Milestone } from './ui/hud';
+import { Hud, type Milestone, type Notice } from './ui/hud';
 
 /** Seconds of held Space to reach full power. */
 const CHARGE_SECONDS = 1.1;
@@ -40,13 +40,10 @@ const seed = Math.floor(Date.now() % 1_000_000);
 const campaign = new Campaign(createProgressStore(browserStorage()), { seed });
 
 const hud = new Hud(hudRoot, {
-  onReset: () => {
-    campaign.resetProgress();
-    notice = 'Progress reset.';
-    startShot();
-  },
+  onReset: () => resetProgress(),
   onSelectLevel: (id: number) => selectLevel(id),
   onContinue: () => continueOn(),
+  returnFocus: () => canvas.focus(),
 });
 
 const settingsStore = createSettingsStore(browserStorage());
@@ -69,7 +66,15 @@ let practice = campaign.retrying;
 let milestone: Milestone | undefined;
 let chargeSeconds = 0;
 let evaluations = 0;
-let notice = campaign.notice;
+let noticesRaised = 0;
+/** A save that could not be loaded is news nobody should miss, so it stays up. */
+let notice: Notice | undefined =
+  campaign.notice === undefined ? undefined : { text: campaign.notice, id: ++noticesRaised, sticky: true };
+
+/** Say something once. It fades on its own; the HUD decides when. */
+function announce(text: string): void {
+  notice = { text, id: ++noticesRaised, sticky: false };
+}
 /** Fixed for the life of a layout, so there is no reason to re-derive it per frame. */
 let objectBallNumber = ballNumberFor(session.layout.id);
 
@@ -84,7 +89,7 @@ function cycleSpeed(): void {
   settings = { ...settings, timeScale: nextTimeScale(settings.timeScale) };
   settingsStore.save(settings);
   const { timeScale } = settings;
-  notice = timeScale === 1 ? 'Full speed.' : `Slow motion: ${timeScale === 0.5 ? 'half' : 'quarter'} speed.`;
+  announce(timeScale === 1 ? 'Full speed.' : `Slow motion: ${timeScale === 0.5 ? 'half' : 'quarter'} speed.`);
 }
 
 /**
@@ -97,7 +102,7 @@ function cycleCloth(): void {
   settings = { ...settings, cloth: nextCloth(settings.cloth) };
   settingsStore.save(settings);
   session.setCloth(settings.cloth);
-  notice = `${CLOTH_LABELS[settings.cloth]} cloth.`;
+  announce(`${CLOTH_LABELS[settings.cloth]} cloth.`);
 }
 
 function newSession(): ShotSession {
@@ -141,6 +146,16 @@ function nextShot(): void {
   startShot();
 }
 
+/** Back to the first level with nothing recorded — the HUD asks first. */
+function resetProgress(): void {
+  if (session.phase === 'simulating') return;
+  campaign.resetProgress();
+  // The record of recent shots goes with the progress it was measured against.
+  history.clear();
+  announce('Progress reset.');
+  startShot();
+}
+
 function selectLevel(id: number): void {
   if (session.phase === 'simulating') return;
   if (!campaign.selectLevel(id)) return;
@@ -180,7 +195,7 @@ function recordOutcome(outcome: ShotOutcome): void {
     // and the calibration starts afresh for the same reason.
     history.clear();
   } else if (event.advancedTier) {
-    notice = `Tier ${campaign.tier}: one more guide comes away.`;
+    announce(`Tier ${campaign.tier}: one more guide comes away.`);
   }
 }
 
@@ -344,10 +359,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       }
       return settings.timeScale;
     },
-    resetProgress: () => {
-      campaign.resetProgress();
-      startShot();
-    },
+    resetProgress,
     setView: (view: 'behind' | 'overhead') => scene.setView(view),
     frameCost: () => ({
       samples: frameCost.samples,
@@ -389,7 +401,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       stats: campaign.stats,
       exam: campaign.exam ?? null,
       examBest: campaign.examBest,
-      notice: notice ?? null,
+      notice: notice?.text ?? null,
       evaluations,
       practice,
       milestone: milestone ?? null,

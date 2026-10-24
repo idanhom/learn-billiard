@@ -604,6 +604,73 @@ check(
   `${JSON.stringify(examAgain.exam)} best=${examAgain.examBest}`,
 );
 
+// The HUD hands the keyboard back. A clicked button used to keep focus, so the
+// next Space pressed the button again instead of charging the cue.
+await page.locator('.hud-level[data-level="2"]').click();
+await sleep(200);
+check(
+  'clicking a level hands the keyboard back to the table',
+  await page.evaluate(() => document.activeElement?.id === 'game'),
+  await page.evaluate(() => document.activeElement?.tagName ?? 'none'),
+);
+await page.keyboard.down('Space');
+await sleep(150);
+const spaceAfterClick = await state();
+await page.keyboard.up('Space');
+check(
+  'so Space charges the cue rather than pressing the button again',
+  spaceAfterClick.phase === 'charging' && spaceAfterClick.levelId === 2,
+  `${spaceAfterClick.phase} level=${spaceAfterClick.levelId}`,
+);
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+
+// Erasing every level's record takes two clicks, and the first only asks.
+const beforeReset = await state();
+await page.locator('[data-action="reset"]').click();
+await sleep(150);
+const asked = await state();
+check(
+  'Reset progress asks before it erases anything',
+  asked.stats.attempts === beforeReset.stats.attempts &&
+    asked.levelId === beforeReset.levelId &&
+    (await page.locator('[data-action="reset-confirm"]').count()) === 1,
+  `attempts ${beforeReset.stats.attempts} -> ${asked.stats.attempts}`,
+);
+await page.locator('[data-action="reset-cancel"]').click();
+await sleep(150);
+const kept = await state();
+check(
+  'and Keep leaves it all where it was',
+  kept.stats.attempts === beforeReset.stats.attempts && (await page.locator('[data-action="reset"]').count()) === 1,
+);
+// Neither button selects a level, which is the one HUD action that already
+// refocused the canvas on its own — so this is the check that the HUD as a
+// whole hands the keyboard back, not just the level list.
+check(
+  'every HUD button hands the keyboard back, not just the level list',
+  await page.evaluate(() => document.activeElement?.id === 'game'),
+  await page.evaluate(() => document.activeElement?.tagName ?? 'none'),
+);
+await page.locator('[data-action="reset"]').click();
+await page.locator('[data-action="reset-confirm"]').click();
+await sleep(150);
+const erased = await state();
+check(
+  'Erase resets it, and takes the recent shots with it',
+  erased.levelId === 1 && erased.stats.attempts === 0 && erased.historyLength === 0,
+  `level=${erased.levelId} attempts=${erased.stats.attempts} history=${erased.historyLength}`,
+);
+
+// A notice is news, not furniture: it goes by itself.
+const noticeShown = () =>
+  page.evaluate(() => getComputedStyle(document.getElementById('hud-notice')).display !== 'none');
+await page.locator('#game').focus();
+await page.keyboard.press('KeyC');
+await sleep(300);
+check('a notice is shown', await noticeShown());
+await sleep(4300);
+check('and fades by itself after about four seconds', !(await noticeShown()));
+
 // A clean aiming shot of a half-ball cut, guides up, numbered object ball.
 // From a fresh load, so no stale notice or report is left on screen.
 await page.evaluate(() => window.localStorage.clear());

@@ -258,6 +258,16 @@ body {
   border-color: rgba(224, 108, 117, 0.5);
 }
 
+.hud-reset.danger {
+  color: var(--bad);
+  border-color: rgba(224, 108, 117, 0.6);
+}
+
+.hud-confirm {
+  margin-bottom: 5px;
+  color: var(--ink);
+}
+
 #hud-history {
   min-width: 190px;
   max-width: 240px;

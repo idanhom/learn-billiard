@@ -35,6 +35,19 @@ export type Milestone =
       readonly best: number | null;
     };
 
+/** Something worth saying once, at the top of the screen. */
+export interface Notice {
+  readonly text: string;
+  /** Moves on with every notice raised, so the same words twice still show twice. */
+  readonly id: number;
+  /** Stays until dismissed, for news that must not slip by unseen. */
+  readonly sticky: boolean;
+}
+
+/** How long a passing notice stays up, and how much of that is its fade. */
+const NOTICE_SECONDS = 4;
+const NOTICE_FADE_SECONDS = 0.6;
+
 export interface HudLevelEntry {
   readonly id: number;
   readonly name: string;
@@ -71,7 +84,7 @@ export interface HudState {
   /** The shot in play is a retry of a layout already played: practice, not counted. */
   readonly practice: boolean;
   readonly milestone: Milestone | undefined;
-  readonly notice: string | undefined;
+  readonly notice: Notice | undefined;
   readonly view: string;
   readonly outcome: ShotOutcome | undefined;
   /** Most recent first. */
@@ -87,6 +100,8 @@ export interface HudActions {
   onReset(): void;
   onSelectLevel(id: number): void;
   onContinue(): void;
+  /** Hand the keyboard back to the table. Called after every click on the HUD. */
+  returnFocus(): void;
 }
 
 const TIER_NAMES = ['full guides', 'no pocket line', 'no ghost ball', 'no guides'];
@@ -116,6 +131,12 @@ export class Hud {
   #renderedMarker = '';
   #renderedMilestone = '';
   #reportShown = false;
+  /** Reset progress has been pressed once, and is waiting to be confirmed. */
+  #confirmingReset = false;
+  #noticeId = -1;
+  #noticeShownAt = 0;
+  #noticeSticky = false;
+  #noticeShown = false;
 
   constructor(root: HTMLElement, actions: HudActions) {
     root.innerHTML = '';
@@ -160,17 +181,32 @@ export class Hud {
       'no english, no throw between balls, no sidespin off the cushions.</div>';
 
     this.#levels.addEventListener('click', (event) => {
-      const target = (event.target as HTMLElement).closest('[data-level]');
-      if (target instanceof HTMLElement) {
+      const target = (event.target as HTMLElement).closest('[data-level], [data-action]');
+      if (!(target instanceof HTMLElement)) return;
+      if (target.dataset.level !== undefined) {
         this.#actions.onSelectLevel(Number(target.dataset.level));
+        return;
       }
+      // Erasing every level's record is not something one click should do.
+      // The first press only asks; the answer is what acts.
+      const action = target.dataset.action;
+      if (action === 'reset') this.#confirmingReset = true;
+      if (action === 'reset-cancel') this.#confirmingReset = false;
+      if (action === 'reset-confirm') {
+        this.#confirmingReset = false;
+        this.#actions.onReset();
+      }
+      this.#renderedLevels = '';
     });
-    this.#notice.addEventListener('click', () => {
-      this.#notice.style.display = 'none';
-    });
+    this.#notice.addEventListener('click', () => this.#hideNotice());
     this.#milestone.addEventListener('click', (event) => {
       if ((event.target as HTMLElement).closest('.hud-continue')) this.#actions.onContinue();
     });
+    // Whatever was clicked, the keyboard belongs to the table afterwards. A
+    // clicked button otherwise keeps focus, and the next Space presses it
+    // again instead of charging the cue — on Reset progress, of all buttons.
+    // On the root, so it runs after every panel's own handler.
+    root.addEventListener('click', () => this.#actions.returnFocus());
   }
 
   update(state: HudState): void {
@@ -196,11 +232,38 @@ export class Hud {
       this.#report.style.display = 'none';
     }
 
-    if (state.notice && this.#notice.dataset.shown !== state.notice) {
-      this.#notice.dataset.shown = state.notice;
-      this.#notice.style.display = '';
-      this.#notice.innerHTML = `<div class="hud-sub">${escape(state.notice)} &middot; click to dismiss</div>`;
+    this.#renderNotice(state.notice);
+  }
+
+  /**
+   * A notice is news, not furniture: it fades on its own after a few seconds
+   * unless it is the sort that must not be missed, like a save that could not
+   * be loaded. Either kind goes as soon as it is clicked or withdrawn.
+   */
+  #renderNotice(notice: Notice | undefined): void {
+    if (!notice) {
+      if (this.#noticeShown) this.#hideNotice();
+      return;
     }
+    if (notice.id !== this.#noticeId) {
+      this.#noticeId = notice.id;
+      this.#noticeShownAt = performance.now();
+      this.#noticeSticky = notice.sticky;
+      this.#noticeShown = true;
+      this.#notice.style.display = '';
+      this.#notice.style.opacity = '';
+      this.#notice.innerHTML = `<div class="hud-sub">${escape(notice.text)} &middot; click to dismiss</div>`;
+    }
+    if (!this.#noticeShown || this.#noticeSticky) return;
+
+    const left = NOTICE_SECONDS - (performance.now() - this.#noticeShownAt) / 1000;
+    if (left <= 0) this.#hideNotice();
+    else if (left < NOTICE_FADE_SECONDS) this.#notice.style.opacity = (left / NOTICE_FADE_SECONDS).toFixed(2);
+  }
+
+  #hideNotice(): void {
+    this.#noticeShown = false;
+    this.#notice.style.display = 'none';
   }
 
   /**
@@ -336,7 +399,9 @@ export class Hud {
   }
 
   #renderLevels(state: HudState): void {
-    const key = state.levels.map((l) => `${l.id}${l.current ? 'c' : ''}${l.completed ? 'x' : ''}`).join();
+    const key =
+      state.levels.map((l) => `${l.id}${l.current ? 'c' : ''}${l.completed ? 'x' : ''}`).join() +
+      (this.#confirmingReset ? '?' : '');
     if (key === this.#renderedLevels) return;
     this.#renderedLevels = key;
 
@@ -349,16 +414,14 @@ export class Hud {
       )
       .join('');
 
-    this.#levels.innerHTML =
-      '<div class="hud-label">Levels</div>' +
-      `<div class="hud-level-list">${rows}</div>` +
-      '<button type="button" class="hud-reset">Reset progress</button>';
+    const reset = this.#confirmingReset
+      ? '<div class="hud-sub hud-confirm">Erase every level\'s progress?</div>' +
+        '<button type="button" class="hud-reset danger" data-action="reset-confirm">Erase</button> ' +
+        '<button type="button" class="hud-reset" data-action="reset-cancel">Keep</button>'
+      : '<button type="button" class="hud-reset" data-action="reset">Reset progress</button>';
 
-    const reset = this.#levels.querySelector('.hud-reset');
-    reset?.addEventListener('click', (event) => {
-      event.stopPropagation();
-      this.#actions.onReset();
-    });
+    this.#levels.innerHTML =
+      '<div class="hud-label">Levels</div>' + `<div class="hud-level-list">${rows}</div>` + reset;
   }
 }
 
