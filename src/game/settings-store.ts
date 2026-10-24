@@ -43,6 +43,8 @@ export interface Settings {
   readonly tableFeet: TableFeet;
   /** The table's sounds: the strike, the balls, the cushions, the pockets. */
   readonly sound: boolean;
+  /** Deal the next shot by itself a few seconds after the report. */
+  readonly autoNext: boolean;
 }
 
 /** The viewing distances on offer, and the step between them, in metres. */
@@ -72,6 +74,7 @@ export function defaultSettings(): Settings {
     viewingDistance: VIEWING_DISTANCE.default,
     tableFeet: 7,
     sound: true,
+    autoNext: false,
   };
 }
 
@@ -125,7 +128,13 @@ export function validateSettings(raw: unknown): Settings | undefined {
     sound = record.sound;
   }
 
-  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance, tableFeet, sound };
+  let autoNext = false;
+  if (record.autoNext !== undefined) {
+    if (typeof record.autoNext !== 'boolean') return undefined;
+    autoNext = record.autoNext;
+  }
+
+  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance, tableFeet, sound, autoNext };
 }
 
 export function createSettingsStore(

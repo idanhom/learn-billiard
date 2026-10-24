@@ -1063,6 +1063,32 @@ await page.keyboard.press('Escape');
 await sleep(100);
 check('Escape stops a replay part way', !(await state()).replaying);
 
+// A faster loop: once a shot is scored, Space or Enter deals the next one, and
+// the next shot can deal itself.
+for (const key of ['Space', 'Enter']) {
+  await playOne();
+  const before = await state();
+  await page.focus('#game');
+  await page.keyboard.down(key);
+  await sleep(80);
+  await page.keyboard.up(key);
+  await sleep(150);
+  const after = await state();
+  check(
+    `${key} after a scored shot deals the next one, and charges nothing`,
+    before.phase === 'evaluated' && after.shotId !== before.shotId && after.phase === 'aiming' && after.power === 0,
+    `${before.phase} ${before.shotId} -> ${after.phase} ${after.shotId} power ${after.power}`,
+  );
+}
+await page.evaluate(() => window.__debug.toggleAutoNext());
+await playOne();
+const counting = await state();
+await sleep(1000);
+const countdown = await page.textContent('#hud-report');
+await page.waitForFunction((id) => window.__debug.state().shotId !== id, counting.shotId, { timeout: 8000 });
+check('with the next shot dealing itself, the report counts down and the shot comes', /Next shot in \d s/.test(countdown), countdown);
+await page.evaluate(() => window.__debug.toggleAutoNext());
+
 check(
   'without a touch screen the power bar stays, and the touch strip stays away',
   (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),

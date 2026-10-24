@@ -119,6 +119,9 @@ export interface HudState {
   readonly sound: boolean;
   /** The shot just played is being shown again. */
   readonly replaying: boolean;
+  /** Whether the next shot deals itself, and in how many seconds, while it is counting down. */
+  readonly autoNext: boolean;
+  readonly autoNextIn: number | null;
   /** The commit routine, where it runs: down on the line or still standing. */
   readonly routine: { readonly down: boolean } | null;
   /** How it went for the shot just played: time to shoot, and how often the player stood back up. */
@@ -166,6 +169,7 @@ export interface HudActions {
   onViewingDistance(steps: number): void;
   onToggleSound(): void;
   onReplay(): void;
+  onToggleAutoNext(): void;
   /** Get down on the line, or stand back up: the commit routine. */
   onGetDown(): void;
   /** The player's read of their own miss, or null to skip it. */
@@ -189,6 +193,7 @@ export class Hud {
   readonly #status: HTMLElement;
   readonly #eyeDistance: HTMLElement;
   readonly #soundToggle: HTMLElement;
+  readonly #autoNextToggle: HTMLElement;
   readonly #shot: HTMLElement;
   readonly #levels: HTMLElement;
   readonly #root: HTMLElement;
@@ -317,15 +322,18 @@ export class Hud {
       '<b class="hud-eye-distance"></b> from the screen ' +
       '<button type="button" class="hud-call" data-eye="-1" aria-label="Nearer">&minus;</button> ' +
       '<button type="button" class="hud-call" data-eye="1" aria-label="Further">+</button></div>' +
-      '<div class="hud-keys">Sound <button type="button" class="hud-call" data-sound aria-pressed="true">on</button></div>' +
+      '<div class="hud-keys">Sound <button type="button" class="hud-call" data-sound aria-pressed="true">on</button> ' +
+      '&middot; Next shot by itself <button type="button" class="hud-call" data-auto-next aria-pressed="false">off</button></div>' +
       '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
       'no english, no sidespin off the cushions. The ghost ball allows for throw.</div>';
     this.#eyeDistance = this.#help.querySelector('.hud-eye-distance') as HTMLElement;
     this.#soundToggle = this.#help.querySelector('[data-sound]') as HTMLElement;
+    this.#autoNextToggle = this.#help.querySelector('[data-auto-next]') as HTMLElement;
     this.#help.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest('[data-eye]');
       if (button instanceof HTMLElement) this.#actions.onViewingDistance(Number(button.dataset.eye));
       if ((event.target as HTMLElement).closest('[data-sound]')) this.#actions.onToggleSound();
+      if ((event.target as HTMLElement).closest('[data-auto-next]')) this.#actions.onToggleAutoNext();
     });
 
     this.#levels.addEventListener('click', (event) => {
@@ -414,11 +422,8 @@ export class Hud {
   update(state: HudState): void {
     // A perception drill takes no shot, so the controls for one go with it.
     this.#root.classList.toggle('drilling', state.drill !== null);
-    const sound = state.sound ? 'on' : 'off';
-    if (this.#soundToggle.textContent !== sound) {
-      this.#soundToggle.textContent = sound;
-      this.#soundToggle.setAttribute('aria-pressed', String(state.sound));
-    }
+    writeToggle(this.#soundToggle, state.sound);
+    writeToggle(this.#autoNextToggle, state.autoNext);
     const eye = `${Math.round(state.viewingDistance * 100)} cm`;
     if (this.#eyeDistance.textContent !== eye) this.#eyeDistance.textContent = eye;
     this.#renderToolbar(state);
@@ -430,7 +435,7 @@ export class Hud {
     this.#renderMilestone(state);
 
     if (state.drill) {
-      const html = renderDrill(state.drill, state.pocketAllowance);
+      const html = renderDrill(state.drill, state.pocketAllowance, state.autoNextIn);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
         this.#report.innerHTML = html;
@@ -444,7 +449,15 @@ export class Hud {
         ? '<div class="hud-sub">Replay, from above at a quarter speed &middot; <b>Esc</b> stops it</div>'
         : state.estimate?.asking
           ? estimatePrompt(state.estimate.straight)
-          : renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined, state.routineLog, state.estimate);
+          : renderReport(
+              state.outcome,
+              state.exam,
+              state.practice,
+              state.milestone !== undefined,
+              state.routineLog,
+              state.estimate,
+              state.autoNextIn,
+            );
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
         this.#report.innerHTML = html;
@@ -753,6 +766,7 @@ function renderReport(
   held: boolean,
   routine: HudState['routineLog'],
   estimate: HudState['estimate'],
+  autoNextIn: number | null,
 ): string {
   const verdict = verdictFor(outcome, exam !== undefined);
 
@@ -799,7 +813,8 @@ function renderReport(
       : '<div class="hud-sub hud-note">' +
         '<button type="button" class="hud-call" data-replay>Replay</button><kbd class="kbd-hint"> P</kbd> &middot; ' +
         '<b>Retry</b><kbd class="kbd-hint"> R</kbd> this layout &middot; ' +
-        '<b>Next</b><kbd class="kbd-hint"> N</kbd> for another</div>')
+        '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</div>' +
+        autoNextLine(autoNextIn))
   );
 }
 
@@ -846,10 +861,11 @@ function callButtons(call: FractionName | null): string {
 }
 
 /** A perception drill: what to do, then how it went. */
-function renderDrill(drill: NonNullable<HudState['drill']>, allowance: number): string {
+function renderDrill(drill: NonNullable<HudState['drill']>, allowance: number, autoNextIn: number | null): string {
   const next =
-    '<div class="hud-sub hud-note"><b>Next</b><kbd class="kbd-hint"> N</kbd> for another &middot; ' +
-    '<b>Retry</b><kbd class="kbd-hint"> R</kbd> this one again</div>';
+    '<div class="hud-sub hud-note"><b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another &middot; ' +
+    '<b>Retry</b><kbd class="kbd-hint"> R</kbd> this one again</div>' +
+    autoNextLine(autoNextIn);
   if (drill.kind === 'flash' && drill.stage === 'showing') {
     return '<div class="hud-label">Read the angle</div><div class="hud-sub">Look now: the balls go in a moment.</div>';
   }
@@ -880,6 +896,19 @@ function renderDrill(drill: NonNullable<HudState['drill']>, allowance: number): 
       : `Off by ${(result.off * 100).toFixed(1)} cm: the line through it uses ` +
         `${Number.isFinite(result.used) ? ofThePocket(result.used) : 'none of the pocket'}, ${percent(allowance)} allowed`;
   return `${verdict}<div class="hud-sub">${detail}</div>${next}`;
+}
+
+/** The countdown to the next shot dealing itself, while there is one. */
+function autoNextLine(seconds: number | null): string {
+  return seconds === null ? '' : `<div class="hud-sub hud-note">Next shot in ${seconds} s</div>`;
+}
+
+/** An on/off switch in the controls panel, written only when it changes. */
+function writeToggle(button: HTMLElement, on: boolean): void {
+  const text = on ? 'on' : 'off';
+  if (button.textContent === text) return;
+  button.textContent = text;
+  button.setAttribute('aria-pressed', String(on));
 }
 
 /** Before the report: how did you hit it? */

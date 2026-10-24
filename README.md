@@ -47,7 +47,7 @@ by that.
 | `.` | cycle full / half / quarter speed |
 | `C` | cycle fast / normal / slow cloth |
 | `R` | retry the same layout |
-| `N` | next shot |
+| `N` | next shot; `Space` or `Enter` too, once a shot is scored |
 | `1`–`9` | jump to a level |
 | `F` | call the fraction the shot needs |
 | `G` | get down on the line, or stand back up (last tier and exam) |
@@ -69,7 +69,12 @@ drops into the hole rather than vanishing at its edge.
 
 Once a shot is scored, the table keeps where each ball went, drawn on the
 cloth, with the line the object ball needed dashed beside it; it reads best
-from overhead. `P` (or Replay in the report) plays the shot again from
+from overhead. Once a shot is scored, `Space` or `Enter` deals the next one, so a run of shots
+needs no reaching for `N`. Under `?`, Next shot by itself deals it three
+seconds after the report instead, counting down in the report; a replay, an
+open panel or a summary card holds it.
+
+`P` (or Replay in the report) plays the shot again from
 overhead at a quarter speed. The solver runs on a fixed tick, so the replay is
 the same shot, not a reconstruction of it. While the self-estimate is asking,
 both wait, since the dashed line would answer it.

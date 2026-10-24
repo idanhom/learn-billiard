@@ -37,6 +37,8 @@ export interface InputHandlers {
   onToggleSound(): void;
   /** P: the shot just played, again, from overhead and slowed down. */
   onReplay(): void;
+  /** Enter: on to the next shot, once this one is done. Space does the same then, through `onChargeStart`. */
+  onAdvance(): void;
 }
 
 /**
@@ -170,6 +172,11 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
       case 'KeyP':
         if (event.repeat) return;
         handlers.onReplay();
+        return;
+      case 'Enter':
+      case 'NumpadEnter':
+        if (event.repeat) return;
+        handlers.onAdvance();
         return;
       case 'Escape':
         if (charging) {

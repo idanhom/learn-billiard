@@ -75,6 +75,7 @@ const hud = new Hud(hudRoot, {
   onViewingDistance: (steps) => changeViewingDistance(steps),
   onToggleSound: () => toggleSound(),
   onReplay: () => startReplay(),
+  onToggleAutoNext: () => toggleAutoNext(),
   returnFocus: () => canvas.focus(),
   onOpenTable: () => tablePanel.toggle(),
 });
@@ -110,6 +111,13 @@ let heard = 0;
  */
 let replay: { readonly session: ShotSession; readonly view: CameraView; heard: number } | undefined;
 const REPLAY_SPEED = 0.25;
+/**
+ * When the report of the shot in play went up, for dealing the next one by
+ * itself; null when there is nothing to count down from, or the player has
+ * taken it over by replaying the shot.
+ */
+let reportShownAt: number | null = null;
+const AUTO_NEXT_SECONDS = 3;
 let session = newSession();
 routine = routineActive() ? new Routine(clock()) : undefined;
 drill = newDrill();
@@ -249,6 +257,7 @@ function newSession(): ShotSession {
 
 function startShot(): void {
   stopReplay();
+  reportShownAt = null;
   session = newSession();
   practice = campaign.retrying;
   milestone = undefined;
@@ -289,6 +298,7 @@ function placeDrill(point: Vec2): void {
 /** A drill answered counts like a shot: qualifying if right, and never a pot. */
 function recordDrill(correct: boolean): void {
   evaluations++;
+  reportShownAt = clock();
   const level = campaign.level;
   handleEvent(campaign.record({ qualifying: correct, pottedTarget: false }), level);
 }
@@ -297,6 +307,29 @@ function recordDrill(correct: boolean): void {
 function answerEstimate(said: Estimate | null): void {
   if (!estimate?.asking) return;
   estimate = { ...estimate, asking: false, said };
+  reportShownAt = clock();
+}
+
+/** The shot, or the drill, is done and reported: Space, Enter or the countdown move on. */
+function readyForNext(): boolean {
+  if (estimate?.asking) return false;
+  if (drill) return drill.result !== undefined;
+  return session.phase === 'evaluated';
+}
+
+/** How long until the next shot deals itself, or null when it will not. */
+function autoNextIn(): number | null {
+  if (!settings.autoNext || reportShownAt === null || milestone || replay || tablePanel.isOpen || !readyForNext()) {
+    return null;
+  }
+  return Math.max(0, AUTO_NEXT_SECONDS - (clock() - reportShownAt));
+}
+
+function toggleAutoNext(): void {
+  settings = { ...settings, autoNext: !settings.autoNext };
+  settingsStore.save(settings);
+  reportShownAt = readyForNext() ? clock() : null;
+  announce(settings.autoNext ? 'The next shot deals itself after the report.' : 'The next shot waits for you.');
 }
 
 /**
@@ -363,6 +396,7 @@ function recordOutcome(outcome: ShotOutcome): void {
     const actual = estimateOf(signedShare(outcome.pocketUsed, outcome.aimError.side));
     estimate = { asking: true, said: null, actual, straight: outcome.cutSide === 'straight' };
   }
+  if (!estimate?.asking) reportShownAt = clock();
   const event = campaign.record(outcome);
   history.record({
     pocketShare: outcome.pocketUsed === null ? null : signedShare(outcome.pocketUsed, outcome.aimError.side),
@@ -420,6 +454,7 @@ function startReplay(): void {
   again.setPower(session.power);
   again.release();
   replay = { session: again, view: scene.view, heard: 0 };
+  reportShownAt = null;
   scene.setView('overhead');
   audio.strike(again.cueSpeed);
 }
@@ -441,6 +476,8 @@ function toggleSound(): void {
 attachInput(canvas, {
   onNudgeAim: nudgeAim,
   onChargeStart() {
+    // Space after a shot is done deals the next one.
+    if (readyForNext()) return nextShot();
     if (mayCharge() && session.beginCharge()) chargeSeconds = 0;
   },
   onChargeCancel() {
@@ -459,6 +496,9 @@ attachInput(canvas, {
   onGetDown: toggleDown,
   onToggleSound: toggleSound,
   onReplay: startReplay,
+  onAdvance: () => {
+    if (readyForNext()) nextShot();
+  },
   onDismiss: () => (replay ? stopReplay() : answerEstimate(null)),
   onOpenTable: () => tablePanel.open(),
   onRetry: retry,
@@ -550,6 +590,7 @@ function frame(now: number): void {
     }
   }
   const shown = replay?.session ?? session;
+  if (autoNextIn() === 0) nextShot();
 
   // Once a shot is scored, where the balls went, beside the line it needed.
   // Not while the self-estimate asks, since the line would answer it.
@@ -640,6 +681,11 @@ function frame(now: number): void {
     viewingDistance: settings.viewingDistance,
     sound: settings.sound,
     replaying: replay !== undefined,
+    autoNext: settings.autoNext,
+    autoNextIn: (() => {
+      const left = autoNextIn();
+      return left === null ? null : Math.ceil(left);
+    })(),
     routine: routine ? { down: routine.down } : null,
     routineLog,
     estimate,
@@ -680,6 +726,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     estimate: (said: Estimate | null) => answerEstimate(said),
     sounds: () => ({ ...audio.asked }),
     replay: startReplay,
+    toggleAutoNext,
     toggleSound,
     callDrill: (fraction: FractionName) => callDrill(fraction),
     placeDrill: (x: number, y: number) => placeDrill({ x, y }),
