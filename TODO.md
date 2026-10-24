@@ -91,8 +91,9 @@ rate at the recommended power, since a longer legal thin cut is a harder one.
 
 ## Mobile browsers (Android and iOS), and hosting on GitHub Pages
 
-**Status:** built, apart from the checks only a real phone can make; see
-"Still open" at the end. Done straight after roadmap step B2, ahead of B3, as
+**Status:** built and live at https://idanhom.github.io/learn-billiard/,
+linked from https://idanhom.github.io/, apart from the checks only a real phone
+can make; see "Still open" at the end. Done straight after roadmap step B2, ahead of B3, as
 asked on 2026-10-24, and it absorbed roadmap steps E8 (HUD density) and E9
 (touch). The rest of this entry is the record of what it found and why.
 
@@ -193,6 +194,4 @@ already aims. And the production build is static files with Vite's
   field of view widens so the view across stays usable, but the top third of
   the screen is sky. The roadmap's stance camera (D3) is where the framing
   gets designed properly.
-- **Turning on GitHub Pages:** the repository must be made public, and Pages
-  set to deploy from GitHub Actions. Both are settings, not code.
 
