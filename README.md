@@ -32,6 +32,13 @@ npm run preview    # http://127.0.0.1:4173
 | `N` | next shot |
 | `1`–`7` | jump to a level |
 
+On a touch screen, drag on the table to aim and nudge the aim a quarter degree
+at a time with the `‹` `›` buttons. Power is the strip down the right edge:
+press it, drag down to the stroke you want, and lift to strike. The power
+follows your finger, so lifting at the target mark plays the marked stroke. A
+tap that does not travel is not a stroke, and sliding off the side of the strip
+calls the shot off.
+
 Every key also has a button in the toolbar along the bottom of the screen. On
 a small screen, a phone either way up, the panels shrink, and the level list
 and the recent shots fold away behind toolbar buttons of their own, so the

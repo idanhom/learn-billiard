@@ -27,8 +27,20 @@ export interface InputHandlers {
   onCycleCloth(): void;
 }
 
-const FINE_NUDGE = (0.25 * Math.PI) / 180;
+export const FINE_NUDGE = (0.25 * Math.PI) / 180;
 const COARSE_NUDGE = (1 * Math.PI) / 180;
+
+/**
+ * The touch strip, in CSS pixels: how far a finger must travel along it before
+ * lifting counts as a stroke rather than a tap, and how far off its side it can
+ * stray before the stroke is called off.
+ */
+export const STROKE_ARM_PX = 12;
+export const SLIDE_OFF_PX = 36;
+
+/** Holding an aim button nudges once, then again every so often after a pause. */
+const AIM_REPEAT_DELAY_MS = 350;
+const AIM_REPEAT_MS = 70;
 
 /**
  * Degrees of aim per pixel dragged. At this rate the full width of a 1280px
@@ -174,5 +186,128 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
     canvas.removeEventListener('keydown', onKeyDown);
     canvas.removeEventListener('keyup', onKeyUp);
     canvas.removeEventListener('blur', onBlur);
+  };
+}
+
+export interface TouchPowerHandlers {
+  onChargeStart(): void;
+  onSetPower(power: number): void;
+  onRelease(): void;
+  onChargeCancel(): void;
+}
+
+/**
+ * Power by touch: a strip down the right edge of the screen, with no power at
+ * its top and full power at its bottom. Press it, drag down to the stroke you
+ * want, lift to strike. The power follows the finger, so lifting at the target
+ * mark plays the marked stroke.
+ *
+ * Two ways out without a shot. Slide off the side of the strip and the stroke
+ * is called off, exactly like Escape. And a press that never travels
+ * `STROKE_ARM_PX` is a tap, not a stroke: a thumb that lands on the strip by
+ * accident must not fire whatever power it happened to land on.
+ */
+export function attachTouchPower(strip: HTMLElement, handlers: TouchPowerHandlers): () => void {
+  let pointer: number | undefined;
+  let startY = 0;
+  let armed = false;
+  let calledOff = false;
+
+  const powerAt = (clientY: number): number => {
+    const r = strip.getBoundingClientRect();
+    if (r.height <= 0) return 0;
+    return Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+  };
+
+  const onDown = (event: PointerEvent): void => {
+    if (pointer !== undefined) return;
+    pointer = event.pointerId;
+    startY = event.clientY;
+    armed = false;
+    calledOff = false;
+    // Captured, so a finger that slides off the side is still heard, and can
+    // be told it has called the stroke off.
+    strip.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    handlers.onChargeStart();
+    handlers.onSetPower(powerAt(event.clientY));
+  };
+
+  const onMove = (event: PointerEvent): void => {
+    if (event.pointerId !== pointer || calledOff) return;
+    const r = strip.getBoundingClientRect();
+    if (event.clientX < r.left - SLIDE_OFF_PX || event.clientX > r.right + SLIDE_OFF_PX) {
+      calledOff = true;
+      handlers.onChargeCancel();
+      return;
+    }
+    if (Math.abs(event.clientY - startY) >= STROKE_ARM_PX) armed = true;
+    handlers.onSetPower(powerAt(event.clientY));
+  };
+
+  const onUp = (event: PointerEvent): void => {
+    if (event.pointerId !== pointer) return;
+    pointer = undefined;
+    if (strip.hasPointerCapture(event.pointerId)) strip.releasePointerCapture(event.pointerId);
+    if (calledOff) return;
+    if (armed) handlers.onRelease();
+    else handlers.onChargeCancel();
+  };
+
+  const onCancel = (event: PointerEvent): void => {
+    if (event.pointerId !== pointer) return;
+    pointer = undefined;
+    if (!calledOff) handlers.onChargeCancel();
+  };
+
+  strip.addEventListener('pointerdown', onDown);
+  strip.addEventListener('pointermove', onMove);
+  strip.addEventListener('pointerup', onUp);
+  strip.addEventListener('pointercancel', onCancel);
+  return () => {
+    strip.removeEventListener('pointerdown', onDown);
+    strip.removeEventListener('pointermove', onMove);
+    strip.removeEventListener('pointerup', onUp);
+    strip.removeEventListener('pointercancel', onCancel);
+  };
+}
+
+/**
+ * The arrow keys' fine nudge, as two buttons for a thumb: a press nudges once,
+ * and holding on repeats it after a pause. Dragging on the table still does the
+ * coarse work; these are for the last fraction of a degree.
+ */
+export function attachAimButtons(
+  left: HTMLElement,
+  right: HTMLElement,
+  onNudgeAim: (deltaRadians: number) => void,
+): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const start = (delta: number) => (event: PointerEvent) => {
+    event.preventDefault();
+    stop();
+    onNudgeAim(delta);
+    const repeat = (): void => {
+      onNudgeAim(delta);
+      timer = setTimeout(repeat, AIM_REPEAT_MS);
+    };
+    timer = setTimeout(repeat, AIM_REPEAT_DELAY_MS);
+  };
+
+  const listeners: [HTMLElement, string, EventListener][] = [
+    [left, 'pointerdown', start(FINE_NUDGE) as EventListener],
+    [right, 'pointerdown', start(-FINE_NUDGE) as EventListener],
+  ];
+  for (const button of [left, right]) {
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) listeners.push([button, type, stop]);
+  }
+  for (const [target, type, listener] of listeners) target.addEventListener(type, listener);
+  return () => {
+    stop();
+    for (const [target, type, listener] of listeners) target.removeEventListener(type, listener);
   };
 }

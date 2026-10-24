@@ -296,9 +296,9 @@ body {
   background: rgba(111, 211, 160, 0.14);
 }
 
-.hud-chip kbd {
+#hud kbd {
   font: inherit;
-  font-size: 10.5px;
+  font-size: 0.85em;
   color: var(--ink-dim);
 }
 
@@ -331,6 +331,107 @@ body {
 /* Chips for the sheets a small screen folds away; hidden where there is room. */
 .compact-only {
   display: none;
+}
+
+/*
+ * The touch controls: the power strip down the right edge and the fine-aim
+ * buttons above the toolbar. Only where there is a coarse pointer, and there
+ * the strip replaces the power bar.
+ */
+#hud-strip,
+#hud-aim {
+  display: none;
+}
+
+#hud-strip {
+  top: calc(var(--edge-top) + 120px);
+  bottom: calc(var(--edge-bottom) + 64px);
+  right: var(--edge-right);
+  width: 58px;
+  padding: 6px 4px;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+/* A fixed height, so the track below never moves under a finger as the
+ * readout's band name changes length mid-stroke. */
+.hud-strip-speed {
+  flex: none;
+  height: 3.75em;
+  font-size: 9.5px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.hud-strip-track {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  touch-action: none;
+  cursor: ns-resize;
+}
+
+.hud-strip-fill {
+  height: 0;
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--accent), var(--warn));
+}
+
+.hud-strip-marker {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+#hud-aim {
+  bottom: calc(var(--edge-bottom) + 64px);
+  left: var(--edge-left);
+  gap: 10px;
+  padding: 6px;
+}
+
+.hud-aim-button {
+  width: 52px;
+  height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  font: inherit;
+  font-size: 26px;
+  line-height: 1;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.hud-aim-button:active {
+  background: rgba(111, 211, 160, 0.2);
+}
+
+@media (any-pointer: coarse) {
+  #hud-power {
+    display: none;
+  }
+
+  #hud-strip,
+  #hud-aim {
+    display: flex;
+  }
+
+  /* Clear of the strip, where the screen is big enough to show the panel. */
+  #hud-history {
+    right: calc(var(--edge-right) + 66px);
+  }
 }
 
 #hud-notice {
@@ -565,6 +666,15 @@ body {
   #hud-power {
     bottom: calc(var(--edge-bottom) + 58px);
     padding: 5px 9px;
+  }
+
+  #hud-strip {
+    top: calc(var(--edge-top) + 92px);
+    bottom: calc(var(--edge-bottom) + 58px);
+  }
+
+  #hud-aim {
+    bottom: calc(var(--edge-bottom) + 58px);
   }
 
   #hud-power .hud-label {

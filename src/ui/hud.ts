@@ -132,7 +132,17 @@ export class Hud {
   readonly #milestone: HTMLElement;
   readonly #toolbar: HTMLElement;
   readonly #help: HTMLElement;
+  readonly #stripFill: HTMLElement;
+  readonly #stripMarker: HTMLElement;
+  readonly #stripSpeed: HTMLElement;
   readonly #actions: HudActions;
+
+  /**
+   * The touch controls, shown wherever there is a coarse pointer: the power
+   * strip down the right edge, and the fine-aim buttons. The HUD draws them;
+   * `src/game/input.ts` listens to them.
+   */
+  readonly touch: { readonly power: HTMLElement; readonly aimLeft: HTMLElement; readonly aimRight: HTMLElement };
 
   // Last markup written to each panel. `update` runs every frame but the
   // readouts change far less often, and an innerHTML write on a
@@ -190,6 +200,31 @@ export class Hud {
     this.#powerSpeed = power.querySelector('.hud-speed') as HTMLElement;
     this.#powerMarker.style.display = 'none';
 
+    // The same meter, upright, for a thumb: drag down it to charge, lift to
+    // strike. It replaces the bar above wherever the device has touch.
+    const strip = panel(root, 'hud-strip');
+    strip.classList.add('interactive');
+    strip.innerHTML =
+      '<div class="hud-sub hud-strip-speed"></div>' +
+      '<div class="hud-strip-track" aria-label="Power: drag down, lift to strike">' +
+      '<div class="hud-strip-fill"></div><div class="hud-strip-marker"></div></div>';
+    this.#stripFill = strip.querySelector('.hud-strip-fill') as HTMLElement;
+    this.#stripMarker = strip.querySelector('.hud-strip-marker') as HTMLElement;
+    this.#stripSpeed = strip.querySelector('.hud-strip-speed') as HTMLElement;
+    this.#stripMarker.style.display = 'none';
+
+    const aim = panel(root, 'hud-aim');
+    aim.classList.add('interactive');
+    aim.innerHTML =
+      '<button type="button" class="hud-aim-button" aria-label="Aim a quarter degree left">&lsaquo;</button>' +
+      '<button type="button" class="hud-aim-button" aria-label="Aim a quarter degree right">&rsaquo;</button>';
+    const [aimLeft, aimRight] = aim.querySelectorAll('button');
+    this.touch = {
+      power: strip.querySelector('.hud-strip-track') as HTMLElement,
+      aimLeft: aimLeft as HTMLElement,
+      aimRight: aimRight as HTMLElement,
+    };
+
     this.#help = panel(root, 'hud-help');
     this.#help.classList.add('interactive');
     this.#help.innerHTML =
@@ -198,8 +233,10 @@ export class Hud {
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
       '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level</div>' +
-      '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim. The buttons along ' +
-      'the bottom do everything the keys do.</div>' +
+      '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
+      '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +
+      'lift to strike; slide off its side to call the shot off. The buttons along the bottom do ' +
+      'everything the keys do.</div>' +
       // Say plainly what this simulation is not, so nothing learned here comes
       // as a surprise on a real table.
       '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
@@ -336,20 +373,29 @@ export class Hud {
    * guide and this line is not.
    */
   #renderPower(state: HudState): void {
-    this.#powerFill.style.width = `${Math.round(state.power * 100)}%`;
+    const fill = `${Math.round(state.power * 100)}%`;
+    this.#powerFill.style.width = fill;
+    this.#stripFill.style.height = fill;
 
     const speed = `${state.cueSpeed.toFixed(2)} m/s &middot; ${escape(state.speedBand)}`;
     if (speed !== this.#renderedSpeed) {
       this.#renderedSpeed = speed;
       this.#powerSpeed.innerHTML = speed;
+      this.#stripSpeed.innerHTML =
+        `${state.cueSpeed.toFixed(2)}<br>m/s<br><span class="hud-note">${escape(state.speedBand)}</span>`;
     }
 
     const hint = state.guides.powerHint ? state.recommendedPower : null;
     const marker = hint === null ? '' : `${(hint * 100).toFixed(1)}%`;
     if (marker === this.#renderedMarker) return;
     this.#renderedMarker = marker;
-    this.#powerMarker.style.display = marker === '' ? 'none' : '';
-    if (marker !== '') this.#powerMarker.style.left = marker;
+    for (const [element, side] of [
+      [this.#powerMarker, 'left'],
+      [this.#stripMarker, 'top'],
+    ] as const) {
+      element.style.display = marker === '' ? 'none' : '';
+      if (marker !== '') element.style[side] = marker;
+    }
   }
 
   #renderMilestone(state: HudState): void {
@@ -532,7 +578,7 @@ function renderMilestone(milestone: Milestone): string {
   return (
     body +
     '<button type="button" class="hud-continue">Continue</button>' +
-    '<div class="hud-sub hud-note">or press N</div>'
+    '<div class="hud-sub hud-note kbd-hint">or press N</div>'
   );
 }
 
@@ -577,7 +623,10 @@ function renderReport(
     `<div class="hud-sub">Result: ${pot}</div>` +
     (notes.length ? `<div class="hud-sub hud-note">${notes.join(' &middot; ')}</div>` : '') +
     // Held under a summary card the layout has gone, and the card says what next.
-    (held ? '' : '<div class="hud-sub hud-note">R to retry this layout &middot; N for the next one</div>')
+    (held
+      ? ''
+      : '<div class="hud-sub hud-note"><b>Retry</b><kbd class="kbd-hint"> R</kbd> this layout &middot; ' +
+        '<b>Next</b><kbd class="kbd-hint"> N</kbd> for another</div>')
   );
 }
 

@@ -703,6 +703,10 @@ await chip('help').click();
 check('and ? opens it', await helpShown());
 await chip('help').click();
 check('and closes it again', !(await helpShown()));
+check(
+  'without a touch screen the power bar stays, and the touch strip stays away',
+  (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),
+);
 
 /*
  * On a phone, either way up. Chromium stands in for one here: an iPhone 13's
@@ -738,9 +742,12 @@ for (const [orientation, viewport] of [
     }
     return { share: area / (screen.w * screen.h), over };
   });
+  // Everything counted, the touch controls included: the power strip alone is
+  // about a tenth of an upright screen, and it is long on purpose, since every
+  // pixel of it is finer control of the stroke.
   check(
     `phone, ${orientation}: the panels leave most of the screen to the table`,
-    layout.share < 0.3,
+    layout.share < 0.35,
     `${(layout.share * 100).toFixed(0)}% covered`,
   );
   check(`phone, ${orientation}: nothing sits over the middle of the table`, layout.over.length === 0, layout.over.join());
@@ -764,6 +771,62 @@ for (const [orientation, viewport] of [
     tapped.levelId === 3 && !(await phone.locator('#hud-levels').isVisible()),
     `level=${tapped.levelId}`,
   );
+
+  // Firing by touch: the strip replaces the bar, and real touch events, sent
+  // through the DevTools protocol, drive it the way a thumb would.
+  check(
+    `phone, ${orientation}: a power strip replaces the bar`,
+    (await phone.locator('#hud-strip').isVisible()) && !(await phone.locator('#hud-power').isVisible()),
+  );
+  const touch = await context.newCDPSession(phone);
+  const stroke = async (points) => {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points[0]] });
+    for (const point of points.slice(1)) {
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(150);
+  };
+  const track = await phone.locator('.hud-strip-track').boundingBox();
+  const midX = track.x + track.width / 2;
+  const phoneState = () => phone.evaluate(() => window.__debug.state());
+  const ready = await phoneState();
+
+  await phone.locator('.hud-aim-button').first().tap();
+  await sleep(100);
+  const nudged = ((((await phoneState()).aimAngle - ready.aimAngle) * 180) / Math.PI);
+  check(`phone, ${orientation}: the left aim button nudges a quarter degree`, Math.abs(nudged - 0.25) < 0.01, `${nudged.toFixed(3)} deg`);
+
+  await stroke([{ x: midX, y: track.y + track.height * 0.5 }]);
+  const tapped2 = await phoneState();
+  check(
+    `phone, ${orientation}: a tap on the strip is not a stroke`,
+    tapped2.phase === 'aiming' && tapped2.evaluations === ready.evaluations,
+    tapped2.phase,
+  );
+
+  await stroke([
+    { x: midX, y: track.y + 4 },
+    { x: midX, y: track.y + track.height * 0.4 },
+    { x: midX - track.width - 80, y: track.y + track.height * 0.4 },
+  ]);
+  const slid = await phoneState();
+  check(`phone, ${orientation}: sliding off the strip calls the stroke off`, slid.phase === 'aiming', slid.phase);
+
+  const lift = 0.45;
+  await stroke([
+    { x: midX, y: track.y + 4 },
+    { x: midX, y: track.y + track.height * 0.25 },
+    { x: midX, y: track.y + track.height * lift },
+  ]);
+  const fired = await phoneState();
+  check(
+    `phone, ${orientation}: dragging down the strip and lifting strikes at the power reached`,
+    fired.phase !== 'aiming' && Math.abs(fired.power - lift) < 0.02,
+    `${fired.phase} at ${(fired.power * 100).toFixed(1)}%`,
+  );
+  await phone.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+
   await phone.screenshot({ path: `${OUT}phone-${orientation}.png` });
   await phone.evaluate(() => window.__debug.setView('overhead'));
   await sleep(300);

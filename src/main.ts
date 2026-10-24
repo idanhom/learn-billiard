@@ -11,7 +11,7 @@ import { fullness as fullnessOf } from './geometry/shot';
 import { pocketById } from './geometry/table';
 import { add, angleOf, fromAngle } from './geometry/vec2';
 import { Campaign } from './game/campaign';
-import { attachInput } from './game/input';
+import { attachAimButtons, attachInput, attachTouchPower } from './game/input';
 import { speedBand } from './game/power';
 import { browserStorage, createProgressStore } from './game/progress-store';
 import { createSettingsStore, nextCloth, nextTimeScale } from './game/settings-store';
@@ -70,6 +70,8 @@ let practice = campaign.retrying;
  */
 let milestone: Milestone | undefined;
 let chargeSeconds = 0;
+/** The stroke is being charged on the touch strip, which sets the power itself. */
+let touchCharging = false;
 let evaluations = 0;
 let noticesRaised = 0;
 /** A save that could not be loaded is news nobody should miss, so it stays up. */
@@ -229,6 +231,24 @@ attachInput(canvas, {
   onCycleCloth: cycleCloth,
 });
 
+attachTouchPower(hud.touch.power, {
+  onChargeStart() {
+    touchCharging = session.beginCharge();
+  },
+  onSetPower(power: number) {
+    if (touchCharging) session.setPower(power);
+  },
+  onRelease() {
+    if (touchCharging) session.release();
+    touchCharging = false;
+  },
+  onChargeCancel() {
+    if (touchCharging) session.cancelCharge();
+    touchCharging = false;
+  },
+});
+attachAimButtons(hud.touch.aimLeft, hud.touch.aimRight, (delta) => session.nudgeAim(delta));
+
 window.addEventListener('resize', () => scene.resize());
 canvas.focus();
 
@@ -246,7 +266,8 @@ function frame(now: number): void {
   const dt = Math.min((now - lastFrame) / 1000, MAX_FRAME_DT);
   lastFrame = now;
 
-  if (session.phase === 'charging') {
+  // Held Space charges with time; the touch strip sets the power itself.
+  if (session.phase === 'charging' && !touchCharging) {
     chargeSeconds += dt;
     session.setPower(Math.min(1, chargeSeconds / CHARGE_SECONDS));
   }
