@@ -38,6 +38,11 @@ by that.
 
 ## Playing
 
+A first launch is three coached shots: the ghost ball and turning the line
+onto it, the stroke and the meter's marker, and what the tiers take away. Each
+step moves on when you have done what it asks, and Skip ends it; choosing a
+level does too. It does not come back once done.
+
 | | |
 |---|---|
 | drag with the left button | aim (hold `Shift` to fine-tune) |

@@ -45,6 +45,8 @@ export interface Settings {
   readonly sound: boolean;
   /** Deal the next shot by itself a few seconds after the report. */
   readonly autoNext: boolean;
+  /** The first-launch coaching has been played through or skipped. */
+  readonly coached: boolean;
 }
 
 /** The viewing distances on offer, and the step between them, in metres. */
@@ -75,6 +77,7 @@ export function defaultSettings(): Settings {
     tableFeet: 7,
     sound: true,
     autoNext: false,
+    coached: false,
   };
 }
 
@@ -134,7 +137,13 @@ export function validateSettings(raw: unknown): Settings | undefined {
     autoNext = record.autoNext;
   }
 
-  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance, tableFeet, sound, autoNext };
+  let coached = false;
+  if (record.coached !== undefined) {
+    if (typeof record.coached !== 'boolean') return undefined;
+    coached = record.coached;
+  }
+
+  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance, tableFeet, sound, autoNext, coached };
 }
 
 export function createSettingsStore(

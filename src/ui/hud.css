@@ -265,6 +265,18 @@ body {
   max-width: min(380px, calc(50% - 149px));
 }
 
+/* The empty corner right of the power meter, clear of it at any width. */
+#hud-coach {
+  bottom: var(--edge-bottom);
+  right: var(--edge-right);
+  max-width: min(380px, calc(50% - 149px));
+  border-color: rgba(111, 211, 160, 0.45);
+}
+
+#hud-coach .hud-call {
+  margin-top: 6px;
+}
+
 /* Help is asked for, not furniture. */
 #hud-help:not(.open) {
   display: none;
@@ -1135,5 +1147,14 @@ body {
   #hud-levels:not(.open),
   #hud-history:not(.open) {
     display: none;
+  }
+
+  /* Under the status panel, across the top: the corner belongs to the power strip. */
+  #hud-coach {
+    top: calc(var(--edge-top) + 64px);
+    bottom: auto;
+    left: var(--edge-left);
+    right: var(--edge-right);
+    max-width: none;
   }
 }

@@ -21,6 +21,7 @@ import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session
 import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
 import { PerceptionDrill } from './game/perception';
 import { potWindow } from './game/pot-window';
+import { COACH_AIM_TOLERANCE, Coach } from './game/coach';
 import { MASTERED_AT, MASTERY_STANDARD, MASTERY_WINDOW } from './game/mastery';
 import { Routine } from './game/routine';
 import { createTableLogStore } from './game/table-log';
@@ -77,6 +78,7 @@ const hud = new Hud(hudRoot, {
   onToggleSound: () => toggleSound(),
   onReplay: () => startReplay(),
   onToggleAutoNext: () => toggleAutoNext(),
+  onSkipCoaching: () => skipCoaching(),
   returnFocus: () => canvas.focus(),
   onOpenTable: () => tablePanel.toggle(),
 });
@@ -89,6 +91,8 @@ const history = new ShotHistory();
 let settings = settingsStore.load();
 scene.setViewingDistance(settings.viewingDistance);
 const audio = new TableAudio(settings.sound);
+/** Three coached shots on a first launch: nothing played, and the coaching not yet done or skipped. */
+const coach = new Coach(!settings.coached && campaign.isFresh);
 
 /** Sessions dealt so far. Seeds where the cue starts, so a retry starts somewhere new. */
 let sessionsDealt = 0;
@@ -259,6 +263,7 @@ function newSession(): ShotSession {
 function startShot(): void {
   stopReplay();
   reportShownAt = null;
+  coach.dealt();
   session = newSession();
   practice = campaign.retrying;
   milestone = undefined;
@@ -380,6 +385,8 @@ function overlapOfLine(): HudState['aimOverlap'] {
 function selectLevel(id: number): void {
   if (session.phase === 'simulating') return;
   if (!campaign.selectLevel(id)) return;
+  // Choosing a level is knowing your way about: the coaching goes.
+  if (coach.active) skipCoaching();
   notice = undefined;
   // A tendency measured on straight-ins says nothing about thin cuts, so the
   // calibration starts afresh with the level.
@@ -398,6 +405,7 @@ function recordOutcome(outcome: ShotOutcome): void {
     estimate = { asking: true, said: null, actual, straight: outcome.cutSide === 'straight' };
   }
   if (!estimate?.asking) reportShownAt = clock();
+  if (coach.active && coach.scored()) coachingDone();
   // A shot played without the ghost ball counts toward mastery of its band.
   const event = campaign.record(
     campaign.guides.ghostBall
@@ -483,6 +491,17 @@ function stopReplay(): void {
   if (!replay) return;
   scene.setView(replay.view);
   replay = undefined;
+}
+
+/** The coaching is over, played through or skipped, and is not offered again. */
+function skipCoaching(): void {
+  coach.skip();
+  coachingDone();
+}
+
+function coachingDone(): void {
+  settings = { ...settings, coached: true };
+  settingsStore.save(settings);
 }
 
 /** M: the table's sounds on or off. */
@@ -611,6 +630,9 @@ function frame(now: number): void {
   }
   const shown = replay?.session ?? session;
   if (autoNextIn() === 0) nextShot();
+  if (coach.step === 'aim' && Math.abs(signedAngleBetween(fromAngle(session.aimAngle), session.analysis.aimDirection)) < COACH_AIM_TOLERANCE) {
+    coach.aimed();
+  }
 
   // Once a shot is scored, where the balls went, beside the line it needed.
   // Not while the self-estimate asks, since the line would answer it.
@@ -704,6 +726,7 @@ function frame(now: number): void {
     viewingDistance: settings.viewingDistance,
     sound: settings.sound,
     replaying: replay !== undefined,
+    coach: coach.active ? coach.step : null,
     autoNext: settings.autoNext,
     autoNextIn: (() => {
       const left = autoNextIn();
@@ -750,6 +773,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     sounds: () => ({ ...audio.asked }),
     replay: startReplay,
     toggleAutoNext,
+    skipCoaching,
     toggleSound,
     callDrill: (fraction: FractionName) => callDrill(fraction),
     placeDrill: (x: number, y: number) => placeDrill({ x, y }),
@@ -798,6 +822,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       estimate,
       drill: drillState(),
       replaying: replay !== undefined,
+      coach: coach.active ? coach.step : null,
       trails: session.trails.map((trail) => trail.length),
       aimAngle: session.aimAngle,
       idealAimAngle: angleOf(session.analysis.aimDirection),

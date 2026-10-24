@@ -108,6 +108,18 @@ await sleep(1000);
 
 check('debug hook is exposed on the production build', await page.evaluate(() => Boolean(window.__debug)));
 
+/** A first launch offers the coaching; the checks that are not about it start without it. */
+const skipCoaching = async (p) => {
+  await p.evaluate(() => window.__debug.skipCoaching());
+  await sleep(100);
+};
+const firstLaunch = await page.evaluate(() => ({
+  coach: window.__debug.state().coach,
+  shown: document.getElementById('hud-coach')?.style.display !== 'none',
+}));
+check('a first launch opens on the coaching', firstLaunch.coach === 'aim' && firstLaunch.shown, JSON.stringify(firstLaunch));
+await skipCoaching(page);
+
 // Installable on a phone: the manifest and every icon it names are served
 // beside the page, at paths relative to it, as they will be under a sub-path.
 const install = await page.evaluate(async () => {
@@ -861,6 +873,7 @@ check(
 await page.evaluate(() => window.localStorage.clear());
 await page.reload({ waitUntil: 'load' });
 await sleep(900);
+await skipCoaching(page);
 for (let shot = 0; shot < 12; shot++) await playPerfect({ fresh: shot > 0 });
 const advanced = await state();
 check('twelve qualifying shots complete level 1 and move on', advanced.levelId === 2, `level=${advanced.levelId}`);
@@ -1179,6 +1192,7 @@ for (const [orientation, viewport] of [
   phone.on('pageerror', (error) => consoleErrors.push(String(error)));
   await phone.goto(PAGE_URL, { waitUntil: 'load' });
   await sleep(900);
+  await skipCoaching(phone);
 
   const layout = await phone.evaluate(() => {
     const screen = { w: window.innerWidth, h: window.innerHeight };
@@ -1288,11 +1302,49 @@ for (const [orientation, viewport] of [
   await context.close();
 }
 
+// The coaching, played through: three shots, then never again.
+await page.evaluate(() => window.localStorage.clear());
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+const coachStep = async () => (await state()).coach;
+const strikeCoached = async () => {
+  await page.evaluate(() => window.__debug.fire(0.5));
+  await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+};
+const steps = [await coachStep()];
+await page.evaluate(() => window.__debug.aimIdeal());
+await sleep(150);
+steps.push(await coachStep());
+await page.screenshot({ path: `${OUT}coaching.png` });
+await strikeCoached();
+steps.push(await coachStep());
+await page.evaluate(() => window.__debug.next());
+await sleep(100);
+steps.push(await coachStep());
+await page.evaluate(() => window.__debug.aimIdeal());
+await strikeCoached();
+steps.push(await coachStep());
+await page.evaluate(() => window.__debug.next());
+await sleep(100);
+steps.push(await coachStep());
+await page.evaluate(() => window.__debug.aimIdeal());
+await strikeCoached();
+steps.push(await coachStep());
+check(
+  'the coaching walks the line, the stroke and the tiers, one step at a time',
+  JSON.stringify(steps) === JSON.stringify(['aim', 'strike', 'report', 'power', 'power-report', 'tiers', null]),
+  JSON.stringify(steps),
+);
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+check('and once done it does not come back', (await coachStep()) === null);
+
 // A clean aiming shot of a half-ball cut, guides up, numbered object ball.
 // From a fresh load, so no stale notice or report is left on screen.
 await page.evaluate(() => window.localStorage.clear());
 await page.reload({ waitUntil: 'load' });
 await sleep(900);
+await skipCoaching(page);
 await page.evaluate(() => {
   window.__debug.selectLevel(3);
   window.__debug.aimIdeal();

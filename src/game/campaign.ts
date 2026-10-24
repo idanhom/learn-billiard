@@ -182,6 +182,11 @@ export class Campaign {
     return this.#notice;
   }
 
+  /** Nothing played anywhere, and nothing lost to a bad save: a first launch, as far as can be told. */
+  get isFresh(): boolean {
+    return this.#notice === undefined && Object.values(this.#state.levels).every((level) => level.attempts === 0);
+  }
+
   get level(): LevelDefinition {
     return this.#level;
   }

@@ -17,6 +17,7 @@ import type { CutSide } from '../geometry/shot';
 import { ESTIMATES, type Estimate, estimateLabel } from '../game/estimate';
 import type { DrillKind, DrillResult } from '../game/perception';
 import type { BandMastery, ExamRun } from '../game/campaign';
+import type { CoachStep } from '../game/coach';
 import { MASTERY_MIN, MASTERY_STANDARD } from '../game/mastery';
 import type { ShotOutcome, ShotPhase, ShotResult } from '../game/shot-session';
 import type { HistoryEntry, TendencyRow } from '../game/shot-history';
@@ -135,6 +136,8 @@ export interface HudState {
   readonly sound: boolean;
   /** The shot just played is being shown again. */
   readonly replaying: boolean;
+  /** Where the first-launch coaching is, while it runs. */
+  readonly coach: CoachStep | null;
   /** Whether the next shot deals itself, and in how many seconds, while it is counting down. */
   readonly autoNext: boolean;
   readonly autoNextIn: number | null;
@@ -186,6 +189,7 @@ export interface HudActions {
   onToggleSound(): void;
   onReplay(): void;
   onToggleAutoNext(): void;
+  onSkipCoaching(): void;
   /** Get down on the line, or stand back up: the commit routine. */
   onGetDown(): void;
   /** The player's read of their own miss, or null to skip it. */
@@ -209,6 +213,8 @@ export class Hud {
   readonly #status: HTMLElement;
   readonly #eyeDistance: HTMLElement;
   readonly #soundToggle: HTMLElement;
+  readonly #coach: HTMLElement;
+  #renderedCoach = '';
   readonly #autoNextToggle: HTMLElement;
   readonly #shot: HTMLElement;
   readonly #levels: HTMLElement;
@@ -317,6 +323,14 @@ export class Hud {
       aimLeft: aimLeft as HTMLElement,
       aimRight: aimRight as HTMLElement,
     };
+
+    this.#coach = panel(root, 'hud-coach');
+    this.#coach.classList.add('interactive');
+    this.#coach.setAttribute('aria-live', 'polite');
+    this.#coach.style.display = 'none';
+    this.#coach.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('[data-skip-coaching]')) this.#actions.onSkipCoaching();
+    });
 
     this.#help = panel(root, 'hud-help');
     this.#help.classList.add('interactive');
@@ -449,6 +463,7 @@ export class Hud {
     this.#renderHistory(state);
     this.#renderPower(state);
     this.#renderMilestone(state);
+    this.#renderCoach(state);
 
     if (state.drill) {
       const html = renderDrill(state.drill, state.pocketAllowance, state.autoNextIn);
@@ -553,6 +568,15 @@ export class Hud {
       element.style.display = marker === '' ? 'none' : '';
       if (marker !== '') element.style[side] = marker;
     }
+  }
+
+  /** The coaching's step, in words; out of the way while the controls panel is open. */
+  #renderCoach(state: HudState): void {
+    const html = state.coach === null || state.coach === 'done' || this.#helpOpen ? '' : coachText(state.coach);
+    if (html === this.#renderedCoach) return;
+    this.#renderedCoach = html;
+    this.#coach.innerHTML = html;
+    this.#coach.style.display = html === '' ? 'none' : '';
   }
 
   #renderMilestone(state: HudState): void {
@@ -961,6 +985,53 @@ function masteryStrip(bands: readonly BandMastery[]): string {
     .join('');
   return `<div class="hud-label hud-mastery-label">Mastery, unguided</div><div class="hud-mastery">${cells}</div>`;
 }
+
+/** One step of the first-launch coaching, with the way out of it. */
+function coachText(step: Exclude<CoachStep, 'done'>): string {
+  const [count, body] = COACH_STEPS[step];
+  return (
+    `<div class="hud-label">Coaching, ${count} of 3</div><div class="hud-keys">${body}</div>` +
+    '<button type="button" class="hud-call" data-skip-coaching>Skip the coaching</button>'
+  );
+}
+
+const COACH_STEPS: Record<Exclude<CoachStep, 'done'>, readonly [number, string]> = {
+  aim: [
+    1,
+    'The faint ball is the <b>ghost ball</b>: where the cue ball has to be when it meets the object ball. ' +
+      'Turn the white line onto its centre: <span class="kbd-hint">drag on the table, then <b>&larr; &rarr;</b> ' +
+      'for fine steps</span><span class="touch-hint">drag on the table, then <b>&lsaquo; &rsaquo;</b> for fine ' +
+      'steps</span>.',
+  ],
+  strike: [
+    1,
+    'That is the line. Now the stroke: <span class="kbd-hint">hold <b>Space</b> and let go</span>' +
+      '<span class="touch-hint">drag down the strip on the right and lift</span> when the meter reaches its ' +
+      'marker.',
+  ],
+  report: [
+    1,
+    'The report says how much of the pocket your line used, and which way any miss went. ' +
+      '<span class="kbd-hint"><b>Space</b> or <b>N</b></span><span class="touch-hint"><b>Next</b></span> ' +
+      'for the next shot.',
+  ],
+  power: [
+    2,
+    'The <b>marker</b> on the meter is the stroke that just drops the ball. Softer stops short; harder can ' +
+      'rattle in the jaws. Line it up as before and strike near the marker.',
+  ],
+  'power-report': [
+    2,
+    '<b>Retry</b> plays the same layout again, as practice that does not count. ' +
+      '<span class="kbd-hint"><b>Space</b> or <b>N</b></span><span class="touch-hint"><b>Next</b></span> ' +
+      'for the last coached shot.',
+  ],
+  tiers: [
+    3,
+    'Three of your last five shots on aim take a guide away: the line to the pocket, then the ghost ball, ' +
+      'then the rest. The skill is keeping the line once they have gone. <b>?</b> has every control.',
+  ],
+};
 
 /** The countdown to the next shot dealing itself, while there is one. */
 function autoNextLine(seconds: number | null): string {

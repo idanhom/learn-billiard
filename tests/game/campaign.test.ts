@@ -772,3 +772,18 @@ describe('days practised and the exam’s first run', () => {
     expect(result).toMatchObject({ potted: 10, personalBest: true, first: false, firstToday: 6 });
   });
 });
+
+describe('a first launch', () => {
+  test('is one with nothing played', () => {
+    const subject = campaign();
+    expect(subject.isFresh).toBe(true);
+    subject.record(hit);
+    expect(subject.isFresh).toBe(false);
+  });
+
+  test('is not one after a save was lost', () => {
+    const storage = new FakeStorage();
+    storage.setItem(PROGRESS_KEY, '{ not json');
+    expect(new Campaign(createProgressStore(storage)).isFresh).toBe(false);
+  });
+});
