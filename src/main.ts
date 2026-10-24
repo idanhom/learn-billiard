@@ -316,7 +316,6 @@ function frame(now: number): void {
     cutAngleDegrees: (analysis.cutAngle * 180) / Math.PI,
     cutSide: analysis.cutSide,
     fullness: fullnessOf(analysis.cutAngle),
-    liveAimError: session.currentAimError,
     guides: campaign.guides,
     tier: campaign.tier,
     tierComplete: campaign.levelCompleted,

@@ -185,11 +185,15 @@ thinner than the line of centres pointing at it.
 
 Three qualifying shots out of the last five take away one layer of guides:
 
-0. aim line, ghost ball, path to the pocket, the live thick/thin readout, and
+0. aim line, ghost ball, path to the pocket, the cut and fullness numbers, and
    the target mark on the power meter
-1. the path to the pocket, the live thick/thin readout and the power mark go
+1. the path to the pocket, the numbers and the power mark go
 2. the ghost ball goes
-3. everything goes — you read the angle yourself
+3. the aim line goes too, and you read the angle yourself
+
+There is no live thick/thin readout at any tier. Zeroing a number on a panel
+is a different skill from seeing the angle in the balls, and it is the one a
+real table never offers.
 
 A bad run never sends you backwards. Clearing tier 3 completes the level.
 

@@ -24,19 +24,17 @@ export interface GuideVisibility {
   readonly aimLine: boolean;
   readonly ghostBall: boolean;
   readonly objectPath: boolean;
-  /** The cut-angle and fullness numbers. Off at the last tier — that is the test. */
+  /**
+   * The cut-angle and fullness numbers. Tier 0 only: read off a panel, a
+   * number is a crutch the table never offers, and the point of the later
+   * tiers is to see the angle in the balls.
+   */
   readonly readout: boolean;
   /**
-   * Live thick/thin on the current aim. This is the strongest guide of the lot
-   * — it hands the player the answer — so it only exists at tier 0, alongside
-   * the ghost ball it is describing.
-   */
-  readonly liveAimError: boolean;
-  /**
    * The marker on the power meter showing the stroke that would drop the ball
-   * in. Like the live aim error, it hands over the answer rather than helping
-   * you find it, so it belongs with the ghost ball at tier 0. The speed
-   * readout beside it is not a guide and never goes away.
+   * in. It hands over the answer rather than helping you find it, so it
+   * belongs to tier 0. The speed readout beside it is not a guide and never
+   * goes away.
    */
   readonly powerHint: boolean;
 }
@@ -47,10 +45,10 @@ export interface RecordResult {
 }
 
 const GUIDES: Record<Tier, GuideVisibility> = {
-  0: { aimLine: true, ghostBall: true, objectPath: true, readout: true, liveAimError: true, powerHint: true },
-  1: { aimLine: true, ghostBall: true, objectPath: false, readout: true, liveAimError: false, powerHint: false },
-  2: { aimLine: true, ghostBall: false, objectPath: false, readout: true, liveAimError: false, powerHint: false },
-  3: { aimLine: false, ghostBall: false, objectPath: false, readout: false, liveAimError: false, powerHint: false },
+  0: { aimLine: true, ghostBall: true, objectPath: true, readout: true, powerHint: true },
+  1: { aimLine: true, ghostBall: true, objectPath: false, readout: false, powerHint: false },
+  2: { aimLine: true, ghostBall: false, objectPath: false, readout: false, powerHint: false },
+  3: { aimLine: false, ghostBall: false, objectPath: false, readout: false, powerHint: false },
 };
 
 export class TierTracker {

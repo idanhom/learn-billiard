@@ -12,7 +12,7 @@
  * toolbar chips, and the stylesheet decides when.
  */
 
-import type { AimError, CutSide } from '../geometry/shot';
+import type { CutSide } from '../geometry/shot';
 import type { ExamRun } from '../game/campaign';
 import type { ShotOutcome, ShotPhase } from '../game/shot-session';
 import type { HistoryEntry, Tendency } from '../game/shot-history';
@@ -71,7 +71,6 @@ export interface HudState {
   readonly cutAngleDegrees: number;
   readonly cutSide: CutSide;
   readonly fullness: number;
-  readonly liveAimError: AimError;
   readonly guides: GuideVisibility;
   readonly tier: number;
   readonly tierComplete: boolean;
@@ -453,25 +452,26 @@ export class Hud {
 
   #renderShot(state: HudState): void {
     if (!state.guides.readout) {
+      // Say which guide is left, so a panel without numbers is not mistaken
+      // for a tier without help.
+      const [left, hint] = state.guides.ghostBall
+        ? ['ghost ball', 'no numbers: read the cut off it']
+        : state.guides.aimLine
+          ? ['aim line only', 'judge the cut yourself']
+          : ['no guides', 'read the angle yourself'];
       this.#writeShot(
-        '<div class="hud-label">This shot</div><div class="hud-big">no guides</div>' +
-          '<div class="hud-sub">read the angle yourself</div>',
+        `<div class="hud-label">This shot</div><div class="hud-big">${left}</div>` +
+          `<div class="hud-sub">${hint}</div>`,
       );
       return;
     }
 
     const cut = state.cutAngleDegrees.toFixed(1);
     const side = state.cutSide === 'straight' ? 'straight in' : `cut ${state.cutSide}`;
-    const live =
-      state.liveAimError.kind === 'on-line'
-        ? 'on the line'
-        : `${state.liveAimError.degrees.toFixed(2)}&deg; ${state.liveAimError.kind}`;
-
     this.#writeShot(
       '<div class="hud-label">This shot</div>' +
         `<div class="hud-big">${cut}&deg; ${side}</div>` +
-        `<div class="hud-sub">${(state.fullness * 100).toFixed(0)}% full ball</div>` +
-        (state.guides.liveAimError ? `<div class="hud-sub hud-live">${live}</div>` : ''),
+        `<div class="hud-sub">${(state.fullness * 100).toFixed(0)}% full ball</div>`,
     );
   }
 

@@ -100,10 +100,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.hud-live {
-  color: var(--accent);
-}
-
 .hud-note {
   opacity: 0.72;
 }

@@ -238,16 +238,6 @@ export class ShotSession {
     return this.#analysis;
   }
 
-  /** Live aim error for the guide readout, before the shot is taken. */
-  get currentAimError(): AimError {
-    return aimErrorAt(
-      this.layout.cue,
-      this.layout.object,
-      this.analysis.ghostCenter,
-      fromAngle(this.#aimAngle),
-    );
-  }
-
   aimTo(angle: number): boolean {
     if (this.#phase !== 'aiming' && this.#phase !== 'charging') return false;
     this.#aimAngle = angle;

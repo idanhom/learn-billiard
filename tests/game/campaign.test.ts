@@ -259,7 +259,6 @@ describe('the exam', () => {
       ghostBall: false,
       objectPath: false,
       readout: false,
-      liveAimError: false,
       powerHint: false,
     });
   });

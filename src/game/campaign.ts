@@ -66,7 +66,6 @@ const NO_GUIDES: GuideVisibility = {
   ghostBall: false,
   objectPath: false,
   readout: false,
-  liveAimError: false,
   powerHint: false,
 };
 
