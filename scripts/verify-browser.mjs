@@ -528,6 +528,36 @@ await page.click('#table-panel [data-close]');
 await sleep(100);
 check('the toolbar chip opens it too, and Close closes it', byChip && (await page.evaluate(() => document.getElementById('table-panel').hidden)));
 
+// Mastery: the levels panel shows the seven bands, and 0 is level 10, weak angles.
+const strip = await page.evaluate(() =>
+  [...document.querySelectorAll('#hud-levels .hud-band')].map((cell) => cell.getAttribute('aria-label')),
+);
+check('the levels panel shows mastery for the seven bands, in words too', strip.length === 7 && strip.every((said) => /\d+\u2013\d+\u00b0/.test(said)), strip[0]);
+await page.focus('#game');
+await page.keyboard.press('Digit0');
+await sleep(200);
+const weakLevel = await state();
+check('0 selects level 10, weak angles', weakLevel.levelId === 10, String(weakLevel.levelId));
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(200);
+
+// A save from before mastery by band loads, rather than resetting.
+await page.evaluate(() =>
+  window.localStorage.setItem(
+    'pool-angle-trainer/progress/v1',
+    JSON.stringify({
+      version: 1,
+      currentLevel: 3,
+      examBest: 6,
+      levels: { '1': { tier: 3, completed: true, attempts: 14, qualified: 12, potted: 11 } },
+    }),
+  ),
+);
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+const upgraded = await state();
+check('a version 1 save loads as it was, with no band played', upgraded.levelId === 3 && upgraded.examBest === 6 && upgraded.notice === null && upgraded.bands.every((band) => band.shots === 0), JSON.stringify({ level: upgraded.levelId, best: upgraded.examBest, notice: upgraded.notice }));
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {
@@ -1001,6 +1031,17 @@ check(
 );
 await chip('help').click();
 check('and closes it again', !(await helpShown()));
+await page.setViewportSize({ width: 1280, height: 640 });
+await sleep(200);
+const levelsBox = await page.locator('#hud-levels').boundingBox();
+const shortToolbar = await page.locator('#hud-toolbar').boundingBox();
+check(
+  'on a shorter window the levels panel stops above the toolbar',
+  levelsBox.y + levelsBox.height <= shortToolbar.y,
+  `levels bottom ${(levelsBox.y + levelsBox.height).toFixed(0)}, toolbar top ${shortToolbar.y.toFixed(0)}`,
+);
+await page.setViewportSize({ width: 1280, height: 760 });
+await sleep(200);
 // Sound: every contact asks for one, and M turns them off.
 const playOne = async () => {
   await page.evaluate(() => {

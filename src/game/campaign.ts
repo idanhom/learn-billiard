@@ -29,6 +29,16 @@ import {
   levelProgress,
 } from './progress-store';
 import type { FractionMiss } from './drill-sheet';
+import {
+  type BandRecord,
+  MASTERY_BANDS,
+  bandIndex,
+  bandKey,
+  bandLabel,
+  emptyBand,
+  masteryRate,
+  recordInBand,
+} from './mastery';
 import type { DrillKind } from './perception';
 import { makeRng, pickWeighted } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
@@ -37,6 +47,21 @@ import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tier
 export interface ScoredShot {
   readonly qualifying: boolean;
   readonly pottedTarget: boolean;
+  /**
+   * For mastery by band: the shot's cut, and whether it met the one standard.
+   * Given only for shots played without the ghost ball.
+   */
+  readonly mastery?: { readonly cutDegrees: number; readonly onStandard: boolean };
+}
+
+/** A band of cut as the levels panel shows it. */
+export interface BandMastery {
+  readonly label: string;
+  /** The share of its latest shots that met the standard, or null while there are too few. */
+  readonly rate: number | null;
+  /** How many of its latest shots there are, up to the window. */
+  readonly shots: number;
+  readonly mastered: boolean;
 }
 
 export interface ExamRun {
@@ -57,6 +82,8 @@ export interface CampaignEvent {
   /** A retry of a layout already played: practice, so nothing was counted. */
   readonly practice: boolean;
   readonly examFinished?: ExamResult;
+  /** The band this shot took to mastered, by its label. */
+  readonly mastered?: string;
 }
 
 export interface CampaignOptions {
@@ -228,9 +255,11 @@ export class Campaign {
     if (this.#layoutPlayed) return { advancedTier: false, levelCompleted: false, practice: true };
     this.#layoutPlayed = true;
     this.#countAttempt(shot);
+    const mastered = this.#recordMastery(shot);
+    const news = mastered === undefined ? {} : { mastered };
 
     if (this.#level.exam) {
-      return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordExam(shot) };
+      return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordExam(shot), ...news };
     }
 
     // A level that was already complete stays where the player put it: going
@@ -241,11 +270,44 @@ export class Campaign {
 
     if (result.completed && !wasCompleted) {
       this.#advanceToNextLevel();
-      return { advancedTier: false, levelCompleted: true, practice: false };
+      return { advancedTier: false, levelCompleted: true, practice: false, ...news };
     }
 
     this.#persist();
-    return { advancedTier: result.advanced, levelCompleted: false, practice: false };
+    return { advancedTier: result.advanced, levelCompleted: false, practice: false, ...news };
+  }
+
+  /** Mastery by ten-degree band of cut, for the levels panel. */
+  get bands(): readonly BandMastery[] {
+    return MASTERY_BANDS.map((_, i) => {
+      const band = this.#band(i);
+      return { label: bandLabel(i), rate: masteryRate(band), shots: band.recent.length, mastered: band.mastered };
+    });
+  }
+
+  #band(index: number): BandRecord {
+    return this.#state.bands[bandKey(index)] ?? emptyBand();
+  }
+
+  /** Note an unguided shot in its band; the band's label if this shot took it to mastered. */
+  #recordMastery(shot: ScoredShot): string | undefined {
+    if (!shot.mastery) return undefined;
+    const index = bandIndex(shot.mastery.cutDegrees);
+    if (index === undefined) return undefined;
+    const before = this.#band(index);
+    const after = recordInBand(before, shot.mastery.onStandard);
+    this.#state = { ...this.#state, bands: { ...this.#state.bands, [bandKey(index)]: after } };
+    return after.mastered && !before.mastered ? bandLabel(index) : undefined;
+  }
+
+  /**
+   * How much a band needs work, as the weak-angles level weighs it: the share
+   * of its latest shots that missed the standard, an even chance while it has
+   * too few, and never nothing, so a mastered band still turns up.
+   */
+  #weakness(index: number): number {
+    const rate = masteryRate(this.#band(index));
+    return Math.max(REVIEW_FLOOR, rate === null ? 0.5 : 1 - rate);
   }
 
   resetProgress(): void {
@@ -345,7 +407,8 @@ export class Campaign {
    * Which level a shot is dealt from. Interleaving: at the last tier of a
    * fraction level, a share of the shots come from the fractions before it,
    * so telling them apart becomes part of the test. The review deals from all
-   * five, weighted to the ones missed most. Seeded, like the layout itself.
+   * five, weighted to the ones missed most, and the weak-angles level from the
+   * ten-degree bands least mastered. Seeded, like the layout itself.
    */
   #sourceFor(seed: number): LevelDefinition {
     const rng = makeRng((seed ^ SOURCE_SEED_MIX) >>> 0);
@@ -354,6 +417,11 @@ export class Campaign {
       return pickWeighted(fractions, fractions.map((level) => this.#missRate(level)), rng());
     }
     if (this.#level.perception) return fractions[Math.floor(rng() * fractions.length)]!;
+    if (this.#level.weak) {
+      const bands = MASTERY_BANDS.map((_, i) => i);
+      const index = pickWeighted(bands, bands.map((i) => this.#weakness(i)), rng());
+      return { ...this.#level, cutRange: MASTERY_BANDS[index]! };
+    }
 
     // Only a fraction level with others before it has anything to mix in.
     const at = fractions.indexOf(this.#level);

@@ -16,7 +16,8 @@ import { FRACTIONS, type FractionName, fractionByName } from '../geometry/fracti
 import type { CutSide } from '../geometry/shot';
 import { ESTIMATES, type Estimate, estimateLabel } from '../game/estimate';
 import type { DrillKind, DrillResult } from '../game/perception';
-import type { ExamRun } from '../game/campaign';
+import type { BandMastery, ExamRun } from '../game/campaign';
+import { MASTERY_MIN, MASTERY_STANDARD } from '../game/mastery';
 import type { ShotOutcome, ShotPhase, ShotResult } from '../game/shot-session';
 import type { HistoryEntry, TendencyRow } from '../game/shot-history';
 import type { GuideVisibility } from '../game/tiers';
@@ -98,6 +99,8 @@ export interface HudState {
   readonly levelName: string;
   readonly levelDescription: string;
   readonly levels: readonly HudLevelEntry[];
+  /** Mastery by ten-degree band of cut. */
+  readonly bands: readonly BandMastery[];
   /** Share of the pocket a qualifying shot may use. */
   readonly pocketAllowance: number;
   /** The tier's window of recent shots, oldest first: true for each that qualified. */
@@ -309,7 +312,7 @@ export class Hud {
       '<div class="hud-keys kbd-hint"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera: behind, overhead, stance &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
-      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>9</b> level &middot; ' +
+      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>9</b>, <b>0</b> level &middot; ' +
       '<b>F</b> call the fraction &middot; <b>G</b> get down on the line &middot; <b>T</b> at the table &middot; ' +
       '<b>M</b> sound</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
@@ -680,6 +683,7 @@ export class Hud {
   #renderLevels(state: HudState): void {
     const key =
       state.levels.map((l) => `${l.id}${l.current ? 'c' : ''}${l.completed ? 'x' : ''}`).join() +
+      state.bands.map((b) => `${b.rate}/${b.shots}${b.mastered ? 'm' : ''}`).join() +
       (this.#confirmingReset ? '?' : '');
     if (key === this.#renderedLevels) return;
     this.#renderedLevels = key;
@@ -700,7 +704,7 @@ export class Hud {
       : '<button type="button" class="hud-reset" data-action="reset">Reset progress</button>';
 
     this.#levels.innerHTML =
-      '<div class="hud-label">Levels</div>' + `<div class="hud-level-list">${rows}</div>` + reset;
+      '<div class="hud-label">Levels</div>' + `<div class="hud-level-list">${rows}</div>` + masteryStrip(state.bands) + reset;
   }
 }
 
@@ -896,6 +900,30 @@ function renderDrill(drill: NonNullable<HudState['drill']>, allowance: number, a
       : `Off by ${(result.off * 100).toFixed(1)} cm: the line through it uses ` +
         `${Number.isFinite(result.used) ? ofThePocket(result.used) : 'none of the pocket'}, ${percent(allowance)} allowed`;
   return `${verdict}<div class="hud-sub">${detail}</div>${next}`;
+}
+
+/**
+ * Mastery as a strip of the seven bands: each coloured from red to green by
+ * the share of its latest unguided shots that met the standard, empty while
+ * it has too few, and ticked once mastered. Each says it in words as well.
+ */
+function masteryStrip(bands: readonly BandMastery[]): string {
+  const standard = `${Math.round(MASTERY_STANDARD * 100)}% of the pocket`;
+  const cells = bands
+    .map((band) => {
+      const said =
+        band.rate === null
+          ? `${band.label}: ${band.shots} unguided ${band.shots === 1 ? 'shot' : 'shots'} so far, ${MASTERY_MIN} needed`
+          : `${band.label}: ${Math.round(band.rate * 100)}% of the last ${band.shots} within ${standard}` +
+            (band.mastered ? ', mastered' : '');
+      const colour = band.rate === null ? '' : ` style="background: hsl(${Math.round(band.rate * 130)} 50% 32%)"`;
+      return (
+        `<span class="hud-band${band.rate === null ? ' unplayed' : ''}" role="img" aria-label="${said}" title="${said}"${colour}>` +
+        `${band.label.split('\u2013')[0]}${band.mastered ? '<span class="hud-band-tick">&#10003;</span>' : ''}</span>`
+      );
+    })
+    .join('');
+  return `<div class="hud-label hud-mastery-label">Mastery, unguided</div><div class="hud-mastery">${cells}</div>`;
 }
 
 /** The countdown to the next shot dealing itself, while there is one. */

@@ -13,8 +13,13 @@
 
 import { FINAL_TIER, type Tier } from './tiers';
 import { LEVELS, examLevel } from './levels';
+import { type BandRecord, MASTERY_BANDS, MASTERY_WINDOW, bandKey } from './mastery';
 
-export const PROGRESS_VERSION = 1;
+/**
+ * Version 2 added mastery by band. A version 1 save is still a good save, and
+ * loads with no band played; the key keeps its old name so it is found.
+ */
+export const PROGRESS_VERSION = 2;
 export const PROGRESS_KEY = 'pool-angle-trainer/progress/v1';
 
 export interface LevelProgress {
@@ -32,6 +37,8 @@ export interface ProgressState {
   readonly levels: Readonly<Record<string, LevelProgress>>;
   /** Best exam score so far, or null if the exam has not been sat. */
   readonly examBest: number | null;
+  /** Mastery by ten-degree band of cut, keyed by the degree each starts at. */
+  readonly bands: Readonly<Record<string, BandRecord>>;
 }
 
 export interface LoadResult {
@@ -55,6 +62,7 @@ export interface ProgressStore {
 }
 
 const LEVEL_IDS = new Set(LEVELS.map((level) => String(level.id)));
+const BAND_KEYS = new Set(MASTERY_BANDS.map((_, i) => bandKey(i)));
 const CURRENT_LEVEL_IDS = new Set(LEVELS.map((level) => level.id));
 
 export function emptyProgress(): ProgressState {
@@ -63,6 +71,7 @@ export function emptyProgress(): ProgressState {
     currentLevel: LEVELS[0]!.id,
     levels: {},
     examBest: null,
+    bands: {},
   };
 }
 
@@ -77,7 +86,7 @@ export function levelProgress(state: ProgressState, levelId: number): LevelProgr
 /** Parse a stored value into a state, or undefined if it is not one. */
 export function validateProgress(raw: unknown): ProgressState | undefined {
   if (!isRecord(raw)) return undefined;
-  if (raw.version !== PROGRESS_VERSION) return undefined;
+  if (raw.version !== PROGRESS_VERSION && raw.version !== 1) return undefined;
   if (typeof raw.currentLevel !== 'number' || !CURRENT_LEVEL_IDS.has(raw.currentLevel)) {
     return undefined;
   }
@@ -97,12 +106,34 @@ export function validateProgress(raw: unknown): ProgressState | undefined {
     levels[key] = level;
   }
 
+  // Version 1 had no bands: it loads with none played.
+  const bands: Record<string, BandRecord> = {};
+  if (raw.version !== 1) {
+    if (!isRecord(raw.bands)) return undefined;
+    for (const [key, value] of Object.entries(raw.bands)) {
+      if (!BAND_KEYS.has(key)) return undefined;
+      const band = validateBand(value);
+      if (!band) return undefined;
+      bands[key] = band;
+    }
+  }
+
   return {
     version: PROGRESS_VERSION,
     currentLevel: raw.currentLevel,
     levels,
     examBest: examBest as number | null,
+    bands,
   };
+}
+
+function validateBand(raw: unknown): BandRecord | undefined {
+  if (!isRecord(raw)) return undefined;
+  const { attempts, recent, mastered } = raw;
+  if (!isCount(attempts) || typeof mastered !== 'boolean') return undefined;
+  if (!Array.isArray(recent) || recent.length > MASTERY_WINDOW || recent.length > attempts) return undefined;
+  if (!recent.every((result) => typeof result === 'boolean')) return undefined;
+  return { attempts, recent: recent as boolean[], mastered };
 }
 
 function validateLevel(raw: unknown): LevelProgress | undefined {

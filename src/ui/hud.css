@@ -177,9 +177,12 @@ body {
   text-align: right;
 }
 
+/* Never down over the toolbar: on a short window the list scrolls instead. */
 #hud-levels {
   top: 150px;
   left: var(--edge-left);
+  max-height: calc(100% - 150px - var(--edge-bottom) - var(--toolbar-height, 44px) - 12px);
+  overflow-y: auto;
 }
 
 #hud-history {
@@ -704,6 +707,42 @@ body {
   font: inherit;
   font-size: 0.85em;
   color: var(--ink-dim);
+}
+
+.hud-mastery-label {
+  margin-top: 8px;
+}
+
+.hud-mastery {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.hud-band {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  font-size: 10.5px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.hud-band.unplayed {
+  border-style: dashed;
+  color: var(--ink-dim);
+}
+
+.hud-band-tick {
+  position: absolute;
+  top: -7px;
+  right: -3px;
+  font-size: 10px;
+  color: var(--accent);
 }
 
 /* A perception drill takes no shot: no meter, no strip, no aim buttons. */

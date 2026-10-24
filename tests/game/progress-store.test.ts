@@ -36,6 +36,9 @@ function populated(): ProgressState {
       '1': { tier: 3, completed: true, attempts: 21, qualified: 15, potted: 11 },
       '3': { tier: 1, completed: false, attempts: 4, qualified: 3, potted: 2 },
     },
+    bands: {
+      '30': { attempts: 12, recent: [true, false, true, true, true, true, false, true, true, true, true, true], mastered: false },
+    },
   };
 }
 
@@ -46,6 +49,39 @@ describe('empty progress', () => {
     expect(empty.currentLevel).toBe(1);
     expect(empty.levels).toEqual({});
     expect(empty.examBest).toBeNull();
+    expect(empty.bands).toEqual({});
+  });
+});
+
+describe('a save from before mastery by band', () => {
+  test('loads, as it was, with no band played', () => {
+    const { bands: _bands, ...old } = populated();
+    const loaded = validateProgress({ ...old, version: 1 });
+    expect(loaded).toEqual({ ...populated(), bands: {} });
+  });
+
+  test('but a current one without its bands is not a save', () => {
+    const { bands: _bands, ...missing } = populated();
+    expect(validateProgress(missing)).toBeUndefined();
+  });
+});
+
+describe('band records', () => {
+  const withBand = (key: string, band: unknown) => ({ ...populated(), bands: { [key]: band } });
+
+  test('are only for the bands there are', () => {
+    expect(validateProgress(withBand('35', { attempts: 1, recent: [true], mastered: false }))).toBeUndefined();
+    expect(validateProgress(withBand('70', { attempts: 1, recent: [true], mastered: false }))).toBeUndefined();
+  });
+
+  test('hold no more results than the window, nor than were played', () => {
+    expect(validateProgress(withBand('0', { attempts: 30, recent: Array(21).fill(true), mastered: false }))).toBeUndefined();
+    expect(validateProgress(withBand('0', { attempts: 2, recent: [true, true, true], mastered: false }))).toBeUndefined();
+  });
+
+  test('hold only results, and say whether the band was mastered', () => {
+    expect(validateProgress(withBand('0', { attempts: 1, recent: [1], mastered: false }))).toBeUndefined();
+    expect(validateProgress(withBand('0', { attempts: 1, recent: [true], mastered: 'yes' }))).toBeUndefined();
   });
 });
 

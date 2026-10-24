@@ -12,8 +12,8 @@
  * changes distance rather than angle. Level 7 is the exam: no guides, no tiers,
  * scored on pots, because at some point the question stops being "is your aim
  * good" and starts being "can you make the ball". Level 8 is a mixed review of
- * the five fractions, leaning on the ones missed most, and level 9 reads shots
- * without playing them.
+ * the five fractions, leaning on the ones missed most, level 9 reads shots
+ * without playing them, and level 10 deals the angles mastered least.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
@@ -50,6 +50,8 @@ export interface LevelDefinition {
   readonly review?: boolean;
   /** Reads shots without playing them: the perception drills, dealt from the fraction levels. */
   readonly perception?: boolean;
+  /** Deals from the ten-degree bands of cut least mastered, rather than a band of its own. */
+  readonly weak?: boolean;
   /** Fallback used when generation cannot satisfy the brief. */
   readonly template: ShotLayout;
 }
@@ -206,6 +208,21 @@ export const LEVELS: readonly LevelDefinition[] = [
     examShots: 0,
     perception: true,
     template: layoutWithCut('level-9-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 10,
+    name: 'Weak angles',
+    description: 'Deals the angles you have mastered least, ten degrees at a time.',
+    cutRange: [0, 70],
+    pocketAllowance: 0.8,
+    cueDistance: [0.35, 1],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    weak: true,
+    template: layoutWithCut('level-10-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
   },
 ];
 

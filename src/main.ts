@@ -21,6 +21,7 @@ import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session
 import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
 import { PerceptionDrill } from './game/perception';
 import { potWindow } from './game/pot-window';
+import { MASTERED_AT, MASTERY_STANDARD, MASTERY_WINDOW } from './game/mastery';
 import { Routine } from './game/routine';
 import { createTableLogStore } from './game/table-log';
 import { ADVANCE_REQUIRED, ADVANCE_WINDOW, FINAL_TIER, type GuideVisibility } from './game/tiers';
@@ -397,7 +398,18 @@ function recordOutcome(outcome: ShotOutcome): void {
     estimate = { asking: true, said: null, actual, straight: outcome.cutSide === 'straight' };
   }
   if (!estimate?.asking) reportShownAt = clock();
-  const event = campaign.record(outcome);
+  // A shot played without the ghost ball counts toward mastery of its band.
+  const event = campaign.record(
+    campaign.guides.ghostBall
+      ? outcome
+      : {
+          ...outcome,
+          mastery: {
+            cutDegrees: (outcome.cutAngle * 180) / Math.PI,
+            onStandard: outcome.pocketUsed !== null && outcome.pocketUsed <= MASTERY_STANDARD,
+          },
+        },
+  );
   history.record({
     pocketShare: outcome.pocketUsed === null ? null : signedShare(outcome.pocketUsed, outcome.aimError.side),
     qualifying: outcome.qualifying,
@@ -432,6 +444,12 @@ function handleEvent(event: CampaignEvent, level: LevelDefinition): void {
     announce(`Tier ${campaign.tier}: no guides. Line each shot up standing, then get down on it: G.`);
   } else if (event.advancedTier) {
     announce(`Tier ${campaign.tier}: one more guide comes away.`);
+  }
+  if (event.mastered) {
+    announce(
+      `Mastered: ${event.mastered} cuts. ${MASTERED_AT * MASTERY_WINDOW} of your last ${MASTERY_WINDOW} unguided ` +
+        `shots there used ${Math.round(MASTERY_STANDARD * 100)}% of the pocket or less.`,
+    );
   }
 }
 
@@ -659,6 +677,7 @@ function frame(now: number): void {
     tierComplete: campaign.levelCompleted,
     levelName: campaign.level.name,
     levelDescription: campaign.level.description,
+    bands: campaign.bands,
     levels: campaign.levels.map((level) => ({
       id: level.id,
       name: level.name,
@@ -788,6 +807,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       shotId: session.layout.id,
       levelId: campaign.level.id,
       tier: campaign.tier,
+      bands: campaign.bands,
       call: session.call,
       tierComplete: campaign.levelCompleted,
       guides: campaign.guides,

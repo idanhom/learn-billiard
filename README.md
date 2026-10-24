@@ -48,7 +48,7 @@ by that.
 | `C` | cycle fast / normal / slow cloth |
 | `R` | retry the same layout |
 | `N` | next shot; `Space` or `Enter` too, once a shot is scored |
-| `1`–`9` | jump to a level |
+| `1`–`9`, `0` | jump to a level (`0` is level 10) |
 | `F` | call the fraction the shot needs |
 | `G` | get down on the line, or stand back up (last tier and exam) |
 | `T` | at the table: what to take to a real one, and what this can't teach |
@@ -235,6 +235,11 @@ way the answer then shows on the table: the true ghost ball with its lines, and
 for a placing yours in red, with the line it would have sent the object ball
 on. The drills count toward the tiers as shots do, and show no guide at any.
 
+Level 10, Weak angles, deals from the ten-degree bands of cut you have
+mastered least (below), each band as likely as the share of its recent shots
+that missed, an untried band as an even chance, and a mastered one still now
+and then.
+
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is
 part of the skill, and a level that only ever deals one kind never tests it.
@@ -305,6 +310,19 @@ The shot that clears a level, or ends an exam run, stays on the table with its
 report and a summary card until you move on (`N`, or Continue). Going back to a
 level you have already cleared is practice by choice: it keeps its record, and
 it does not move you on again after every shot.
+
+## Mastery
+
+Every shot played without the ghost ball, on any level, counts toward the
+mastery of its ten-degree band of cut, from 0–10° to 60–70°. Levels judge a
+shot against their own allowance, which tightens as they go; mastery holds
+every band to one standard, 80% of the pocket, so a band played mostly on the
+forgiving early levels does not look better than it is. The levels panel shows
+each band as a cell coloured from red to green by the share of its last 20
+such shots that met the standard, once there are ten. A band where 16 of the
+last 20 meet it is mastered, and stays mastered: an achievement for a skill
+shown, not for time put in, and the only kind there is. Mastery is kept with
+your progress; a save from before it loads with no band played.
 
 ## Calibrating yourself
 

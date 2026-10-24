@@ -415,7 +415,12 @@ describe('persistence', () => {
 });
 
 /** A campaign resumed at a level and tier, with whatever level records are given. */
-function resumed(level: number, tier: 0 | 1 | 2 | 3, records: Record<string, Partial<LevelProgress>> = {}): Campaign {
+function resumed(
+  level: number,
+  tier: 0 | 1 | 2 | 3,
+  records: Record<string, Partial<LevelProgress>> = {},
+  bands: Record<string, unknown> = {},
+): Campaign {
   const storage = new FakeStorage();
   const base = { tier: 0, completed: false, attempts: 0, qualified: 0, potted: 0 };
   const levels: Record<string, LevelProgress> = {};
@@ -423,7 +428,7 @@ function resumed(level: number, tier: 0 | 1 | 2 | 3, records: Record<string, Par
   levels[String(level)] = { ...base, ...(records[String(level)] ?? {}), tier } as LevelProgress;
   storage.setItem(
     PROGRESS_KEY,
-    JSON.stringify({ version: PROGRESS_VERSION, currentLevel: level, levels, examBest: null }),
+    JSON.stringify({ version: PROGRESS_VERSION, currentLevel: level, levels, examBest: null, bands }),
   );
   return new Campaign(createProgressStore(storage), { seed: 4000 });
 }
@@ -531,5 +536,84 @@ describe('the misses a drill sheet leans on', () => {
     expect(full!.missed).toBe(4);
     expect(full!.missRate).toBeCloseTo(5 / 6, 12);
     for (const miss of rest) expect(miss.missRate).toBeCloseTo(0.5, 12);
+  });
+});
+
+describe('mastery by band', () => {
+  const unguided = (cutDegrees: number, onStandard: boolean): ScoredShot => ({
+    qualifying: onStandard,
+    pottedTarget: onStandard,
+    mastery: { cutDegrees, onStandard },
+  });
+
+  test('counts an unguided shot in its band, and nothing else', () => {
+    const subject = campaign();
+    subject.record(unguided(34, true));
+    subject.nextShot();
+    subject.record({ qualifying: true, pottedTarget: true });
+    subject.nextShot();
+    const thirty = subject.bands[3]!;
+    expect(thirty).toMatchObject({ label: '30\u201340\u00b0', shots: 1, rate: null, mastered: false });
+    expect(subject.bands.filter((band) => band.shots > 0)).toHaveLength(1);
+  });
+
+  test('leaves a retry out', () => {
+    const subject = campaign();
+    subject.record(unguided(12, true));
+    subject.retryShot();
+    subject.record(unguided(12, true));
+    expect(subject.bands[1]!.shots).toBe(1);
+  });
+
+  test('says so once, when a band is mastered, and keeps it', () => {
+    const subject = campaign();
+    const events = [];
+    for (let i = 0; i < 20; i++) {
+      events.push(subject.record(unguided(45, i >= 4)));
+      subject.nextShot();
+    }
+    expect(events.filter((event) => event.mastered)).toHaveLength(1);
+    expect(events[19]!.mastered).toBe('40\u201350\u00b0');
+    expect(subject.bands[4]).toMatchObject({ rate: 0.8, mastered: true });
+  });
+
+  test('is kept with the progress', () => {
+    const storage = new FakeStorage();
+    const first = new Campaign(createProgressStore(storage), { seed: 4000 });
+    first.record(unguided(5, true));
+    const again = new Campaign(createProgressStore(storage), { seed: 4000 });
+    expect(again.bands[0]!.shots).toBe(1);
+  });
+});
+
+describe('the weak-angles level', () => {
+  const weak = LEVELS.find((level) => level.weak)!;
+  const misses = (n: number) => ({ attempts: n, recent: Array(n).fill(false), mastered: false });
+  const hits = (n: number) => ({ attempts: n, recent: Array(n).fill(true), mastered: true });
+
+  test('deals mostly from the band missed most', () => {
+    const bands = { '0': hits(20), '10': hits(20), '20': hits(20), '30': misses(20), '40': hits(20), '50': hits(20), '60': hits(20) };
+    const subject = resumed(weak.id, 0, {}, bands);
+    const cuts: number[] = [];
+    for (let i = 0; i < 30; i++) {
+      const level = subject.layoutLevel;
+      expect(level.id).toBe(weak.id);
+      expect(layoutViolations(subject.layout, level)).toEqual([]);
+      cuts.push(level.cutRange[0]);
+      subject.nextShot();
+    }
+    // Weighted 1 against 0.1 for each of the other six: about 62%.
+    const share = cuts.filter((from) => from === 30).length / cuts.length;
+    expect(share).toBeGreaterThan(0.4);
+  });
+
+  test('deals every band while none has been played', () => {
+    const subject = resumed(weak.id, 0);
+    const seen = new Set<number>();
+    for (let i = 0; i < 60; i++) {
+      seen.add(subject.layoutLevel.cutRange[0]);
+      subject.nextShot();
+    }
+    expect([...seen].sort((a, b) => a - b)).toEqual([0, 10, 20, 30, 40, 50, 60]);
   });
 });
