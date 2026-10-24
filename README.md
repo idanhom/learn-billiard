@@ -41,7 +41,7 @@ by that.
 | | |
 |---|---|
 | drag with the left button | aim (hold `Shift` to fine-tune) |
-| `←` / `→` | nudge the aim (hold `Shift` for coarse) |
+| `←` / `→` | nudge the aim a twentieth of a degree (hold `Shift` for a whole one) |
 | hold `Space` | charge power, release to strike |
 | `V` | switch between behind-the-cue and overhead |
 | `.` | cycle full / half / quarter speed |
@@ -50,8 +50,8 @@ by that.
 | `N` | next shot |
 | `1`–`7` | jump to a level |
 
-On a touch screen, drag on the table to aim and nudge the aim a quarter degree
-at a time with the `‹` `›` buttons. Power is the strip down the right edge:
+On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
+degree at a time with the `‹` `›` buttons. Power is the strip down the right edge:
 press it, drag down to the stroke you want, and lift to strike. The power
 follows your finger, so lifting at the target mark plays the marked stroke. A
 tap that does not travel is not a stroke, and sliding off the side of the strip
@@ -153,11 +153,29 @@ tick — only the clock is faster.
 
 ## How it scores you
 
-**On your aim, not on whether the ball goes in.** A pot depends on power and on
-how the pocket is tuned; the angle you aimed at depends only on you. So a shot
-"qualifies" when the line you struck along is within the level's tolerance of
-the ideal line — 2° on level 1, tightening to 0.75° by level 5. Pots, scratches
-and wrong-pocket drops are all reported, but they don't drive progression.
+**On your aim, not on whether the ball goes in.** A pot depends on power as
+well as aim, and only aim is being trained. So each shot is scored on where
+your line would send the object ball at the right stroke, against how far it
+could go either side of the ideal line and still drop: the share of the pocket
+you used. A shot "qualifies" when it used no more than the level allows: all
+of the pocket on level 1, tightening to 70% by level 5. Pots, scratches and
+wrong-pocket drops are all reported, but they don't drive progression.
+
+That is a much finer test than the cue-ball degrees it replaced. On an
+ordinary straight-in the pocket leaves about a fifth of a degree of aim either
+side, and a thin cut or a long shot about a tenth; the two degrees level 1
+used to forgive sent the object ball some seventeen degrees off line. Hence
+the twentieth-of-a-degree nudge. A simulated player whose aim wanders by 0.15°
+clears every practice level; one who wanders by a whole degree rarely
+qualifies anywhere.
+
+How far the pocket reaches is measured, not drawn. The object ball alone is
+rolled from its spot at the speed the ideal stroke gives it, along lines
+further and further from the ideal one, until it stops dropping. Real pockets
+take more than the lines that never touch rubber: about 14% more on the open
+table, where a ball can clip a facing deep in the jaws and still fall, and
+several times as much along a rail, which steers a ball running into it on
+toward the pocket.
 
 The ideal line sends the object ball at the middle of the pocket as the ball
 sees it, which is not always the middle of the pocket; the Pockets section

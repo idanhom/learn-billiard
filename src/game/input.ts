@@ -27,7 +27,13 @@ export interface InputHandlers {
   onCycleCloth(): void;
 }
 
-export const FINE_NUDGE = (0.25 * Math.PI) / 180;
+/**
+ * One press of an arrow key, or of an aim button. A twentieth of a degree,
+ * because a pot leaves about a tenth either side on a typical shot and the
+ * level asks for most of that; a quarter, which this was, moved the object
+ * ball further than the whole pocket allows.
+ */
+export const FINE_NUDGE = (0.05 * Math.PI) / 180;
 const COARSE_NUDGE = (1 * Math.PI) / 180;
 
 /**

@@ -21,12 +21,13 @@ import {
   clothRollingFriction,
 } from '../src/constants';
 import { generateShot } from '../src/game/generator';
-import { LEVELS } from '../src/game/levels';
+import { LEVELS, levelById } from '../src/game/levels';
+import { potWindow } from '../src/game/pot-window';
 import { cueSpeedForPower, recommendedPower } from '../src/game/power';
 import { ShotSession } from '../src/game/shot-session';
-import { analyseShot, fullness } from '../src/geometry/shot';
+import { analyseShot, fullness, objectDeparture } from '../src/geometry/shot';
 import { PLAY_LENGTH } from '../src/geometry/table';
-import { add, len, scale, vec } from '../src/geometry/vec2';
+import { add, fromAngle, len, scale, signedAngleBetween, vec } from '../src/geometry/vec2';
 import { type CushionImpulse, resolveCushion } from '../src/physics/collision';
 import { rollOutSeconds, terminalDrift } from './support/roll-time';
 import { straightShot } from './support/shots';
@@ -212,5 +213,55 @@ describe('the cushion', () => {
     expect(settled(rolling)).toBeCloseTo(0.48, 2);
     expect(len(stun.vel)).toBeCloseTo(0.63, 2);
     expect(settled(stun)).toBeCloseTo(0.51, 2);
+  });
+});
+
+/**
+ * README, "How it scores you": how much aim the pocket leaves, in cue-ball
+ * degrees either side of the ideal line, before the object ball stops
+ * dropping. On the closer side, at the median of forty generated layouts.
+ */
+describe('scoring on the pocket', () => {
+  function medianAimRoom(levelId: number): number {
+    const rooms: number[] = [];
+    for (let i = 0; i < 40; i++) {
+      const { layout } = generateShot(levelById(levelId), 555_000 + i * 7919, {
+        preferredSide: i % 2 ? 'left' : 'right',
+      });
+      const analysis = new ShotSession(layout).analysis;
+      const window = potWindow(layout, 'normal', analysis)!;
+      const ideal = Math.atan2(analysis.aimDirection.y, analysis.aimDirection.x);
+      const used = (offset: number): number => {
+        const heading = objectDeparture(layout.cue, layout.object, fromAngle(ideal + offset), analysis.launchSpeed);
+        if (heading === undefined) return Number.POSITIVE_INFINITY;
+        const turned = signedAngleBetween(fromAngle(window.ideal), fromAngle(heading));
+        return Math.abs(turned) / (turned >= 0 ? window.counterClockwise : window.clockwise);
+      };
+      const edge = (turn: number): number => {
+        let inside = 0;
+        let outside = turn * 0.01;
+        while (used(outside) < 1) outside *= 2;
+        for (let k = 0; k < 40; k++) {
+          const middle = (inside + outside) / 2;
+          if (used(middle) < 1) inside = middle;
+          else outside = middle;
+        }
+        return Math.abs(inside);
+      };
+      rooms.push((Math.min(edge(1), edge(-1)) * 180) / Math.PI);
+    }
+    rooms.sort((a, b) => a - b);
+    return (rooms[19]! + rooms[20]!) / 2;
+  }
+
+  test('a straight-in leaves about a fifth of a degree of aim, a thin cut or a long shot about a tenth', () => {
+    const straight = medianAimRoom(1);
+    expect(straight).toBeGreaterThan(0.17);
+    expect(straight).toBeLessThan(0.27);
+    for (const levelId of [5, 6]) {
+      const room = medianAimRoom(levelId);
+      expect(room, `level ${levelId}`).toBeGreaterThan(0.07);
+      expect(room, `level ${levelId}`).toBeLessThan(0.15);
+    }
   });
 });

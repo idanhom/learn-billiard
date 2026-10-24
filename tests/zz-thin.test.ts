@@ -90,7 +90,15 @@ function summarise(levelId: number, seeds: number) {
   };
 }
 
-test.runIf(import.meta.env.MEASURE)('cue-ball life after contact, per level', () => {
+/**
+ * Read from the process. Vitest finds the `import.meta` route to the
+ * environment by scanning the source text, and an unrelated change to this
+ * file once made the scan miss it, so the harness skipped itself with
+ * MEASURE=1 set and printed nothing.
+ */
+declare const process: { readonly env: Readonly<Record<string, string | undefined>> };
+
+test.runIf(process.env.MEASURE)('cue-ball life after contact, per level', () => {
   console.log('level   n  exit   path    time   <0.5m/s      rails  shot');
   for (const level of LEVELS) {
     const s = summarise(level.id, 250);

@@ -1,12 +1,14 @@
 /**
  * The curriculum.
  *
- * Levels 1-5 walk the cut angle out from dead straight to a thin cut, and the
- * aim tolerance tightens as they go: a 2-degree error on a straight-in is worth
- * forgiving, the same error on a thin cut is a different shot entirely. Level 6
- * changes distance rather than angle. Level 7 is the exam — no guides, no
- * tiers, scored on pots, because at some point the question stops being "is
- * your aim good" and starts being "can you make the ball".
+ * Levels 1-5 walk the cut angle out from dead straight to a thin cut. A shot
+ * qualifies on how much of the pocket its aim used: where the object ball
+ * would go, against how far it could go either side of the ideal line and
+ * still drop. That window already shrinks, in aim, as the cut thins and the
+ * shot lengthens, so the share allowed only tightens a little on top. Level 6
+ * changes distance rather than angle. Level 7 is the exam: no guides, no tiers,
+ * scored on pots, because at some point the question stops being "is your aim
+ * good" and starts being "can you make the ball".
  */
 
 import { type ShotLayout, layoutWithCut } from './drills';
@@ -17,8 +19,12 @@ export interface LevelDefinition {
   readonly description: string;
   /** Inclusive cut-angle band in degrees. */
   readonly cutRange: readonly [number, number];
-  /** Aim deviation, in degrees, that still counts as a qualifying shot. */
-  readonly toleranceDegrees: number;
+  /**
+   * How much of the pot window a qualifying shot may use, on the side the
+   * object ball went: 1 is anything that would have dropped at the right
+   * stroke, 0.5 the middle half of it.
+   */
+  readonly pocketAllowance: number;
   /** Cue-ball to ghost-ball distance, in metres. */
   readonly cueDistance: readonly [number, number];
   /** Object-ball to pocket distance, in metres. */
@@ -42,7 +48,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Straight in',
     description: 'Dead straight. Learn what a full ball looks like.',
     cutRange: [0, 5],
-    toleranceDegrees: 2,
+    pocketAllowance: 1,
     cueDistance: [0.35, 0.9],
     potDistance: [0.3, 0.9],
     railAdjacent: false,
@@ -56,7 +62,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Gentle cuts',
     description: 'Up to twenty degrees. The ghost ball starts to move off centre.',
     cutRange: [5, 20],
-    toleranceDegrees: 1.75,
+    pocketAllowance: 0.9,
     cueDistance: [0.35, 1],
     potDistance: [0.3, 1],
     railAdjacent: false,
@@ -70,7 +76,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Half ball',
     description: 'Twenty to forty degrees, around the half-ball hit.',
     cutRange: [20, 40],
-    toleranceDegrees: 1.5,
+    pocketAllowance: 0.8,
     cueDistance: [0.35, 1],
     potDistance: [0.3, 1],
     railAdjacent: false,
@@ -84,7 +90,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Steep cuts',
     description: 'Forty to sixty degrees. Small aim errors start to cost pots.',
     cutRange: [40, 60],
-    toleranceDegrees: 1,
+    pocketAllowance: 0.8,
     cueDistance: [0.3, 0.9],
     potDistance: [0.25, 0.8],
     railAdjacent: false,
@@ -98,7 +104,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Thin cuts',
     description: 'Sixty to eighty degrees. Barely more than an edge.',
     cutRange: [60, 80],
-    toleranceDegrees: 0.75,
+    pocketAllowance: 0.7,
     cueDistance: [0.3, 0.8],
     potDistance: [0.2, 0.6],
     railAdjacent: false,
@@ -112,7 +118,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Distance and rails',
     description: 'The same angles, but long, and with the object ball near a cushion.',
     cutRange: [0, 45],
-    toleranceDegrees: 1,
+    pocketAllowance: 0.8,
     cueDistance: [0.8, 1.5],
     potDistance: [0.7, 1.4],
     railAdjacent: true,
@@ -126,7 +132,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     name: 'Exam',
     description: 'No guides, no tiers. Ten shots, scored on what you pot.',
     cutRange: [0, 55],
-    toleranceDegrees: 1,
+    pocketAllowance: 0.8,
     cueDistance: [0.4, 1.1],
     potDistance: [0.3, 1.1],
     railAdjacent: false,

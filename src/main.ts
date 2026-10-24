@@ -113,7 +113,7 @@ function cycleCloth(): void {
 
 function newSession(): ShotSession {
   return new ShotSession(campaign.layout, {
-    toleranceDegrees: campaign.toleranceDegrees,
+    pocketAllowance: campaign.pocketAllowance,
     cloth: settings.cloth,
     aimSeed: seed + sessionsDealt++,
   });
@@ -328,7 +328,7 @@ function frame(now: number): void {
       completed: campaign.levelStats(level.id).completed,
       current: level.id === campaign.level.id,
     })),
-    toleranceDegrees: campaign.toleranceDegrees,
+    pocketAllowance: campaign.pocketAllowance,
     windowQualified: campaign.qualifiedInWindow,
     windowNeeded: ADVANCE_REQUIRED,
     attempts: stats.attempts,

@@ -104,6 +104,8 @@ export interface ShotAnalysis {
   readonly cutAngle: number;
   /** How far throw turns the object ball off the line of centres, in radians, at the stroke assumed. */
   readonly throwAngle: number;
+  /** The launch speed that stroke is: the recommended one unless the query gave one. */
+  readonly launchSpeed: number;
   readonly cutSide: CutSide;
   /** Fraction of the object ball the cue ball covers: 1 is dead full, 0 is a bare edge. */
   readonly fullness: number;
@@ -571,12 +573,13 @@ export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
 
   let line = departure;
   let thrown = 0;
+  let launch = MAX_CUE_SPEED;
   for (let pass = 0; pass < THROW_PASSES; pass++) {
     const ghost = sub(object, scale(line, 2 * BALL_RADIUS));
     const approach = normalize(sub(ghost, cue));
     const cut = angleBetween(approach, line);
     const cueToGhost = dist(cue, ghost);
-    const launch =
+    launch =
       query.cueSpeed ??
       recommendedLaunchSpeed(cut, objectToPocket, cueToGhost, rollingFriction) ??
       MAX_CUE_SPEED;
@@ -607,6 +610,7 @@ export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
     aimDirection,
     cutAngle: cut,
     throwAngle: thrown,
+    launchSpeed: launch,
     cutSide: cut <= STRAIGHT_CUT_LIMIT ? 'straight' : signedCut > 0 ? 'left' : 'right',
     fullness: fullness(cut),
     cueToGhost,
@@ -614,6 +618,32 @@ export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
     reachable: blockers.length === 0,
     blockers,
   };
+}
+
+/**
+ * Which way the object ball leaves, as a heading, when the cue ball is sent
+ * along `aimDirection` at `launchSpeed`: the line of centres where the two
+ * first touch, turned by the throw. Undefined when the cue ball misses it.
+ */
+export function objectDeparture(
+  cue: Vec2,
+  object: Vec2,
+  aimDirection: Vec2,
+  launchSpeed: number,
+  rollingFriction: number = ROLLING_FRICTION,
+): number | undefined {
+  const along = normalize(aimDirection);
+  const fromObject = sub(cue, object);
+  const ahead = dot(along, fromObject);
+  const clearance = ahead * ahead - (dot(fromObject, fromObject) - 4 * BALL_RADIUS * BALL_RADIUS);
+  if (ahead >= 0 || clearance < 0) return undefined;
+
+  const run = -ahead - Math.sqrt(clearance);
+  const line = normalize(sub(object, add(cue, scale(along, run))));
+  const contact = contactState(launchSpeed, run, rollingFriction);
+  const thrown = throwAngle(angleBetween(along, line), contact.speed, contact.rollFraction);
+  const turned = rotate(line, Math.sign(signedAngleBetween(line, along)) * thrown);
+  return Math.atan2(turned.y, turned.x);
 }
 
 /** Which side of the ideal line the cue ball is being sent; used by the HUD arrows. */

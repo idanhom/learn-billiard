@@ -32,6 +32,7 @@ function shot(objectToPocket: number, cueToGhost: number, cut = 0): ShotAnalysis
     target: vec(objectToPocket, 0),
     ghostCenter: vec(0, 0),
     throwAngle: 0,
+    launchSpeed: 1,
     aimDirection: vec(1, 0),
     cutAngle: cut,
     cutSide: cut === 0 ? 'straight' : 'left',

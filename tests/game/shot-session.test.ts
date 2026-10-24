@@ -26,9 +26,9 @@ function play(
   layout = STRAIGHT_IN_DRILL,
   aimOffset = 0,
   power = 0.5,
-  tolerance = 2,
+  allowance = 1,
 ): ReturnType<ShotSession['evaluate']> {
-  const session = new ShotSession(layout, { toleranceDegrees: tolerance });
+  const session = new ShotSession(layout, { pocketAllowance: allowance });
   session.aimTo(idealAngle(layout) + aimOffset);
   session.beginCharge();
   session.setPower(power);
@@ -187,7 +187,7 @@ describe('where the cue starts', () => {
 
   test('so striking without aiming does not qualify', () => {
     for (let seed = 0; seed < 20; seed++) {
-      const session = new ShotSession(CUT_30_DRILL, { aimSeed: seed, toleranceDegrees: 2 });
+      const session = new ShotSession(CUT_30_DRILL, { aimSeed: seed, pocketAllowance: 1 });
       session.beginCharge();
       session.setPower(0.5);
       session.release();
@@ -247,8 +247,9 @@ describe('evaluation is a guarded one-shot transition', () => {
 
 describe('the outcome contract', () => {
   test('a perfectly aimed straight-in shot qualifies and pots', () => {
-    const outcome = play(STRAIGHT_IN_DRILL, 0, 0.5, 2);
+    const outcome = play(STRAIGHT_IN_DRILL, 0, 0.5);
     expect(outcome!.aimError.degrees).toBeCloseTo(0, 6);
+    expect(outcome!.pocketUsed).toBeCloseTo(0, 6);
     expect(outcome!.contacted).toBe(true);
     expect(outcome!.qualifying).toBe(true);
     expect(outcome!.pottedTarget).toBe(true);
@@ -256,44 +257,63 @@ describe('the outcome contract', () => {
   });
 
   test('a perfectly aimed thirty degree cut qualifies and pots', () => {
-    const outcome = play(CUT_30_DRILL, 0, 0.55, 2);
+    const outcome = play(CUT_30_DRILL, 0, 0.55);
     expect(outcome!.cutAngle * (180 / Math.PI)).toBeCloseTo(30, 6);
     expect(outcome!.qualifying).toBe(true);
     expect(outcome!.pottedTarget).toBe(true);
   });
 
   test('progression is scored on aim, not on the pot', () => {
-    // Inside tolerance, and struck hard enough to reach the object ball, but
-    // nowhere near hard enough to send it to the pocket: 0.58 m/s leaves it
-    // stopping around half a metre short. Not the softest possible stroke —
-    // that one no longer reaches at all, which would be testing something else.
-    const outcome = play(STRAIGHT_IN_DRILL, deg(0.5), 0.3, 2);
+    // Aimed well inside the pocket, and struck hard enough to reach the object
+    // ball, but nowhere near hard enough to send it there: 0.58 m/s leaves it
+    // stopping around half a metre short. Not the softest possible stroke,
+    // which no longer reaches at all and would be testing something else.
+    const outcome = play(STRAIGHT_IN_DRILL, deg(0.05), 0.3);
     expect(outcome!.contacted).toBe(true);
     expect(outcome!.pottedTarget).toBe(false);
     expect(outcome!.qualifying).toBe(true);
   });
 
-  test('an aim outside the level tolerance does not qualify', () => {
-    const outcome = play(STRAIGHT_IN_DRILL, deg(5), 0.5, 2);
+  test('an aim that sends the object ball outside the pocket does not qualify', () => {
+    const outcome = play(STRAIGHT_IN_DRILL, deg(5), 0.5);
     expect(outcome!.aimError.degrees).toBeCloseTo(5, 6);
+    expect(outcome!.pocketUsed).toBeGreaterThan(1);
     expect(outcome!.qualifying).toBe(false);
   });
 
-  test('the tolerance is the level tolerance, not a fixed one', () => {
-    expect(play(STRAIGHT_IN_DRILL, deg(1.5), 0.5, 2)!.qualifying).toBe(true);
-    expect(play(STRAIGHT_IN_DRILL, deg(1.5), 0.5, 0.75)!.qualifying).toBe(false);
+  /**
+   * The old two degrees of cue-ball tolerance let the object ball leave this
+   * shot some seventeen degrees off line. One degree already uses more than
+   * twice the pocket.
+   */
+  test('a degree off the cue ball is far outside the pocket', () => {
+    expect(play(STRAIGHT_IN_DRILL, deg(1), 0.5)!.pocketUsed).toBeGreaterThan(2);
+  });
+
+  test('the share allowed comes from the level, not a fixed one', () => {
+    // Walk the aim out until the shot uses most of the pocket, but not all.
+    let offset = 0;
+    let used = 0;
+    while (used < 0.6) {
+      offset += deg(0.01);
+      used = play(STRAIGHT_IN_DRILL, offset, 0.5)!.pocketUsed!;
+    }
+    expect(used).toBeLessThan(1);
+    expect(play(STRAIGHT_IN_DRILL, offset, 0.5, 1)!.qualifying).toBe(true);
+    expect(play(STRAIGHT_IN_DRILL, offset, 0.5, 0.5)!.qualifying).toBe(false);
   });
 
   test('missing the object ball entirely never qualifies', () => {
     // Softly, well away from the object ball, so it never comes back off a rail.
-    const outcome = play(STRAIGHT_IN_DRILL, deg(80), 0, 180);
+    const outcome = play(STRAIGHT_IN_DRILL, deg(80), 0);
     expect(outcome!.contacted).toBe(false);
     expect(outcome!.qualifying).toBe(false);
+    expect(outcome!.pocketUsed).toBeNull();
     expect(outcome!.missDistance).toBeNull();
   });
 
   test('reports how close the object ball came to the pocket', () => {
-    const missed = play(STRAIGHT_IN_DRILL, deg(1.5), 0.5, 0.5);
+    const missed = play(STRAIGHT_IN_DRILL, deg(1.5), 0.5);
     const capture = pocketById(STRAIGHT_IN_DRILL.targetPocket).mouthRadius;
     expect(missed!.pottedTarget).toBe(false);
     expect(missed!.missDistance).toBeGreaterThan(capture);
@@ -334,7 +354,7 @@ describe('the outcome contract', () => {
       if (Math.abs(cut) < 10) continue;
       const layout = layoutWithCut(`scratch-${cut}`, vec(0.3, 0), 'top-right', cut, 0.35);
       for (const power of [0.5, 0.75, 1]) {
-        const outcome = play(layout, 0, power, 2);
+        const outcome = play(layout, 0, power);
         if (outcome?.scratch) {
           scratched = outcome;
           break;
@@ -351,7 +371,7 @@ describe('the outcome contract', () => {
     // Laid out straight in to the side pocket, while the brief names the corner.
     const straight = layoutWithCut('wrong-pocket', vec(0.1, 0.2), 'top-middle', 0, 0.4);
     const layout = { ...straight, targetPocket: 'top-right' } as const;
-    const session = new ShotSession(layout, { toleranceDegrees: 2 });
+    const session = new ShotSession(layout, { pocketAllowance: 1 });
     session.aimTo(idealAimAngle(straight));
     session.beginCharge();
     session.setPower(0.5);

@@ -23,6 +23,7 @@ import {
   idealAimDirection,
   isPathClear,
   launchSpeedFor,
+  objectDeparture,
   objectRollFraction,
   objectSpeedAfterCut,
   rollPhaseDistance,
@@ -613,6 +614,43 @@ describe('analyseShot', () => {
         expect(Math.abs(toDeg(leaving)), `${cut} ${cueSpeed}`).toBeLessThan(0.05);
       }
     }
+  });
+
+  test('objectDeparture: along the ideal line, the object ball leaves for the target', () => {
+    for (const cut of [0, 20, -50]) {
+      const { cue, object } = placeCue('departure', vec(0.15, 0.1), pocket.id, cut, 0.6);
+      const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
+      const heading = objectDeparture(cue, object, analysis.aimDirection, analysis.launchSpeed)!;
+      const toTarget = sub(analysis.target, object);
+      expect(signedAngleBetween(fromAngle(heading), toTarget)).toBeCloseTo(0, 8);
+    }
+  });
+
+  test('objectDeparture: agrees with the solver either side of the line, and misses come back undefined', () => {
+    const { cue, object } = placeCue('departure', vec(0.15, 0.1), pocket.id, 35, 0.6);
+    const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
+    for (const offset of [-0.3, -0.1, 0.1, 0.3]) {
+      const aim = rotate(analysis.aimDirection, deg(offset));
+      let balls = [createBall(0, cue, scale(aim, analysis.launchSpeed)), createBall(1, object)];
+      for (let tick = 0; tick < 2400 && len(balls[1]!.vel) === 0; tick++) balls = stepWorld(balls).balls;
+      const predicted = objectDeparture(cue, object, aim, analysis.launchSpeed)!;
+      expect(Math.abs(toDeg(signedAngleBetween(balls[1]!.vel, fromAngle(predicted)))), `${offset}`).toBeLessThan(0.05);
+    }
+    expect(objectDeparture(cue, object, rotate(analysis.aimDirection, deg(30)), analysis.launchSpeed)).toBeUndefined();
+  });
+
+  /**
+   * The README's measure of the old scoring: two degrees off the cue ball,
+   * which level 1 used to pass, on a straight-in with half a metre to the
+   * ghost ball.
+   */
+  test('objectDeparture: two degrees off a straight-in from half a metre is some seventeen off line', () => {
+    const { cue, object } = placeCue('drill', vec(0.3, 0.15), pocket.id, 0, 0.5);
+    const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
+    const heading = objectDeparture(cue, object, rotate(analysis.aimDirection, deg(2)), analysis.launchSpeed)!;
+    const off = Math.abs(toDeg(signedAngleBetween(fromAngle(heading), sub(analysis.target, object))));
+    expect(off).toBeGreaterThan(16.5);
+    expect(off).toBeLessThan(18.5);
   });
 
   test('the ghost ball moves with the stroke, since the throw does', () => {

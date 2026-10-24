@@ -10,9 +10,16 @@
  */
 
 import { type ClothPreset, DEFAULT_CLOTH, clothRollingFriction } from '../constants';
-import { type AimError, type CutSide, type ShotAnalysis, aimErrorAt, analyseShot } from '../geometry/shot';
+import {
+  type AimError,
+  type CutSide,
+  type ShotAnalysis,
+  aimErrorAt,
+  analyseShot,
+  objectDeparture,
+} from '../geometry/shot';
 import { type PocketId, pocketById } from '../geometry/table';
-import { type Vec2, dist, fromAngle, vec } from '../geometry/vec2';
+import { type Vec2, dist, fromAngle, signedAngleBetween, vec } from '../geometry/vec2';
 import {
   MAX_SHOT_DURATION,
   REST_DWELL_TICKS,
@@ -25,6 +32,7 @@ import {
   stepWorld,
 } from '../physics/world';
 import { type ShotLayout, aimTarget, startingAimAngle } from './drills';
+import { potWindow } from './pot-window';
 import { cueSpeedForPower, recommendedPower as recommendedPowerFor } from './power';
 
 export type ShotPhase = 'aiming' | 'charging' | 'simulating' | 'settled' | 'evaluated';
@@ -49,8 +57,8 @@ export const MAX_CATCHUP_TICKS = 30;
 export const FAST_FORWARD = 4;
 
 export interface ShotSessionOptions {
-  /** Aim deviation, in degrees, that still counts as a qualifying shot. */
-  readonly toleranceDegrees?: number;
+  /** How much of the pot window a qualifying shot may use, as in `LevelDefinition`. */
+  readonly pocketAllowance?: number;
   readonly cloth?: ClothPreset;
   /**
    * Seeds where the cue starts, off the ideal line. Move it on for every
@@ -64,8 +72,15 @@ export interface ShotOutcome {
   readonly aimError: AimError;
   readonly cutAngle: number;
   readonly cutSide: CutSide;
-  readonly toleranceDegrees: number;
-  /** Drives progression: aimed well enough, and actually struck the object ball. */
+  readonly pocketAllowance: number;
+  /**
+   * How much of the pot window the aim used, on the side the object ball went:
+   * 0 is the ideal line, 1 the edge of what would still have dropped. Judged
+   * at the stroke the ideal line assumes, so it measures the aim and not the
+   * power. Null when the object ball was never struck, or nothing would drop.
+   */
+  readonly pocketUsed: number | null;
+  /** Drives progression: struck the object ball, using no more of the pocket than allowed. */
   readonly qualifying: boolean;
   readonly contacted: boolean;
   readonly pottedTarget: boolean;
@@ -84,7 +99,7 @@ export interface ShotOutcome {
 
 export class ShotSession {
   readonly layout: ShotLayout;
-  readonly toleranceDegrees: number;
+  readonly pocketAllowance: number;
 
   #phase: ShotPhase = 'aiming';
   #aimAngle: number;
@@ -106,7 +121,7 @@ export class ShotSession {
   constructor(layout: ShotLayout, options: ShotSessionOptions = {}) {
     this.layout = layout;
     this.#target = aimTarget(layout);
-    this.toleranceDegrees = options.toleranceDegrees ?? 2;
+    this.pocketAllowance = options.pocketAllowance ?? 1;
     this.#cloth = options.cloth ?? DEFAULT_CLOTH;
     this.#aimAngle = startingAimAngle(layout, options.aimSeed ?? 0);
     this.#balls = [
@@ -323,7 +338,9 @@ export class ShotSession {
     this.#phase = 'evaluated';
 
     const analysis = this.analysis;
-    const error = aimErrorAt(this.layout.cue, this.layout.object, analysis.ghostCenter, fromAngle(this.#aimAngle));
+    const aim = fromAngle(this.#aimAngle);
+    const error = aimErrorAt(this.layout.cue, this.layout.object, analysis.ghostCenter, aim);
+    const pocketUsed = this.#contacted ? this.#pocketUsed(analysis, aim) : null;
     const objectPocket = this.objectBall.potted ? this.objectBall.pocket : undefined;
 
     this.#outcome = {
@@ -331,8 +348,9 @@ export class ShotSession {
       aimError: error,
       cutAngle: analysis.cutAngle,
       cutSide: analysis.cutSide,
-      toleranceDegrees: this.toleranceDegrees,
-      qualifying: this.#contacted && error.degrees <= this.toleranceDegrees,
+      pocketAllowance: this.pocketAllowance,
+      pocketUsed,
+      qualifying: pocketUsed !== null && pocketUsed <= this.pocketAllowance,
       contacted: this.#contacted,
       pottedTarget: objectPocket === this.layout.targetPocket,
       pottedWrong: objectPocket !== undefined && objectPocket !== this.layout.targetPocket,
@@ -343,6 +361,21 @@ export class ShotSession {
       settled: this.#settled,
     };
     return this.#outcome;
+  }
+
+  /**
+   * The share of the pot window this aim used: where the object ball would
+   * leave, sent along it at the stroke the ideal line assumes, against how far
+   * it could go that way and still drop.
+   */
+  #pocketUsed(analysis: ShotAnalysis, aim: Vec2): number | null {
+    const window = potWindow(this.layout, this.#cloth, analysis);
+    if (!window) return null;
+    const { cue, object } = this.layout;
+    const departure = objectDeparture(cue, object, aim, analysis.launchSpeed, clothRollingFriction(this.#cloth));
+    if (departure === undefined) return null;
+    const turned = signedAngleBetween(fromAngle(window.ideal), fromAngle(departure));
+    return Math.abs(turned) / (turned >= 0 ? window.counterClockwise : window.clockwise);
   }
 
   #settle(settled: boolean): void {

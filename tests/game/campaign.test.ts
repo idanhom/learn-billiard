@@ -57,9 +57,9 @@ describe('starting out', () => {
     }
   });
 
-  test('uses the level tolerance for scoring', () => {
+  test('scores against the share of the pocket its level allows', () => {
     const subject = campaign();
-    expect(subject.toleranceDegrees).toBe(levelById(1).toleranceDegrees);
+    expect(subject.pocketAllowance).toBe(levelById(1).pocketAllowance);
   });
 
   test('alternates the cut side so practice does not favour one hand', () => {
@@ -224,11 +224,11 @@ describe('retries', () => {
 });
 
 describe('level select', () => {
-  test('jumps to a chosen level and uses its tolerance', () => {
+  test('jumps to a chosen level and uses its share of the pocket', () => {
     const subject = campaign();
     expect(subject.selectLevel(4)).toBe(true);
     expect(subject.level.id).toBe(4);
-    expect(subject.toleranceDegrees).toBe(levelById(4).toleranceDegrees);
+    expect(subject.pocketAllowance).toBe(levelById(4).pocketAllowance);
     expect(layoutViolations(subject.layout, subject.level)).toEqual([]);
   });
 

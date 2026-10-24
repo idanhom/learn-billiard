@@ -810,7 +810,7 @@ for (const [orientation, viewport] of [
   await phone.locator('.hud-aim-button').first().tap();
   await sleep(100);
   const nudged = ((((await phoneState()).aimAngle - ready.aimAngle) * 180) / Math.PI);
-  check(`phone, ${orientation}: the left aim button nudges a quarter degree`, Math.abs(nudged - 0.25) < 0.01, `${nudged.toFixed(3)} deg`);
+  check(`phone, ${orientation}: the left aim button nudges a twentieth of a degree`, Math.abs(nudged - 0.05) < 0.002, `${nudged.toFixed(3)} deg`);
 
   await stroke([{ x: midX, y: track.y + track.height * 0.5 }]);
   const tapped2 = await phoneState();

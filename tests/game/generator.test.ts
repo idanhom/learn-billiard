@@ -60,13 +60,13 @@ describe('the curriculum', () => {
     expect(levelById(5).cutRange).toEqual([60, 80]);
   });
 
-  test('tolerance tightens as the levels get harder', () => {
+  test('the share of the pocket allowed tightens as the levels get harder', () => {
     const graded = LEVELS.slice(0, 5);
     for (let i = 1; i < graded.length; i++) {
-      expect(graded[i]!.toleranceDegrees).toBeLessThanOrEqual(graded[i - 1]!.toleranceDegrees);
+      expect(graded[i]!.pocketAllowance).toBeLessThanOrEqual(graded[i - 1]!.pocketAllowance);
     }
-    expect(levelById(1).toleranceDegrees).toBeCloseTo(2, 6);
-    expect(levelById(5).toleranceDegrees).toBeCloseTo(0.75, 6);
+    expect(levelById(1).pocketAllowance).toBe(1);
+    expect(levelById(5).pocketAllowance).toBeCloseTo(0.7, 6);
   });
 
   test('level six is about distance and the rail, not a new angle band', () => {
@@ -262,7 +262,7 @@ describe('shots must actually be playable', () => {
         const { layout } = generateShot(level, seed, {
           preferredSide: seed % 2 === 0 ? 'left' : 'right',
         });
-        const session = new ShotSession(layout, { toleranceDegrees: level.toleranceDegrees });
+        const session = new ShotSession(layout, { pocketAllowance: level.pocketAllowance });
         session.aimTo(idealAimAngle(layout));
         session.beginCharge();
         session.setPower(0.6);
@@ -290,7 +290,7 @@ describe('shots must actually be playable', () => {
         });
         const potted = [0.5, 0.75, 1].some((power) => {
           const session = new ShotSession(layout, {
-            toleranceDegrees: level.toleranceDegrees,
+            pocketAllowance: level.pocketAllowance,
             cloth: SLOWEST_CLOTH,
           });
           // Throw moves with the stroke, so the line to aim at does too.

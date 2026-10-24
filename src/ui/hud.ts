@@ -78,7 +78,8 @@ export interface HudState {
   readonly levelName: string;
   readonly levelDescription: string;
   readonly levels: readonly HudLevelEntry[];
-  readonly toleranceDegrees: number;
+  /** Share of the pocket a qualifying shot may use. */
+  readonly pocketAllowance: number;
   readonly windowQualified: number;
   readonly windowNeeded: number;
   readonly attempts: number;
@@ -216,8 +217,8 @@ export class Hud {
     const aim = panel(root, 'hud-aim');
     aim.classList.add('interactive');
     aim.innerHTML =
-      '<button type="button" class="hud-aim-button" aria-label="Aim a quarter degree left">&lsaquo;</button>' +
-      '<button type="button" class="hud-aim-button" aria-label="Aim a quarter degree right">&rsaquo;</button>';
+      '<button type="button" class="hud-aim-button" aria-label="Aim a twentieth of a degree left">&lsaquo;</button>' +
+      '<button type="button" class="hud-aim-button" aria-label="Aim a twentieth of a degree right">&rsaquo;</button>';
     const [aimLeft, aimRight] = aim.querySelectorAll('button');
     this.touch = {
       power: strip.querySelector('.hud-strip-track') as HTMLElement,
@@ -436,7 +437,7 @@ export class Hud {
 
     const line = state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
-      : `${state.windowQualified}/${state.windowNeeded} toward the next tier &middot; within ${state.toleranceDegrees}&deg;`;
+      : `${state.windowQualified}/${state.windowNeeded} toward the next tier &middot; within ${percent(state.pocketAllowance)} of the pocket`;
 
     const html =
       `<div class="hud-label">${escape(state.levelName)}</div>` +
@@ -618,8 +619,10 @@ function renderReport(
 
   return (
     `<div class="hud-verdict ${good ? 'good' : 'bad'}">${verdict}</div>` +
-    `<div class="hud-sub">Aim: ${aim} &middot; ${((outcome.cutAngle * 180) / Math.PI).toFixed(1)}&deg; cut ` +
-    `&middot; tolerance ${outcome.toleranceDegrees}&deg;</div>` +
+    `<div class="hud-sub">Aim: ${aim} &middot; ${((outcome.cutAngle * 180) / Math.PI).toFixed(1)}&deg; cut</div>` +
+    (outcome.pocketUsed === null
+      ? ''
+      : `<div class="hud-sub">Used ${percent(outcome.pocketUsed)} of the pocket, ${percent(outcome.pocketAllowance)} allowed</div>`) +
     `<div class="hud-sub">Result: ${pot}</div>` +
     (notes.length ? `<div class="hud-sub hud-note">${notes.join(' &middot; ')}</div>` : '') +
     // Held under a summary card the layout has gone, and the card says what next.
@@ -628,6 +631,11 @@ function renderReport(
       : '<div class="hud-sub hud-note"><b>Retry</b><kbd class="kbd-hint"> R</kbd> this layout &middot; ' +
         '<b>Next</b><kbd class="kbd-hint"> N</kbd> for another</div>')
   );
+}
+
+/** A share as a whole percentage. */
+function percent(share: number): string {
+  return `${Math.round(share * 100)}%`;
 }
 
 function speedLabel(timeScale: number): string {

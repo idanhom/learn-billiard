@@ -3,8 +3,8 @@
  *
  * Practice levels are scored on aim and drive the guide tiers. The exam is not:
  * it turns every guide off, ignores tiers entirely, and counts pots over a
- * fixed run — because the last thing worth checking is not whether the aim is
- * within tolerance but whether the ball goes in.
+ * fixed run, because the last thing worth checking is not whether the aim used
+ * little enough of the pocket but whether the ball goes in.
  *
  * Only the first shot at a layout counts, for tiers, for the level's record and
  * for the exam. A retry has already seen where the first one went, so it says
@@ -119,8 +119,8 @@ export class Campaign {
     return this.#level.exam ? NO_GUIDES : this.#tiers.guides;
   }
 
-  get toleranceDegrees(): number {
-    return this.#level.toleranceDegrees;
+  get pocketAllowance(): number {
+    return this.#level.pocketAllowance;
   }
 
   get layout(): ShotLayout {
