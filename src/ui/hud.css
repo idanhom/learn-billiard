@@ -526,6 +526,30 @@ body {
   color: var(--ink);
 }
 
+.hud-pips {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.hud-pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-dim);
+  box-sizing: border-box;
+}
+
+.hud-pip.hit {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.hud-pip.miss {
+  border-color: var(--bad);
+}
+
 .hud-tendency b {
   color: var(--warn);
   font-weight: 600;

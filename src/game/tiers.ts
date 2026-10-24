@@ -81,6 +81,11 @@ export class TierTracker {
     return this.#window.filter(Boolean).length;
   }
 
+  /** The shots in the window, oldest first: true for each that qualified. */
+  get recent(): readonly boolean[] {
+    return [...this.#window];
+  }
+
   /** Log one evaluated attempt. Only evaluated shots reach here. */
   record(qualifying: boolean): RecordResult {
     if (this.#completed) return { advanced: false, completed: true };

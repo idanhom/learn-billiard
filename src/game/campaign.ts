@@ -139,6 +139,11 @@ export class Campaign {
     return this.#tiers.qualifiedInWindow;
   }
 
+  /** The tier's window of recent shots, oldest first: true for each that qualified. */
+  get tierWindow(): readonly boolean[] {
+    return this.#tiers.recent;
+  }
+
   get levelCompleted(): boolean {
     return this.#tiers.completed;
   }

@@ -16,7 +16,7 @@ import { browserStorage, createProgressStore } from './game/progress-store';
 import { createSettingsStore, nextCloth, nextTimeScale } from './game/settings-store';
 import { ShotHistory, signedShare } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
-import { ADVANCE_REQUIRED } from './game/tiers';
+import { ADVANCE_REQUIRED, ADVANCE_WINDOW } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
 import { PoolScene } from './scene/pool-scene';
 import { Hud, type Milestone, type Notice } from './ui/hud';
@@ -329,8 +329,9 @@ function frame(now: number): void {
       current: level.id === campaign.level.id,
     })),
     pocketAllowance: campaign.pocketAllowance,
-    windowQualified: campaign.qualifiedInWindow,
+    tierWindow: campaign.tierWindow,
     windowNeeded: ADVANCE_REQUIRED,
+    windowSize: ADVANCE_WINDOW,
     attempts: stats.attempts,
     qualified: stats.qualified,
     potted: stats.potted,

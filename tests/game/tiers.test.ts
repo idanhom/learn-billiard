@@ -133,3 +133,21 @@ describe('guide visibility follows the tier', () => {
     }
   });
 });
+
+describe('the window the HUD shows as pips', () => {
+  test('is the last five shots at this tier, oldest first', () => {
+    const tracker = new TierTracker();
+    tracker.record(false);
+    tracker.record(true);
+    expect(tracker.recent).toEqual([false, true]);
+    for (const shot of [false, false, true, false]) tracker.record(shot);
+    expect(tracker.recent).toEqual([true, false, false, true, false]);
+  });
+
+  test('empties on promotion, so a new tier starts with every pip open', () => {
+    const tracker = new TierTracker();
+    for (let i = 0; i < ADVANCE_REQUIRED; i++) tracker.record(true);
+    expect(tracker.tier).toBe(1);
+    expect(tracker.recent).toEqual([]);
+  });
+});

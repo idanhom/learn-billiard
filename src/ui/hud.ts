@@ -79,8 +79,10 @@ export interface HudState {
   readonly levels: readonly HudLevelEntry[];
   /** Share of the pocket a qualifying shot may use. */
   readonly pocketAllowance: number;
-  readonly windowQualified: number;
+  /** The tier's window of recent shots, oldest first: true for each that qualified. */
+  readonly tierWindow: readonly boolean[];
   readonly windowNeeded: number;
+  readonly windowSize: number;
   readonly attempts: number;
   readonly qualified: number;
   readonly potted: number;
@@ -436,7 +438,8 @@ export class Hud {
 
     const line = state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
-      : `${state.windowQualified}/${state.windowNeeded} toward the next tier &middot; within ${percent(state.pocketAllowance)} of the pocket`;
+      : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize} to advance &middot; ` +
+        `within ${percent(state.pocketAllowance)} of the pocket`;
 
     const html =
       `<div class="hud-label">${escape(state.levelName)}</div>` +
@@ -635,6 +638,22 @@ function renderReport(
       : '<div class="hud-sub hud-note"><b>Retry</b><kbd class="kbd-hint"> R</kbd> this layout &middot; ' +
         '<b>Next</b><kbd class="kbd-hint"> N</kbd> for another</div>')
   );
+}
+
+/**
+ * The tier window as pips, oldest first: filled for a shot on aim, ringed in
+ * red for one off it, open for one still to play. A count of the shots on aim
+ * would read like a score that only climbs, when an old shot drops out of the
+ * window with every new one.
+ */
+function tierPips(state: HudState): string {
+  const pips = Array.from({ length: state.windowSize }, (_, i) => {
+    const shot = state.tierWindow[i];
+    return `<span class="hud-pip ${shot === undefined ? 'open' : shot ? 'hit' : 'miss'}"></span>`;
+  }).join('');
+  const onAim = state.tierWindow.filter(Boolean).length;
+  const label = `${onAim} of the last ${state.tierWindow.length} on aim, ${state.windowNeeded} needed`;
+  return `<span class="hud-pips" role="img" aria-label="${label}">${pips}</span>`;
 }
 
 /** A share as a whole percentage. */

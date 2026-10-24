@@ -202,6 +202,10 @@ await playPerfect({ fresh: true });
 await playPerfect({ fresh: true });
 const promoted = await state();
 check('three qualifying shots advance a tier', promoted.tier === 1, `tier=${promoted.tier}`);
+const pips = await page.evaluate(() =>
+  [...document.querySelectorAll('#hud-status .hud-pip')].map((pip) => pip.className.replace('hud-pip ', '')),
+);
+check('a new tier starts its window empty, as five open pips', pips.join() === 'open,open,open,open,open', pips.join());
 check('the pocket line is withdrawn at tier 1', promoted.guides.objectPath === false);
 check('the ghost ball survives to tier 1', promoted.guides.ghostBall === true);
 
