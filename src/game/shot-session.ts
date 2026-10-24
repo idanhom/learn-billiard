@@ -59,6 +59,11 @@ export const MAX_CATCHUP_TICKS = 30;
  */
 export const FAST_FORWARD = 4;
 
+/** Ticks between the points of a ball's trail: 60 a second. Every contact adds one as well. */
+const TRAIL_EVERY = 4;
+/** A ball that has moved less than this since its last point adds no new one. */
+const TRAIL_STEP = 0.002;
+
 export interface ShotSessionOptions {
   /** How much of the pot window a qualifying shot may use, as in `LevelDefinition`. */
   readonly pocketAllowance?: number;
@@ -149,6 +154,8 @@ export class ShotSession {
   /** The object ball has been in the target's jaws. */
   #inJaws = false;
   #call: FractionName | null = null;
+  /** Where each ball has been since the stroke: the post-shot diagram. */
+  #trails: Vec2[][] = [];
 
   constructor(layout: ShotLayout, options: ShotSessionOptions = {}) {
     this.layout = layout;
@@ -320,7 +327,13 @@ export class ShotSession {
     this.cueBall.roll = vec(0, 0);
     this.#phase = 'simulating';
     this.#recordMissDistance();
+    this.#trails = this.#balls.map((ball) => [ball.pos]);
     return true;
+  }
+
+  /** Each ball's path since the stroke, a point every sixtieth of a second and at every contact. */
+  get trails(): readonly (readonly Vec2[])[] {
+    return this.#trails;
   }
 
   /** Run the physics forward by one rendered frame. */
@@ -348,6 +361,7 @@ export class ShotSession {
       this.#accumulator -= TICK;
       ticks++;
       this.#recordMissDistance();
+      if (step.events.length > 0 || Math.round(this.#elapsed / TICK) % TRAIL_EVERY === 0) this.#extendTrails();
 
       this.#dwell = allAtRest(this.#balls) ? this.#dwell + 1 : 0;
       if (this.#dwell >= REST_DWELL_TICKS) {
@@ -446,6 +460,17 @@ export class ShotSession {
     this.#settled = settled;
     this.#phase = 'settled';
     this.#accumulator = 0;
+    this.#extendTrails(true);
+  }
+
+  /** A point on each trail that has moved on far enough, or, at the end, at all. */
+  #extendTrails(final = false): void {
+    for (let i = 0; i < this.#balls.length; i++) {
+      const trail = this.#trails[i];
+      const { pos } = this.#balls[i]!;
+      const moved = trail ? dist(trail[trail.length - 1]!, pos) : 0;
+      if (trail && (final ? moved > 0 : moved > TRAIL_STEP)) trail.push(pos);
+    }
   }
 
   #recordMissDistance(): void {

@@ -117,6 +117,8 @@ export interface HudState {
   /** How far the player sits from the screen, in metres, for the stance view. */
   readonly viewingDistance: number;
   readonly sound: boolean;
+  /** The shot just played is being shown again. */
+  readonly replaying: boolean;
   /** The commit routine, where it runs: down on the line or still standing. */
   readonly routine: { readonly down: boolean } | null;
   /** How it went for the shot just played: time to shoot, and how often the player stood back up. */
@@ -163,6 +165,7 @@ export interface HudActions {
   /** Move the viewing distance the stance view is drawn at, a step nearer or further. */
   onViewingDistance(steps: number): void;
   onToggleSound(): void;
+  onReplay(): void;
   /** Get down on the line, or stand back up: the commit routine. */
   onGetDown(): void;
   /** The player's read of their own miss, or null to skip it. */
@@ -351,6 +354,7 @@ export class Hud {
       const button = (event.target as HTMLElement).closest('[data-estimate]');
       if (button instanceof HTMLElement) this.#actions.onEstimate(Number(button.dataset.estimate) as Estimate);
       if ((event.target as HTMLElement).closest('[data-estimate-skip]')) this.#actions.onEstimate(null);
+      if ((event.target as HTMLElement).closest('[data-replay]')) this.#actions.onReplay();
     });
     this.#shot.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest('[data-call]');
@@ -436,9 +440,11 @@ export class Hud {
         this.#report.style.display = '';
       }
     } else if (state.outcome) {
-      const html = state.estimate?.asking
-        ? estimatePrompt(state.estimate.straight)
-        : renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined, state.routineLog, state.estimate);
+      const html = state.replaying
+        ? '<div class="hud-sub">Replay, from above at a quarter speed &middot; <b>Esc</b> stops it</div>'
+        : state.estimate?.asking
+          ? estimatePrompt(state.estimate.straight)
+          : renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined, state.routineLog, state.estimate);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
         this.#report.innerHTML = html;
@@ -790,7 +796,9 @@ function renderReport(
     // Held under a summary card the layout has gone, and the card says what next.
     (held
       ? ''
-      : '<div class="hud-sub hud-note"><b>Retry</b><kbd class="kbd-hint"> R</kbd> this layout &middot; ' +
+      : '<div class="hud-sub hud-note">' +
+        '<button type="button" class="hud-call" data-replay>Replay</button><kbd class="kbd-hint"> P</kbd> &middot; ' +
+        '<b>Retry</b><kbd class="kbd-hint"> R</kbd> this layout &middot; ' +
         '<b>Next</b><kbd class="kbd-hint"> N</kbd> for another</div>')
   );
 }

@@ -35,6 +35,8 @@ export interface InputHandlers {
   onOpenTable(): void;
   /** M: sound on or off. */
   onToggleSound(): void;
+  /** P: the shot just played, again, from overhead and slowed down. */
+  onReplay(): void;
 }
 
 /**
@@ -164,6 +166,10 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
       case 'KeyM':
         if (event.repeat) return;
         handlers.onToggleSound();
+        return;
+      case 'KeyP':
+        if (event.repeat) return;
+        handlers.onReplay();
         return;
       case 'Escape':
         if (charging) {

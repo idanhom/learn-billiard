@@ -1036,6 +1036,33 @@ await page.focus('#game');
 await page.keyboard.press('KeyM');
 await sleep(100);
 
+// After a shot: where the balls went, drawn on the cloth, and a replay of it
+// from overhead at a quarter speed that ends where the shot did.
+await playOne();
+const played = await state();
+check('a played shot leaves a trail for each ball', played.trails.length >= 2 && played.trails[0] > 1 && played.trails[1] > 1, JSON.stringify(played.trails));
+await page.evaluate(() => window.__debug.setView('overhead'));
+await sleep(200);
+await page.screenshot({ path: `${OUT}post-shot-diagram.png` });
+await page.evaluate(() => window.__debug.setView('behind'));
+await page.focus('#game');
+await page.keyboard.press('KeyP');
+await sleep(150);
+const replaying = await state();
+check('P replays it from overhead', replaying.replaying === true && replaying.view === 'overhead', `${replaying.replaying} ${replaying.view}`);
+await page.waitForFunction(() => !window.__debug.state().replaying, null, { timeout: 60000 });
+const replayed = await state();
+check(
+  'and it ends where the shot did, back in the view it left',
+  replayed.view === 'behind' && JSON.stringify(replayed.balls.map((b) => b.pos)) === JSON.stringify(played.balls.map((b) => b.pos)),
+  replayed.view,
+);
+await page.keyboard.press('KeyP');
+await sleep(300);
+await page.keyboard.press('Escape');
+await sleep(100);
+check('Escape stops a replay part way', !(await state()).replaying);
+
 check(
   'without a touch screen the power bar stays, and the touch strip stays away',
   (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),

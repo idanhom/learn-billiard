@@ -578,3 +578,38 @@ describe('the simulation clock', () => {
     }
   });
 });
+
+describe('the post-shot diagram and the replay', () => {
+  function struck(frames: number): ShotSession {
+    const session = new ShotSession(CUT_30_DRILL);
+    session.aimTo(idealAngle(CUT_30_DRILL));
+    session.beginCharge();
+    session.setPower(0.45);
+    session.release();
+    // An uneven frame rate, as a browser gives, to show it changes nothing.
+    for (let i = 0; session.phase === 'simulating' && i < 20_000; i++) session.advance(i % 3 === 0 ? 1 / frames : 1 / 144);
+    return session;
+  }
+
+  test('trace each ball from where it started to where it stopped', () => {
+    const session = struck(60);
+    const [cue, object] = session.trails;
+    expect(cue![0]).toEqual(CUT_30_DRILL.cue);
+    expect(object![0]).toEqual(CUT_30_DRILL.object);
+    expect(cue![cue!.length - 1]).toEqual(session.cueBall.pos);
+    expect(object![object!.length - 1]).toEqual(session.objectBall.pos);
+    expect(cue!.length).toBeGreaterThan(10);
+    expect(object!.length).toBeGreaterThan(10);
+  });
+
+  test('are the same shot again, however the frames fall', () => {
+    const first = struck(60);
+    const again = struck(23);
+    expect(again.balls.map((b) => b.pos)).toEqual(first.balls.map((b) => b.pos));
+    expect(again.events.map((e) => [e.type, e.time])).toEqual(first.events.map((e) => [e.type, e.time]));
+  });
+
+  test('has no trail before the stroke', () => {
+    expect(new ShotSession(CUT_30_DRILL).trails).toEqual([]);
+  });
+});

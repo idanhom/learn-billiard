@@ -53,6 +53,7 @@ by that.
 | `G` | get down on the line, or stand back up (last tier and exam) |
 | `T` | at the table: what to take to a real one, and what this can't teach |
 | `M` | sound on or off |
+| `P` | replay the shot just played, from overhead at a quarter speed |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
 degree at a time with the `‹` `›` buttons. Power is the strip down the right edge:
@@ -65,6 +66,13 @@ The table sounds as it plays: the strike, the balls meeting, the cushions and
 the pockets, each made from the simulation's own contacts and as loud as the
 contact was hard. `M` turns it off, as does the switch under `?`. A potted ball
 drops into the hole rather than vanishing at its edge.
+
+Once a shot is scored, the table keeps where each ball went, drawn on the
+cloth, with the line the object ball needed dashed beside it; it reads best
+from overhead. `P` (or Replay in the report) plays the shot again from
+overhead at a quarter speed. The solver runs on a fixed tick, so the replay is
+the same shot, not a reconstruction of it. While the self-estimate is asking,
+both wait, since the dashed line would answer it.
 
 Every key also has a button in the toolbar along the bottom of the screen. On
 a small screen, a phone either way up, the panels shrink, and the level list

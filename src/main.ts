@@ -74,6 +74,7 @@ const hud = new Hud(hudRoot, {
   onCall: (fraction) => session.callFraction(fraction),
   onViewingDistance: (steps) => changeViewingDistance(steps),
   onToggleSound: () => toggleSound(),
+  onReplay: () => startReplay(),
   returnFocus: () => canvas.focus(),
   onOpenTable: () => tablePanel.toggle(),
 });
@@ -103,6 +104,12 @@ let drill: PerceptionDrill | undefined;
 let placedGhost: Vec2 | undefined;
 /** How many of the session's events have been sounded. */
 let heard = 0;
+/**
+ * The shot just played, being shown again from overhead at a quarter speed:
+ * its own session, how much of it has sounded, and the view to go back to.
+ */
+let replay: { readonly session: ShotSession; readonly view: CameraView; heard: number } | undefined;
+const REPLAY_SPEED = 0.25;
 let session = newSession();
 routine = routineActive() ? new Routine(clock()) : undefined;
 drill = newDrill();
@@ -241,6 +248,7 @@ function newSession(): ShotSession {
 }
 
 function startShot(): void {
+  stopReplay();
   session = newSession();
   practice = campaign.retrying;
   milestone = undefined;
@@ -399,6 +407,29 @@ function released(): void {
   audio.strike(session.cueSpeed);
 }
 
+/**
+ * P: the shot just played, again. The solver runs on a fixed tick, so the
+ * same aim and power on the same layout and cloth is the same shot, whatever
+ * the frame rate. Not while the self-estimate asks, which it would answer.
+ */
+function startReplay(): void {
+  if (session.phase !== 'evaluated' || replay || estimate?.asking) return;
+  const again = new ShotSession(session.layout, { pocketAllowance: session.pocketAllowance, cloth: session.cloth });
+  again.aimTo(session.aimAngle);
+  again.beginCharge();
+  again.setPower(session.power);
+  again.release();
+  replay = { session: again, view: scene.view, heard: 0 };
+  scene.setView('overhead');
+  audio.strike(again.cueSpeed);
+}
+
+function stopReplay(): void {
+  if (!replay) return;
+  scene.setView(replay.view);
+  replay = undefined;
+}
+
 /** M: the table's sounds on or off. */
 function toggleSound(): void {
   settings = { ...settings, sound: !settings.sound };
@@ -427,7 +458,8 @@ attachInput(canvas, {
   },
   onGetDown: toggleDown,
   onToggleSound: toggleSound,
-  onDismiss: () => answerEstimate(null),
+  onReplay: startReplay,
+  onDismiss: () => (replay ? stopReplay() : answerEstimate(null)),
   onOpenTable: () => tablePanel.open(),
   onRetry: retry,
   onNext: nextShot,
@@ -504,12 +536,27 @@ function frame(now: number): void {
     session.setPower(Math.min(1, chargeSeconds / CHARGE_SECONDS));
   }
 
-  session.advance(dt * settings.timeScale);
-  // Each contact sounds once, as the simulation reaches it.
-  for (; heard < session.events.length; heard++) audio.event(session.events[heard]!);
-  if (session.phase === 'settled') {
-    const outcome = session.evaluate();
-    if (outcome) recordOutcome(outcome);
+  if (replay) {
+    replay.session.advance(dt * REPLAY_SPEED);
+    for (; replay.heard < replay.session.events.length; replay.heard++) audio.event(replay.session.events[replay.heard]!);
+    if (replay.session.phase === 'settled') stopReplay();
+  } else {
+    session.advance(dt * settings.timeScale);
+    // Each contact sounds once, as the simulation reaches it.
+    for (; heard < session.events.length; heard++) audio.event(session.events[heard]!);
+    if (session.phase === 'settled') {
+      const outcome = session.evaluate();
+      if (outcome) recordOutcome(outcome);
+    }
+  }
+  const shown = replay?.session ?? session;
+
+  // Once a shot is scored, where the balls went, beside the line it needed.
+  // Not while the self-estimate asks, since the line would answer it.
+  if (session.phase === 'evaluated' && !replay && !estimate?.asking) {
+    scene.trails.show(session.trails, { from: session.layout.object, to: session.target });
+  } else {
+    scene.trails.hide();
   }
 
   const analysis = session.analysis;
@@ -535,9 +582,9 @@ function frame(now: number): void {
   }
 
   scene.render({
-    balls: session.balls,
-    previous: session.previousBalls,
-    alpha: session.alpha,
+    balls: shown.balls,
+    previous: shown.previousBalls,
+    alpha: shown.alpha,
     aimAngle: session.aimAngle,
     power: session.power,
     showCue: aiming && !drill,
@@ -592,6 +639,7 @@ function frame(now: number): void {
     view: scene.view,
     viewingDistance: settings.viewingDistance,
     sound: settings.sound,
+    replaying: replay !== undefined,
     routine: routine ? { down: routine.down } : null,
     routineLog,
     estimate,
@@ -631,6 +679,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     next: nextShot,
     estimate: (said: Estimate | null) => answerEstimate(said),
     sounds: () => ({ ...audio.asked }),
+    replay: startReplay,
     toggleSound,
     callDrill: (fraction: FractionName) => callDrill(fraction),
     placeDrill: (x: number, y: number) => placeDrill({ x, y }),
@@ -678,6 +727,8 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       routineLog,
       estimate,
       drill: drillState(),
+      replaying: replay !== undefined,
+      trails: session.trails.map((trail) => trail.length),
       aimAngle: session.aimAngle,
       idealAimAngle: angleOf(session.analysis.aimDirection),
       power: session.power,
