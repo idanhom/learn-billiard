@@ -84,6 +84,13 @@ overhead at a quarter speed. The solver runs on a fixed tick, so the replay is
 the same shot, not a reconstruction of it. While the self-estimate is asking,
 both wait, since the dashed line would answer it.
 
+Under `?` the guides can be drawn in high contrast: solid, brighter and twice
+as thick. When the system asks for reduced motion the camera cuts between
+framings instead of gliding, a potted ball goes without the drop, and nothing
+in the HUD slides or fades. The shot report is a live region, so a screen
+reader reads each result as it comes; the auto-next countdown is left out of
+it.
+
 Every key also has a button in the toolbar along the bottom of the screen. On
 a small screen, a phone either way up, the panels shrink, and the level list
 and the recent shots fold away behind toolbar buttons of their own, so the

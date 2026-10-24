@@ -96,6 +96,7 @@ describe('validation', () => {
       sound: true,
       autoNext: false,
       coached: false,
+      highContrast: false,
     });
   });
 
@@ -114,6 +115,7 @@ describe('validation', () => {
       sound: true,
       autoNext: false,
       coached: false,
+      highContrast: false,
     });
   });
 
@@ -144,7 +146,7 @@ describe('the store', () => {
   test('round-trips a setting', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false });
+    store.save({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false, highContrast: false });
     const loaded = createSettingsStore(storage).load();
     expect(loaded.timeScale).toBe(0.25);
     expect(loaded.cloth).toBe('slow');
@@ -158,25 +160,25 @@ describe('the store', () => {
   test('changing the cloth leaves the time scale alone', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false });
+    store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false, highContrast: false });
     const current = store.load();
     store.save({ ...current, cloth: 'fast' });
-    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false });
+    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false, highContrast: false });
   });
 
   test('changing the time scale leaves the cloth alone', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 1, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false });
+    store.save({ timeScale: 1, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false, highContrast: false });
     const current = store.load();
     store.save({ ...current, timeScale: 0.25 });
-    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false });
+    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false, highContrast: false });
   });
 
   test('a record saved before cloth existed keeps its remembered speed', () => {
     const storage = new FakeStorage();
     storage.items.set(SETTINGS_KEY, JSON.stringify({ version: 1, timeScale: 0.5 }));
-    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false });
+    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false, highContrast: false });
   });
 
   test('an empty store is full speed', () => {
@@ -199,13 +201,13 @@ describe('the store', () => {
   test('a storage that refuses to write does not throw', () => {
     const storage = new FakeStorage();
     storage.failOnWrite = true;
-    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false })).not.toThrow();
+    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false, highContrast: false })).not.toThrow();
   });
 
   test('works with no storage at all', () => {
     const store = createSettingsStore(undefined);
     expect(store.load()).toEqual(defaultSettings());
-    expect(() => store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false })).not.toThrow();
+    expect(() => store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true, autoNext: false, coached: false, highContrast: false })).not.toThrow();
   });
 });
 
@@ -269,5 +271,14 @@ describe('the first-launch coaching', () => {
     expect(validateSettings({ version: 1, timeScale: 1 })!.coached).toBe(false);
     expect(validateSettings({ version: 1, timeScale: 1, coached: true })!.coached).toBe(true);
     expect(validateSettings({ version: 1, timeScale: 1, coached: 'yes' })).toBeUndefined();
+  });
+});
+
+describe('high-contrast guides', () => {
+  test('are off until turned on, as in a record from before they existed', () => {
+    expect(defaultSettings().highContrast).toBe(false);
+    expect(validateSettings({ version: 1, timeScale: 1 })!.highContrast).toBe(false);
+    expect(validateSettings({ version: 1, timeScale: 1, highContrast: true })!.highContrast).toBe(true);
+    expect(validateSettings({ version: 1, timeScale: 1, highContrast: 'on' })).toBeUndefined();
   });
 });

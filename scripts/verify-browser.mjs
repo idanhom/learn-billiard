@@ -1170,6 +1170,46 @@ const dailyAgain = await page.textContent('#hud-status');
 check('after it, the set again is practice, and the first run stands', dailyAgain.includes('shot 1 of 10') && dailyAgain.includes('Practice'), dailyAgain);
 check('the levels panel counts the days practised', (await page.textContent('#hud-levels')).includes('Practised on 1 of the last 7 days'));
 
+// Accessibility: the report is read out, the guides can be high contrast, and
+// reduced motion is honoured as soon as the system asks.
+check(
+  'the shot report and notices are live regions',
+  await page.evaluate(
+    () =>
+      document.getElementById('hud-report').getAttribute('aria-live') === 'polite' &&
+      document.getElementById('hud-notice').getAttribute('role') === 'status',
+  ),
+);
+await page.evaluate(() => window.__debug.toggleContrast());
+const contrasted = await page.evaluate(() => ({
+  state: window.__debug.state().highContrast,
+  saved: JSON.parse(window.localStorage.getItem('pool-angle-trainer/settings/v1')).highContrast,
+}));
+check('high-contrast guides turn on and are kept', contrasted.state === true && contrasted.saved === true, JSON.stringify(contrasted));
+await page.evaluate(() => {
+  window.__debug.selectLevel(3);
+  window.__debug.setView('overhead');
+});
+await sleep(200);
+await page.screenshot({ path: `${OUT}high-contrast.png` });
+await page.evaluate(() => {
+  window.__debug.toggleContrast();
+  window.__debug.setView('behind');
+});
+await page.emulateMedia({ reducedMotion: 'reduce' });
+await sleep(100);
+const calm = await page.evaluate(() => ({
+  scene: window.__debug.state().reducedMotion,
+  transition: getComputedStyle(document.querySelector('.hud-meter-fill')).transitionDuration,
+}));
+await page.emulateMedia({ reducedMotion: 'no-preference' });
+await sleep(100);
+check(
+  'reduced motion is honoured the moment it is asked for, and let go after',
+  calm.scene === true && calm.transition === '0s' && (await state()).reducedMotion === false,
+  JSON.stringify(calm),
+);
+
 check(
   'without a touch screen the power bar stays, and the touch strip stays away',
   (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),

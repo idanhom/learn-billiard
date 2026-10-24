@@ -79,6 +79,7 @@ const hud = new Hud(hudRoot, {
   onReplay: () => startReplay(),
   onToggleAutoNext: () => toggleAutoNext(),
   onSkipCoaching: () => skipCoaching(),
+  onToggleContrast: () => toggleContrast(),
   returnFocus: () => canvas.focus(),
   onOpenTable: () => tablePanel.toggle(),
 });
@@ -91,6 +92,11 @@ const history = new ShotHistory();
 let settings = settingsStore.load();
 scene.setViewingDistance(settings.viewingDistance);
 const audio = new TableAudio(settings.sound);
+scene.guides.setContrast(settings.highContrast);
+// Less motion when the system asks for it, and as soon as it does.
+const lessMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+scene.setReducedMotion(lessMotion?.matches ?? false);
+lessMotion?.addEventListener('change', (event) => scene.setReducedMotion(event.matches));
 /** Three coached shots on a first launch: nothing played, and the coaching not yet done or skipped. */
 const coach = new Coach(!settings.coached && campaign.isFresh);
 
@@ -504,6 +510,14 @@ function coachingDone(): void {
   settingsStore.save(settings);
 }
 
+/** The guides solid, brighter and thicker, or as they were. */
+function toggleContrast(): void {
+  settings = { ...settings, highContrast: !settings.highContrast };
+  settingsStore.save(settings);
+  scene.guides.setContrast(settings.highContrast);
+  announce(settings.highContrast ? 'High-contrast guides.' : 'Guides as usual.');
+}
+
 /** M: the table's sounds on or off. */
 function toggleSound(): void {
   settings = { ...settings, sound: !settings.sound };
@@ -725,6 +739,7 @@ function frame(now: number): void {
     view: scene.view,
     viewingDistance: settings.viewingDistance,
     sound: settings.sound,
+    highContrast: settings.highContrast,
     replaying: replay !== undefined,
     coach: coach.active ? coach.step : null,
     autoNext: settings.autoNext,
@@ -774,6 +789,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     replay: startReplay,
     toggleAutoNext,
     skipCoaching,
+    toggleContrast,
     toggleSound,
     callDrill: (fraction: FractionName) => callDrill(fraction),
     placeDrill: (x: number, y: number) => placeDrill({ x, y }),
@@ -823,6 +839,8 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       drill: drillState(),
       replaying: replay !== undefined,
       coach: coach.active ? coach.step : null,
+      highContrast: settings.highContrast,
+      reducedMotion: scene.reducedMotion,
       trails: session.trails.map((trail) => trail.length),
       aimAngle: session.aimAngle,
       idealAimAngle: angleOf(session.analysis.aimDirection),

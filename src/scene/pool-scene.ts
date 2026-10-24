@@ -121,6 +121,8 @@ export class PoolScene {
 
   #view: CameraView = 'behind';
   #viewSettled = false;
+  /** The player has asked for less motion: the camera cuts rather than glides, and pots vanish. */
+  #reducedMotion = false;
   /** The canvas's height in CSS pixels, and how far the player sits from it, for the stance view's true scale. */
   #cssHeight = 1;
   #viewingDistance = 0.6;
@@ -177,6 +179,14 @@ export class PoolScene {
   /** How far the player's eyes are from the screen, in metres: what true scale is measured against. */
   setViewingDistance(metres: number): void {
     this.#viewingDistance = metres;
+  }
+
+  setReducedMotion(reduce: boolean): void {
+    this.#reducedMotion = reduce;
+  }
+
+  get reducedMotion(): boolean {
+    return this.#reducedMotion;
   }
 
   /** The camera's vertical field of view, in degrees. */
@@ -278,6 +288,7 @@ export class PoolScene {
    * and falls through the slate. False once it is gone.
    */
   #sink(ball: Ball, mesh: Mesh, dt: number): boolean {
+    if (this.#reducedMotion) return false;
     let sink = this.#sinking.get(ball.id);
     if (!sink) {
       if (!ball.pocket) return false;
@@ -386,7 +397,7 @@ export class PoolScene {
 
     // Ease toward the framing rather than snapping, so fine aim adjustments
     // do not jolt the whole view.
-    if (this.#viewSettled) {
+    if (this.#viewSettled && !this.#reducedMotion) {
       const t = 1 - Math.exp(-VIEW_SMOOTHING_RATE * Math.max(0, state.dt));
       this.#cameraTarget.lerp(this.#desiredTarget, t);
       this.#camera.position.lerp(this.#desiredPosition, t);

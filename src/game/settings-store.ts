@@ -47,6 +47,8 @@ export interface Settings {
   readonly autoNext: boolean;
   /** The first-launch coaching has been played through or skipped. */
   readonly coached: boolean;
+  /** The guides drawn solid, brighter and thicker. */
+  readonly highContrast: boolean;
 }
 
 /** The viewing distances on offer, and the step between them, in metres. */
@@ -78,6 +80,7 @@ export function defaultSettings(): Settings {
     sound: true,
     autoNext: false,
     coached: false,
+    highContrast: false,
   };
 }
 
@@ -143,7 +146,22 @@ export function validateSettings(raw: unknown): Settings | undefined {
     coached = record.coached;
   }
 
-  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance, tableFeet, sound, autoNext, coached };
+  let highContrast = false;
+  if (record.highContrast !== undefined) {
+    if (typeof record.highContrast !== 'boolean') return undefined;
+    highContrast = record.highContrast;
+  }
+
+  return {
+    timeScale: record.timeScale as TimeScale,
+    cloth,
+    viewingDistance,
+    tableFeet,
+    sound,
+    autoNext,
+    coached,
+    highContrast,
+  };
 }
 
 export function createSettingsStore(

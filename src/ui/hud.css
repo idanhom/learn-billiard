@@ -761,6 +761,16 @@ body {
   color: var(--accent);
 }
 
+/* Asked for less motion: nothing in the HUD slides or fades. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
 /* A perception drill takes no shot: no meter, no strip, no aim buttons. */
 .drilling #hud-power,
 .drilling #hud-strip,

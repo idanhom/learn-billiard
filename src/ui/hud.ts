@@ -134,6 +134,7 @@ export interface HudState {
   /** How far the player sits from the screen, in metres, for the stance view. */
   readonly viewingDistance: number;
   readonly sound: boolean;
+  readonly highContrast: boolean;
   /** The shot just played is being shown again. */
   readonly replaying: boolean;
   /** Where the first-launch coaching is, while it runs. */
@@ -190,6 +191,7 @@ export interface HudActions {
   onReplay(): void;
   onToggleAutoNext(): void;
   onSkipCoaching(): void;
+  onToggleContrast(): void;
   /** Get down on the line, or stand back up: the commit routine. */
   onGetDown(): void;
   /** The player's read of their own miss, or null to skip it. */
@@ -216,6 +218,7 @@ export class Hud {
   readonly #coach: HTMLElement;
   #renderedCoach = '';
   readonly #autoNextToggle: HTMLElement;
+  readonly #contrastToggle: HTMLElement;
   readonly #shot: HTMLElement;
   readonly #levels: HTMLElement;
   readonly #root: HTMLElement;
@@ -276,8 +279,12 @@ export class Hud {
     this.#report = panel(root, 'hud-report');
     this.#report.classList.add('interactive');
     this.#report.style.display = 'none';
+    // Read out as it changes, without taking the player away from the table.
+    this.#report.setAttribute('role', 'status');
+    this.#report.setAttribute('aria-live', 'polite');
     this.#notice = panel(root, 'hud-notice');
     this.#notice.style.display = 'none';
+    this.#notice.setAttribute('role', 'status');
     this.#history = panel(root, 'hud-history');
     this.#history.classList.add('interactive');
     this.#history.style.display = 'none';
@@ -353,17 +360,20 @@ export class Hud {
       '<button type="button" class="hud-call" data-eye="-1" aria-label="Nearer">&minus;</button> ' +
       '<button type="button" class="hud-call" data-eye="1" aria-label="Further">+</button></div>' +
       '<div class="hud-keys">Sound <button type="button" class="hud-call" data-sound aria-pressed="true">on</button> ' +
-      '&middot; Next shot by itself <button type="button" class="hud-call" data-auto-next aria-pressed="false">off</button></div>' +
+      '&middot; Next shot by itself <button type="button" class="hud-call" data-auto-next aria-pressed="false">off</button> ' +
+      '&middot; High-contrast guides <button type="button" class="hud-call" data-contrast aria-pressed="false">off</button></div>' +
       '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
       'no english, no sidespin off the cushions. The ghost ball allows for throw.</div>';
     this.#eyeDistance = this.#help.querySelector('.hud-eye-distance') as HTMLElement;
     this.#soundToggle = this.#help.querySelector('[data-sound]') as HTMLElement;
     this.#autoNextToggle = this.#help.querySelector('[data-auto-next]') as HTMLElement;
+    this.#contrastToggle = this.#help.querySelector('[data-contrast]') as HTMLElement;
     this.#help.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest('[data-eye]');
       if (button instanceof HTMLElement) this.#actions.onViewingDistance(Number(button.dataset.eye));
       if ((event.target as HTMLElement).closest('[data-sound]')) this.#actions.onToggleSound();
       if ((event.target as HTMLElement).closest('[data-auto-next]')) this.#actions.onToggleAutoNext();
+      if ((event.target as HTMLElement).closest('[data-contrast]')) this.#actions.onToggleContrast();
     });
 
     this.#levels.addEventListener('click', (event) => {
@@ -454,6 +464,7 @@ export class Hud {
     this.#root.classList.toggle('drilling', state.drill !== null);
     writeToggle(this.#soundToggle, state.sound);
     writeToggle(this.#autoNextToggle, state.autoNext);
+    writeToggle(this.#contrastToggle, state.highContrast);
     const eye = `${Math.round(state.viewingDistance * 100)} cm`;
     if (this.#eyeDistance.textContent !== eye) this.#eyeDistance.textContent = eye;
     this.#renderToolbar(state);
@@ -1035,7 +1046,8 @@ const COACH_STEPS: Record<Exclude<CoachStep, 'done'>, readonly [number, string]>
 
 /** The countdown to the next shot dealing itself, while there is one. */
 function autoNextLine(seconds: number | null): string {
-  return seconds === null ? '' : `<div class="hud-sub hud-note">Next shot in ${seconds} s</div>`;
+  // Shown but not read out: a screen reader would otherwise count down aloud every second.
+  return seconds === null ? '' : `<div class="hud-sub hud-note" aria-hidden="true">Next shot in ${seconds} s</div>`;
 }
 
 /** An on/off switch in the controls panel, written only when it changes. */
