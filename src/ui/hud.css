@@ -549,6 +549,11 @@ body {
   margin-top: 6px;
 }
 
+.hud-estimates {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 .hud-calls .hud-note {
   margin-right: 2px;
 }

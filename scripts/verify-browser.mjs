@@ -263,7 +263,13 @@ await page.evaluate(() => {
   window.__debug.fire(0.5);
 });
 await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+// From tier 2 on, the report waits for the player's read of their own miss.
+const asking = await page.evaluate(() => document.querySelector('#hud-report')?.textContent ?? '');
+check('the report waits for the self-estimate first', /How did you hit it/.test(asking), asking);
+await page.keyboard.press('Digit3');
+await sleep(100);
 const calledReport = await page.evaluate(() => document.querySelector('#hud-report')?.textContent ?? '');
+check('the estimate is answered by key and set against the shot', /You said on/.test(calledReport), calledReport);
 check('the report says how the call went', /Called ½/.test(calledReport), calledReport);
 
 // Progress survives a reload.
@@ -313,6 +319,8 @@ await page.keyboard.up('Space');
 await sleep(100);
 check('after a still moment the stroke goes', (await state()).phase !== 'aiming', (await state()).phase);
 await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+await page.keyboard.press('Escape');
+await sleep(100);
 const timedReport = await page.evaluate(() => document.querySelector('#hud-report')?.textContent ?? '');
 check('the report times the shot', /after the deal/.test(timedReport), timedReport);
 

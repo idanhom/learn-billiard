@@ -29,6 +29,8 @@ export interface InputHandlers {
   onCycleCall(): void;
   /** Get down on the line, or stand back up: the commit routine's G. */
   onGetDown(): void;
+  /** Escape when not charging: dismiss what is asking, such as the self-estimate. */
+  onDismiss(): void;
 }
 
 /**
@@ -155,6 +157,8 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
         if (charging) {
           charging = false;
           handlers.onChargeCancel();
+        } else {
+          handlers.onDismiss();
         }
         return;
       default: {

@@ -17,6 +17,7 @@ import { browserStorage, createProgressStore } from './game/progress-store';
 import { createSettingsStore, nextCloth, nextTimeScale, stepViewingDistance } from './game/settings-store';
 import { ShotHistory, signedShare } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
+import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
 import { Routine } from './game/routine';
 import { ADVANCE_REQUIRED, ADVANCE_WINDOW, FINAL_TIER } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
@@ -48,6 +49,7 @@ const hud = new Hud(hudRoot, {
   onNext: () => nextShot(),
   onToggleView: () => (routine?.down ? toggleDown() : scene.toggleView()),
   onGetDown: () => toggleDown(),
+  onEstimate: (said) => answerEstimate(said),
   onCycleSpeed: () => cycleSpeed(),
   onCycleCloth: () => cycleCloth(),
   onCall: (fraction) => session.callFraction(fraction),
@@ -69,6 +71,11 @@ let sessionsDealt = 0;
 let routine: Routine | undefined;
 /** How the routine went for the shot just played: time to shoot, and re-aims. */
 let routineLog: { readonly seconds: number; readonly reAims: number } | null = null;
+/**
+ * The self-estimate for the shot just played, once the ghost ball has gone:
+ * asking while the report waits, then what the player said and what it was.
+ */
+let estimate: HudState['estimate'] = null;
 let session = newSession();
 routine = routineActive() ? new Routine(now()) : undefined;
 /** The session in play is a retry: practice, which the campaign will not count. */
@@ -188,7 +195,14 @@ function startShot(): void {
   chargeSeconds = 0;
   routine = routineActive() ? new Routine(now()) : undefined;
   routineLog = null;
+  estimate = null;
   if (routine) scene.setView('behind');
+}
+
+/** The player's read of their own miss, or null to skip it; then the report shows. */
+function answerEstimate(said: Estimate | null): void {
+  if (!estimate?.asking) return;
+  estimate = { ...estimate, asking: false, said };
 }
 
 /**
@@ -249,6 +263,12 @@ function selectLevel(id: number): void {
 function recordOutcome(outcome: ShotOutcome): void {
   evaluations++;
   const level = campaign.level;
+  // Once the ghost ball has gone, the player says how they hit it before the
+  // report says. Judged on the tier the shot was played at.
+  if ((level.exam || campaign.tier >= 2) && outcome.pocketUsed !== null) {
+    const actual = estimateOf(signedShare(outcome.pocketUsed, outcome.aimError.side));
+    estimate = { asking: true, said: null, actual, straight: outcome.cutSide === 'straight' };
+  }
   const event = campaign.record(outcome);
   history.record({
     pocketShare: outcome.pocketUsed === null ? null : signedShare(outcome.pocketUsed, outcome.aimError.side),
@@ -305,9 +325,18 @@ attachInput(canvas, {
     else scene.toggleView();
   },
   onGetDown: toggleDown,
+  onDismiss: () => answerEstimate(null),
   onRetry: retry,
   onNext: nextShot,
-  onSelectLevel: selectLevel,
+  onSelectLevel(id: number) {
+    // While the self-estimate is asking, the digit keys answer it instead.
+    if (estimate?.asking) {
+      const said = ESTIMATES[id - 1];
+      if (said !== undefined) answerEstimate(said);
+      return;
+    }
+    selectLevel(id);
+  },
   onCycleSpeed: cycleSpeed,
   onCycleCloth: cycleCloth,
   onCycleCall() {
@@ -435,6 +464,7 @@ function frame(now: number): void {
     viewingDistance: settings.viewingDistance,
     routine: routine ? { down: routine.down } : null,
     routineLog,
+    estimate,
     outcome: session.outcome,
     history: history.entries,
     tendencies: history.tendencies,
@@ -466,6 +496,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     },
     retry,
     next: nextShot,
+    estimate: (said: Estimate | null) => answerEstimate(said),
     continue: continueOn,
     selectLevel,
     cycleSpeed,
@@ -507,6 +538,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       viewingDistance: settings.viewingDistance,
       routine: routine ? { down: routine.down, reAims: routine.reAims } : null,
       routineLog,
+      estimate,
       aimAngle: session.aimAngle,
       idealAimAngle: angleOf(session.analysis.aimDirection),
       power: session.power,

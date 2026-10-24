@@ -287,6 +287,14 @@ bias toward zero.
 The history clears when you change level, since a tendency measured on
 straight-ins tells you nothing about thin cuts.
 
+From tier 2 on, once the ghost ball has gone, and in the exam, the report waits
+for you to say how you hit the shot: way thick, a bit thick, on, a bit thin or
+way thin (left and right on a straight-in), with `1` to `5` or the buttons;
+`Esc` skips. On is within a quarter of the pocket either side of the middle, a
+bit is inside the pocket, and way is outside it. The report then sets what you
+said beside what it was. Knowing your own miss without being told is what lets
+you correct at a table, where nothing reports it.
+
 ## The physics is idealised
 
 Centre-ball hits only: no english, no draw, no swerve, and cushions impart no

@@ -14,6 +14,7 @@
 
 import { FRACTIONS, type FractionName, fractionByName } from '../geometry/fractions';
 import type { CutSide } from '../geometry/shot';
+import { ESTIMATES, type Estimate, estimateLabel } from '../game/estimate';
 import type { ExamRun } from '../game/campaign';
 import type { ShotOutcome, ShotPhase, ShotResult } from '../game/shot-session';
 import type { HistoryEntry, TendencyRow } from '../game/shot-history';
@@ -109,6 +110,16 @@ export interface HudState {
   readonly routine: { readonly down: boolean } | null;
   /** How it went for the shot just played: time to shoot, and how often the player stood back up. */
   readonly routineLog: { readonly seconds: number; readonly reAims: number } | null;
+  /**
+   * The self-estimate, where one is asked: asking while the report waits,
+   * then what the player said (null if they skipped) against what it was.
+   */
+  readonly estimate: {
+    readonly asking: boolean;
+    readonly said: Estimate | null;
+    readonly actual: Estimate;
+    readonly straight: boolean;
+  } | null;
   readonly outcome: ShotOutcome | undefined;
   /** Most recent first. */
   readonly history: readonly HistoryEntry[];
@@ -134,6 +145,8 @@ export interface HudActions {
   onViewingDistance(steps: number): void;
   /** Get down on the line, or stand back up: the commit routine. */
   onGetDown(): void;
+  /** The player's read of their own miss, or null to skip it. */
+  onEstimate(said: Estimate | null): void;
   /** Hand the keyboard back to the table. Called after every click on the HUD. */
   returnFocus(): void;
 }
@@ -204,6 +217,7 @@ export class Hud {
     this.#levels = panel(root, 'hud-levels');
     this.#levels.classList.add('interactive');
     this.#report = panel(root, 'hud-report');
+    this.#report.classList.add('interactive');
     this.#report.style.display = 'none';
     this.#notice = panel(root, 'hud-notice');
     this.#notice.style.display = 'none';
@@ -300,6 +314,11 @@ export class Hud {
       this.#renderedLevels = '';
     });
     this.#notice.addEventListener('click', () => this.#hideNotice());
+    this.#report.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest('[data-estimate]');
+      if (button instanceof HTMLElement) this.#actions.onEstimate(Number(button.dataset.estimate) as Estimate);
+      if ((event.target as HTMLElement).closest('[data-estimate-skip]')) this.#actions.onEstimate(null);
+    });
     this.#shot.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest('[data-call]');
       if (!(button instanceof HTMLElement)) return;
@@ -365,7 +384,9 @@ export class Hud {
     this.#renderMilestone(state);
 
     if (state.outcome) {
-      const html = renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined, state.routineLog);
+      const html = state.estimate?.asking
+        ? estimatePrompt(state.estimate.straight)
+        : renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined, state.routineLog, state.estimate);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
         this.#report.innerHTML = html;
@@ -649,6 +670,7 @@ function renderReport(
   practice: boolean,
   held: boolean,
   routine: HudState['routineLog'],
+  estimate: HudState['estimate'],
 ): string {
   const verdict = exam
     ? outcome.pottedTarget
@@ -682,6 +704,10 @@ function renderReport(
       : `<div class="hud-sub">Hit ${percent(outcome.fullnessHit)} of the ball, needed ` +
         `${percent(outcome.fullnessNeeded)} &middot; ${cut}</div>`) +
     `<div class="hud-sub">Result: ${resultText(outcome.result)}</div>` +
+    (estimate && !estimate.asking && estimate.said !== null
+      ? `<div class="hud-sub">You said ${estimateLabel(estimate.said, estimate.straight)}: ` +
+        `${estimate.said === estimate.actual ? 'right' : `it was ${estimateLabel(estimate.actual, estimate.straight)}`}</div>`
+      : '') +
     (routine
       ? `<div class="hud-sub hud-note">Struck ${routine.seconds.toFixed(1)} s after the deal` +
         `${routine.reAims === 0 ? ', from the first line' : `, standing up ${routine.reAims === 1 ? 'once' : `${routine.reAims} times`} to re-aim`}</div>`
@@ -739,6 +765,22 @@ function callButtons(call: FractionName | null): string {
       `<button type="button" class="hud-call" data-call="${f.name}" aria-pressed="${f.name === call}">${f.label}</button>`,
   ).join('');
   return `<div class="hud-calls"><span class="hud-note">Call it<kbd class="kbd-hint"> F</kbd></span>${buttons}</div>`;
+}
+
+/** Before the report: how did you hit it? */
+function estimatePrompt(straight: boolean): string {
+  const buttons = ESTIMATES.map(
+    (said, i) =>
+      `<button type="button" class="hud-call" data-estimate="${said}">${estimateLabel(said, straight)}` +
+      `<kbd class="kbd-hint"> ${i + 1}</kbd></button>`,
+  ).join('');
+  return (
+    '<div class="hud-label">Before the report</div>' +
+    '<div class="hud-sub">How did you hit it?</div>' +
+    `<div class="hud-calls hud-estimates">${buttons}</div>` +
+    '<div class="hud-sub hud-note"><button type="button" class="hud-call" data-estimate-skip>skip</button>' +
+    '<kbd class="kbd-hint"> Esc</kbd></div>'
+  );
 }
 
 /** A share as a whole percentage. */
