@@ -33,6 +33,8 @@ export interface InputHandlers {
   onDismiss(): void;
   /** T: the panel of things to take to a real table. */
   onOpenTable(): void;
+  /** M: sound on or off. */
+  onToggleSound(): void;
 }
 
 /**
@@ -158,6 +160,10 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
       case 'KeyT':
         if (event.repeat) return;
         handlers.onOpenTable();
+        return;
+      case 'KeyM':
+        if (event.repeat) return;
+        handlers.onToggleSound();
         return;
       case 'Escape':
         if (charging) {

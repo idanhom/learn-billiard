@@ -23,8 +23,8 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { BALL_RADIUS, TABLE } from '../geometry/table';
-import { type Vec2, lerp as lerpVec, vec } from '../geometry/vec2';
+import { BALL_RADIUS, TABLE, pocketById } from '../geometry/table';
+import { type Vec2, add, dist, lerp as lerpVec, scale, vec } from '../geometry/vec2';
 import type { Ball } from '../physics/world';
 import { CUE_BALL_NUMBER, ballTexture, companionBallNumber } from './ball-textures';
 import { fromWorld, headingToRotationY, writeHeading, writeWorld, writeWorldQuat } from './coords';
@@ -73,6 +73,9 @@ const MAX_FOV = 80;
  */
 const OVERHEAD_MARGIN = 1.56;
 
+/** How long a potted ball takes to drop out of sight. */
+const SINK_SECONDS = 0.3;
+
 export interface RenderState {
   readonly balls: readonly Ball[];
   readonly previous: readonly Ball[];
@@ -100,6 +103,8 @@ export class PoolScene {
   readonly #camera = new PerspectiveCamera(52, 1, 0.05, 60);
   readonly #canvas: HTMLCanvasElement;
   readonly #ballMeshes = new Map<number, Mesh>();
+  /** Balls on their way down a pocket: where from, where to, and how long so far. */
+  readonly #sinking = new Map<number, { readonly from: Vec2; readonly to: Vec2; age: number }>();
   readonly #cue: Group;
   readonly #ballNumbers = new Map<number, number>();
   readonly #cameraTarget = new Vector3();
@@ -250,15 +255,41 @@ export class PoolScene {
         material.needsUpdate = true;
       }
 
-      mesh.visible = !ball.potted && !state.hideBalls;
       if (!ball.potted) {
+        this.#sinking.delete(ball.id);
+        mesh.visible = !state.hideBalls;
         writeWorld(mesh.position, this.#interpolatedPosition(state, i), BALL_RADIUS);
         this.#writeOrientation(mesh.quaternion, state, i);
+        continue;
       }
+      mesh.visible = !state.hideBalls && this.#sink(ball, mesh, state.dt);
     }
     for (const [id, mesh] of this.#ballMeshes) {
       if (!live.has(id)) mesh.visible = false;
     }
+  }
+
+  /**
+   * A potted ball drops into the hole rather than vanishing at the drop line:
+   * over a fraction of a second it slides on toward the middle of the hole
+   * and falls through the slate. False once it is gone.
+   */
+  #sink(ball: Ball, mesh: Mesh, dt: number): boolean {
+    let sink = this.#sinking.get(ball.id);
+    if (!sink) {
+      if (!ball.pocket) return false;
+      const { drop } = pocketById(ball.pocket);
+      const middle = lerpVec(drop.a, drop.b, 0.5);
+      const to = add(middle, scale(drop.normal, dist(drop.a, drop.b) / 4));
+      sink = { from: ball.pos, to, age: 0 };
+      this.#sinking.set(ball.id, sink);
+    }
+    sink.age += dt;
+    const t = Math.min(1, sink.age / SINK_SECONDS);
+    if (t >= 1) return false;
+    const along = 1 - (1 - t) ** 2;
+    writeWorld(mesh.position, lerpVec(sink.from, sink.to, along), BALL_RADIUS - 2.4 * BALL_RADIUS * t * t);
+    return true;
   }
 
   #interpolatedPosition(state: RenderState, index: number): Vec2 {

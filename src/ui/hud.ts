@@ -21,6 +21,7 @@ import type { ShotOutcome, ShotPhase, ShotResult } from '../game/shot-session';
 import type { HistoryEntry, TendencyRow } from '../game/shot-history';
 import type { GuideVisibility } from '../game/tiers';
 import { escape } from './html';
+import { isLucky, verdictFor } from './verdict';
 
 /**
  * A level just cleared or an exam just finished. Held on screen, under the
@@ -115,6 +116,7 @@ export interface HudState {
   readonly view: string;
   /** How far the player sits from the screen, in metres, for the stance view. */
   readonly viewingDistance: number;
+  readonly sound: boolean;
   /** The commit routine, where it runs: down on the line or still standing. */
   readonly routine: { readonly down: boolean } | null;
   /** How it went for the shot just played: time to shoot, and how often the player stood back up. */
@@ -160,6 +162,7 @@ export interface HudActions {
   onCall(fraction: FractionName | null): void;
   /** Move the viewing distance the stance view is drawn at, a step nearer or further. */
   onViewingDistance(steps: number): void;
+  onToggleSound(): void;
   /** Get down on the line, or stand back up: the commit routine. */
   onGetDown(): void;
   /** The player's read of their own miss, or null to skip it. */
@@ -182,6 +185,7 @@ const VIEW_LABELS: Readonly<Record<string, string>> = { behind: 'Behind', overhe
 export class Hud {
   readonly #status: HTMLElement;
   readonly #eyeDistance: HTMLElement;
+  readonly #soundToggle: HTMLElement;
   readonly #shot: HTMLElement;
   readonly #levels: HTMLElement;
   readonly #root: HTMLElement;
@@ -298,7 +302,8 @@ export class Hud {
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera: behind, overhead, stance &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
       '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>9</b> level &middot; ' +
-      '<b>F</b> call the fraction &middot; <b>G</b> get down on the line &middot; <b>T</b> at the table</div>' +
+      '<b>F</b> call the fraction &middot; <b>G</b> get down on the line &middot; <b>T</b> at the table &middot; ' +
+      '<b>M</b> sound</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
       '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +
       'lift to strike; slide off its side to call the shot off. The buttons along the bottom do ' +
@@ -309,12 +314,15 @@ export class Hud {
       '<b class="hud-eye-distance"></b> from the screen ' +
       '<button type="button" class="hud-call" data-eye="-1" aria-label="Nearer">&minus;</button> ' +
       '<button type="button" class="hud-call" data-eye="1" aria-label="Further">+</button></div>' +
+      '<div class="hud-keys">Sound <button type="button" class="hud-call" data-sound aria-pressed="true">on</button></div>' +
       '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
       'no english, no sidespin off the cushions. The ghost ball allows for throw.</div>';
     this.#eyeDistance = this.#help.querySelector('.hud-eye-distance') as HTMLElement;
+    this.#soundToggle = this.#help.querySelector('[data-sound]') as HTMLElement;
     this.#help.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest('[data-eye]');
       if (button instanceof HTMLElement) this.#actions.onViewingDistance(Number(button.dataset.eye));
+      if ((event.target as HTMLElement).closest('[data-sound]')) this.#actions.onToggleSound();
     });
 
     this.#levels.addEventListener('click', (event) => {
@@ -402,6 +410,11 @@ export class Hud {
   update(state: HudState): void {
     // A perception drill takes no shot, so the controls for one go with it.
     this.#root.classList.toggle('drilling', state.drill !== null);
+    const sound = state.sound ? 'on' : 'off';
+    if (this.#soundToggle.textContent !== sound) {
+      this.#soundToggle.textContent = sound;
+      this.#soundToggle.setAttribute('aria-pressed', String(state.sound));
+    }
     const eye = `${Math.round(state.viewingDistance * 100)} cm`;
     if (this.#eyeDistance.textContent !== eye) this.#eyeDistance.textContent = eye;
     this.#renderToolbar(state);
@@ -624,7 +637,8 @@ export class Hud {
       .slice(0, 8)
       .map((entry) => {
         const label = !entry.contacted ? 'no contact' : pocketShareLabel(entry);
-        const mark = entry.retry ? 'retry' : entry.pottedTarget ? 'potted' : entry.qualifying ? 'on aim' : '';
+        const lucky = isLucky(entry.pottedTarget, entry.qualifying, entry.pocketShare === null ? null : Math.abs(entry.pocketShare));
+        const mark = entry.retry ? 'retry' : lucky ? 'luck' : entry.pottedTarget ? 'potted' : entry.qualifying ? 'on aim' : '';
         const kind = entry.retry ? ' retry' : entry.qualifying ? ' good' : '';
         return (
           `<div class="hud-shot-row${kind}">` +
@@ -734,14 +748,7 @@ function renderReport(
   routine: HudState['routineLog'],
   estimate: HudState['estimate'],
 ): string {
-  const verdict = exam
-    ? outcome.pottedTarget
-      ? 'Potted'
-      : 'Missed'
-    : outcome.qualifying
-      ? 'On aim'
-      : 'Off aim';
-  const good = exam ? outcome.pottedTarget : outcome.qualifying;
+  const verdict = verdictFor(outcome, exam !== undefined);
 
   const used = outcome.pocketUsed;
   const aim = !outcome.contacted
@@ -759,7 +766,8 @@ function renderReport(
   if (!outcome.settled) notes.push('shot cut short');
 
   return (
-    `<div class="hud-verdict ${good ? 'good' : 'bad'}">${verdict}</div>` +
+    `<div class="hud-verdict ${verdict.good ? 'good' : 'bad'}">${verdict.text}</div>` +
+    (verdict.why ? `<div class="hud-sub">${verdict.why}</div>` : '') +
     `<div class="hud-sub">Aim: ${aim}${used === null ? '' : ` &middot; ${percent(outcome.pocketAllowance)} allowed`}</div>` +
     (outcome.fullnessHit === null
       ? `<div class="hud-sub">${cut}</div>`

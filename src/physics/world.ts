@@ -35,7 +35,7 @@ import {
   nearestPocket,
 } from '../geometry/table';
 import { IDENTITY, type Quat, spinBy } from '../geometry/quat';
-import { ZERO, type Vec2, add, len, scale, sub, vec } from '../geometry/vec2';
+import { ZERO, type Vec2, add, dot, len, normalize, scale, sub, vec } from '../geometry/vec2';
 import {
   ballBallTOI,
   ballSegmentTOI,
@@ -86,14 +86,21 @@ export interface Ball {
   pocket?: PocketId;
 }
 
+/**
+ * What happened during a step, and when. `speed` is how hard: for a contact,
+ * the speed of approach along the normal just before it (the speed at impact
+ * that `CLAUDE.md` asks collision tests to measure against); for a pocket, the
+ * ball's speed as it drops. It describes the event and drives nothing.
+ */
 export type SimEvent =
-  | { readonly type: 'ball-ball'; readonly time: number; readonly a: number; readonly b: number }
-  | { readonly type: 'cushion'; readonly time: number; readonly ball: number }
+  | { readonly type: 'ball-ball'; readonly time: number; readonly a: number; readonly b: number; readonly speed: number }
+  | { readonly type: 'cushion'; readonly time: number; readonly ball: number; readonly speed: number }
   | {
       readonly type: 'pocket';
       readonly time: number;
       readonly ball: number;
       readonly pocket: PocketId;
+      readonly speed: number;
     };
 
 export interface StepResult {
@@ -281,6 +288,7 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
         apply: (world, at, events) => {
           const x = world[i]!;
           const y = world[j]!;
+          const speed = dot(sub(x.vel, y.vel), normalize(sub(y.pos, x.pos)));
           const impulse = resolveBallPair(x.pos, x.vel, x.roll, y.pos, y.vel, y.roll);
           if (!impulse) return;
           x.vel = impulse.velA;
@@ -290,7 +298,7 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
           // follow and makes the object ball skid before it rolls.
           x.roll = impulse.rollA;
           y.roll = impulse.rollB;
-          events.push({ type: 'ball-ball', time: at, a: x.id, b: y.id });
+          events.push({ type: 'ball-ball', time: at, a: x.id, b: y.id, speed });
         },
       });
     }
@@ -304,6 +312,7 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
         time: hit.time,
         apply: (world, at, events) => {
           const ball = world[i]!;
+          const speed = -dot(ball.vel, hit.normal);
           const bounced = resolveCushion(ball.vel, ball.roll, hit.normal);
           if (!bounced) return;
           // The roll is NOT reflected. A ball comes off a rail still spinning
@@ -312,7 +321,7 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
           // and applyFriction below produces it for free.
           ball.vel = bounced.vel;
           ball.roll = bounced.roll;
-          events.push({ type: 'cushion', time: at, ball: ball.id });
+          events.push({ type: 'cushion', time: at, ball: ball.id, speed });
         },
       });
     }
@@ -325,8 +334,9 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
         apply: (world, at, events) => {
           const ball = world[i]!;
           if (ball.potted) return;
+          const speed = len(ball.vel);
           pot(ball, pocket.id);
-          events.push({ type: 'pocket', time: at, ball: ball.id, pocket: pocket.id });
+          events.push({ type: 'pocket', time: at, ball: ball.id, pocket: pocket.id, speed });
         },
       });
     }
@@ -344,8 +354,9 @@ function captureEscapees(balls: Ball[], at: number, events: SimEvent[]): void {
     if (ball.potted) continue;
     const pocket = capturingPocket(ball.pos) ?? (hasEscapedSurface(ball.pos) ? nearestPocket(ball.pos) : undefined);
     if (!pocket) continue;
+    const speed = len(ball.vel);
     pot(ball, pocket.id);
-    events.push({ type: 'pocket', time: at, ball: ball.id, pocket: pocket.id });
+    events.push({ type: 'pocket', time: at, ball: ball.id, pocket: pocket.id, speed });
   }
 }
 

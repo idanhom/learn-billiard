@@ -52,6 +52,7 @@ by that.
 | `F` | call the fraction the shot needs |
 | `G` | get down on the line, or stand back up (last tier and exam) |
 | `T` | at the table: what to take to a real one, and what this can't teach |
+| `M` | sound on or off |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
 degree at a time with the `‹` `›` buttons. Power is the strip down the right edge:
@@ -59,6 +60,11 @@ press it, drag down to the stroke you want, and lift to strike. The power
 follows your finger, so lifting at the target mark plays the marked stroke. A
 tap that does not travel is not a stroke, and sliding off the side of the strip
 calls the shot off.
+
+The table sounds as it plays: the strike, the balls meeting, the cushions and
+the pockets, each made from the simulation's own contacts and as loud as the
+contact was hard. `M` turns it off, as does the switch under `?`. A potted ball
+drops into the hole rather than vanishing at its edge.
 
 Every key also has a button in the toolbar along the bottom of the screen. On
 a small screen, a phone either way up, the panels shrink, and the level list
@@ -234,7 +240,10 @@ your line would send the object ball at the right stroke, against how far it
 could go either side of the ideal line and still drop: the share of the pocket
 you used. A shot "qualifies" when it used no more than the level allows: all
 of the pocket on level 1, tightening to 70% by level 5. Pots, scratches and
-wrong-pocket drops are all reported, but they don't drive progression.
+wrong-pocket drops are all reported, but they don't drive progression. A pot
+off aim is called one: from inside the pocket but past what the level allows
+it is off aim, though potted, and from a line outside the pocket it is a lucky
+pot, and the recent shots list marks it as luck.
 
 That is a much finer test than the cue-ball degrees it replaced. On an
 ordinary straight-in the pocket leaves about a fifth of a degree of aim either

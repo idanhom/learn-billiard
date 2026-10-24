@@ -41,6 +41,8 @@ export interface Settings {
   readonly viewingDistance: number;
   /** The size of the player's own table, for timing its cloth and logging sessions on it. */
   readonly tableFeet: TableFeet;
+  /** The table's sounds: the strike, the balls, the cushions, the pockets. */
+  readonly sound: boolean;
 }
 
 /** The viewing distances on offer, and the step between them, in metres. */
@@ -64,7 +66,13 @@ export interface SettingsStore {
 }
 
 export function defaultSettings(): Settings {
-  return { timeScale: TIME_SCALES[0], cloth: DEFAULT_CLOTH, viewingDistance: VIEWING_DISTANCE.default, tableFeet: 7 };
+  return {
+    timeScale: TIME_SCALES[0],
+    cloth: DEFAULT_CLOTH,
+    viewingDistance: VIEWING_DISTANCE.default,
+    tableFeet: 7,
+    sound: true,
+  };
 }
 
 /** Next speed in the cycle; an unrecognised value restarts at full speed. */
@@ -111,7 +119,13 @@ export function validateSettings(raw: unknown): Settings | undefined {
     tableFeet = record.tableFeet as TableFeet;
   }
 
-  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance, tableFeet };
+  let sound = true;
+  if (record.sound !== undefined) {
+    if (typeof record.sound !== 'boolean') return undefined;
+    sound = record.sound;
+  }
+
+  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance, tableFeet, sound };
 }
 
 export function createSettingsStore(

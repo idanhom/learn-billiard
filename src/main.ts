@@ -29,6 +29,7 @@ import { ballNumberFor } from './scene/ball-textures';
 import { type CameraView, PoolScene } from './scene/pool-scene';
 import { Hud, type HudState, type Milestone, type Notice } from './ui/hud';
 import { TablePanel } from './ui/table-panel';
+import { TableAudio } from './scene/audio';
 
 /** Seconds of held Space to reach full power. */
 const CHARGE_SECONDS = 1.1;
@@ -72,6 +73,7 @@ const hud = new Hud(hudRoot, {
   onCycleCloth: () => cycleCloth(),
   onCall: (fraction) => session.callFraction(fraction),
   onViewingDistance: (steps) => changeViewingDistance(steps),
+  onToggleSound: () => toggleSound(),
   returnFocus: () => canvas.focus(),
   onOpenTable: () => tablePanel.toggle(),
 });
@@ -83,6 +85,7 @@ const history = new ShotHistory();
 // first session is built on the cloth the player actually chose.
 let settings = settingsStore.load();
 scene.setViewingDistance(settings.viewingDistance);
+const audio = new TableAudio(settings.sound);
 
 /** Sessions dealt so far. Seeds where the cue starts, so a retry starts somewhere new. */
 let sessionsDealt = 0;
@@ -98,6 +101,8 @@ let estimate: HudState['estimate'] = null;
 /** The perception drill for the layout in play, on the level that has them; and where its ghost ball was put. */
 let drill: PerceptionDrill | undefined;
 let placedGhost: Vec2 | undefined;
+/** How many of the session's events have been sounded. */
+let heard = 0;
 let session = newSession();
 routine = routineActive() ? new Routine(clock()) : undefined;
 drill = newDrill();
@@ -246,6 +251,7 @@ function startShot(): void {
   estimate = null;
   drill = newDrill();
   placedGhost = undefined;
+  heard = 0;
   if (routine) scene.setView('behind');
 }
 
@@ -390,6 +396,15 @@ function handleEvent(event: CampaignEvent, level: LevelDefinition): void {
 /** The stroke has gone: note how the routine went, for the report. */
 function released(): void {
   if (routine) routineLog = { seconds: routine.elapsed(clock()), reAims: routine.reAims };
+  audio.strike(session.cueSpeed);
+}
+
+/** M: the table's sounds on or off. */
+function toggleSound(): void {
+  settings = { ...settings, sound: !settings.sound };
+  settingsStore.save(settings);
+  audio.enabled = settings.sound;
+  announce(settings.sound ? 'Sound on.' : 'Sound off.');
 }
 
 attachInput(canvas, {
@@ -411,6 +426,7 @@ attachInput(canvas, {
     else scene.toggleView();
   },
   onGetDown: toggleDown,
+  onToggleSound: toggleSound,
   onDismiss: () => answerEstimate(null),
   onOpenTable: () => tablePanel.open(),
   onRetry: retry,
@@ -489,6 +505,8 @@ function frame(now: number): void {
   }
 
   session.advance(dt * settings.timeScale);
+  // Each contact sounds once, as the simulation reaches it.
+  for (; heard < session.events.length; heard++) audio.event(session.events[heard]!);
   if (session.phase === 'settled') {
     const outcome = session.evaluate();
     if (outcome) recordOutcome(outcome);
@@ -573,6 +591,7 @@ function frame(now: number): void {
     notice,
     view: scene.view,
     viewingDistance: settings.viewingDistance,
+    sound: settings.sound,
     routine: routine ? { down: routine.down } : null,
     routineLog,
     estimate,
@@ -604,11 +623,15 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     fire: (power: number) => {
       if (!session.beginCharge()) return false;
       session.setPower(power);
-      return session.release();
+      if (!session.release()) return false;
+      released();
+      return true;
     },
     retry,
     next: nextShot,
     estimate: (said: Estimate | null) => answerEstimate(said),
+    sounds: () => ({ ...audio.asked }),
+    toggleSound,
     callDrill: (fraction: FractionName) => callDrill(fraction),
     placeDrill: (x: number, y: number) => placeDrill({ x, y }),
     ghost: () => session.analysis.ghostCenter,

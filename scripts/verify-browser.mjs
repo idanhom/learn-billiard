@@ -1001,6 +1001,41 @@ check(
 );
 await chip('help').click();
 check('and closes it again', !(await helpShown()));
+// Sound: every contact asks for one, and M turns them off.
+const playOne = async () => {
+  await page.evaluate(() => {
+    window.__debug.next();
+    window.__debug.aimIdeal();
+    window.__debug.fire(0.5);
+  });
+  await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+};
+const soundsBefore = await page.evaluate(() => window.__debug.sounds());
+await playOne();
+const soundsAfter = await page.evaluate(() => window.__debug.sounds());
+check(
+  'a shot sounds the strike and the contact',
+  soundsAfter.strike === soundsBefore.strike + 1 && soundsAfter['ball-ball'] > soundsBefore['ball-ball'],
+  JSON.stringify(soundsAfter),
+);
+await page.focus('#game');
+await page.keyboard.press('KeyM');
+await sleep(100);
+const muted = await page.evaluate(() => ({
+  saved: JSON.parse(window.localStorage.getItem('pool-angle-trainer/settings/v1')).sound,
+  toggle: document.querySelector('#hud-help [data-sound]').textContent,
+}));
+await playOne();
+const soundsMuted = await page.evaluate(() => window.__debug.sounds());
+check(
+  'M turns the sound off, keeps it off, and the switch says so',
+  muted.saved === false && muted.toggle === 'off' && JSON.stringify(soundsMuted) === JSON.stringify(soundsAfter),
+  JSON.stringify({ ...muted, soundsMuted }),
+);
+await page.focus('#game');
+await page.keyboard.press('KeyM');
+await sleep(100);
+
 check(
   'without a touch screen the power bar stays, and the touch strip stays away',
   (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),

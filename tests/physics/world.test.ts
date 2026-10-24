@@ -857,3 +857,47 @@ describe('the event loop under stress', () => {
 function expectFinite(v: Vec2): void {
   expect(Number.isFinite(v.x) && Number.isFinite(v.y)).toBe(true);
 }
+
+describe('the events say how hard each contact was', () => {
+  test('a square hit, by the speed the cue ball arrived at', () => {
+    const object = createBall(1, vec(0, 0));
+    const cue = rollingBall(0, vec(-2 * BALL_RADIUS - 0.05, 0), vec(1.2, 0));
+    let speed: number | undefined;
+    const { before } = stepUntil([cue, object], (events) => {
+      const hit = events.find((e) => e.type === 'ball-ball');
+      if (hit) speed = hit.speed;
+      return hit !== undefined;
+    });
+    expect(speed).toBeCloseTo(before[0]!.vel.x, 2);
+  });
+
+  test('a cushion, by the part of the speed square to it', () => {
+    const angle = (40 * Math.PI) / 180;
+    const ball = rollingBall(0, vec(-0.6, TABLE.bounds.maxY - 0.05), vec(Math.cos(angle), Math.sin(angle)));
+    let speed: number | undefined;
+    const { before } = stepUntil([ball], (events) => {
+      const hit = events.find((e) => e.type === 'cushion');
+      if (hit) speed = hit.speed;
+      return hit !== undefined;
+    });
+    expect(speed).toBeCloseTo(before[0]!.vel.y, 2);
+    expect(speed!).toBeLessThan(len(before[0]!.vel));
+  });
+
+  test('a pocket, by the speed the ball dropped at', () => {
+    const pocket = pocketById('top-right');
+    const start = sub(pocket.center, vec(0.3, 0.3));
+    const ball = rollingBall(0, start, scale(normalizeTo(sub(pocket.center, start)), 0.8));
+    let speed: number | undefined;
+    const { before } = stepUntil([ball], (events) => {
+      const drop = events.find((e) => e.type === 'pocket');
+      if (drop) speed = drop.speed;
+      return drop !== undefined;
+    });
+    expect(speed).toBeCloseTo(len(before[0]!.vel), 2);
+  });
+});
+
+function normalizeTo(v: Vec2): Vec2 {
+  return scale(v, 1 / len(v));
+}

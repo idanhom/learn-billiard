@@ -93,6 +93,7 @@ describe('validation', () => {
       cloth: 'slow',
       viewingDistance: 0.6,
       tableFeet: 7,
+      sound: true,
     });
   });
 
@@ -108,6 +109,7 @@ describe('validation', () => {
       cloth: 'normal',
       viewingDistance: 0.6,
       tableFeet: 7,
+      sound: true,
     });
   });
 
@@ -138,7 +140,7 @@ describe('the store', () => {
   test('round-trips a setting', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7 });
+    store.save({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true });
     const loaded = createSettingsStore(storage).load();
     expect(loaded.timeScale).toBe(0.25);
     expect(loaded.cloth).toBe('slow');
@@ -152,25 +154,25 @@ describe('the store', () => {
   test('changing the cloth leaves the time scale alone', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7 });
+    store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true });
     const current = store.load();
     store.save({ ...current, cloth: 'fast' });
-    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast', viewingDistance: 0.6, tableFeet: 7 });
+    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast', viewingDistance: 0.6, tableFeet: 7, sound: true });
   });
 
   test('changing the time scale leaves the cloth alone', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 1, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7 });
+    store.save({ timeScale: 1, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true });
     const current = store.load();
     store.save({ ...current, timeScale: 0.25 });
-    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7 });
+    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7, sound: true });
   });
 
   test('a record saved before cloth existed keeps its remembered speed', () => {
     const storage = new FakeStorage();
     storage.items.set(SETTINGS_KEY, JSON.stringify({ version: 1, timeScale: 0.5 }));
-    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7 });
+    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true });
   });
 
   test('an empty store is full speed', () => {
@@ -193,13 +195,13 @@ describe('the store', () => {
   test('a storage that refuses to write does not throw', () => {
     const storage = new FakeStorage();
     storage.failOnWrite = true;
-    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7 })).not.toThrow();
+    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true })).not.toThrow();
   });
 
   test('works with no storage at all', () => {
     const store = createSettingsStore(undefined);
     expect(store.load()).toEqual(defaultSettings());
-    expect(() => store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7 })).not.toThrow();
+    expect(() => store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7, sound: true })).not.toThrow();
   });
 });
 
@@ -236,5 +238,14 @@ describe('the player\u2019s own table', () => {
     for (const bad of [6, 10, '9', null]) {
       expect(validateSettings({ version: 1, timeScale: 1, tableFeet: bad }), String(bad)).toBeUndefined();
     }
+  });
+});
+
+describe('sound', () => {
+  test('is on until turned off, as it is in a record from before it existed', () => {
+    expect(defaultSettings().sound).toBe(true);
+    expect(validateSettings({ version: 1, timeScale: 1 })!.sound).toBe(true);
+    expect(validateSettings({ version: 1, timeScale: 1, sound: false })!.sound).toBe(false);
+    expect(validateSettings({ version: 1, timeScale: 1, sound: 'off' })).toBeUndefined();
   });
 });
