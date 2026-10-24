@@ -14,8 +14,8 @@
 
 import type { CutSide } from '../geometry/shot';
 import type { ExamRun } from '../game/campaign';
-import type { ShotOutcome, ShotPhase } from '../game/shot-session';
-import type { HistoryEntry, Tendency } from '../game/shot-history';
+import type { ShotOutcome, ShotPhase, ShotResult } from '../game/shot-session';
+import type { HistoryEntry, TendencyRow } from '../game/shot-history';
 import type { GuideVisibility } from '../game/tiers';
 
 /**
@@ -94,8 +94,8 @@ export interface HudState {
   readonly outcome: ShotOutcome | undefined;
   /** Most recent first. */
   readonly history: readonly HistoryEntry[];
-  readonly cutTendency: Tendency | null;
-  readonly straightTendency: Tendency | null;
+  /** The bias report, line by line. */
+  readonly tendencies: readonly TendencyRow[];
   readonly timeScale: number;
   readonly cloth: string;
   readonly clothLabel: string;
@@ -498,11 +498,7 @@ export class Hud {
     const rows = state.history
       .slice(0, 8)
       .map((entry) => {
-        const label = !entry.contacted
-          ? 'no contact'
-          : entry.aimError.kind === 'on-line'
-            ? 'on the line'
-            : `${entry.aimError.degrees.toFixed(2)}&deg; ${entry.aimError.kind}`;
+        const label = !entry.contacted ? 'no contact' : pocketShareLabel(entry);
         const mark = entry.retry ? 'retry' : entry.pottedTarget ? 'potted' : entry.qualifying ? 'on aim' : '';
         const kind = entry.retry ? ' retry' : entry.qualifying ? ' good' : '';
         return (
@@ -514,8 +510,7 @@ export class Hud {
 
     const html =
       '<div class="hud-label">Recent shots</div>' +
-      tendencyLine('Cuts', state.cutTendency) +
-      tendencyLine('Straight in', state.straightTendency) +
+      state.tendencies.map(tendencyLine).join('') +
       `<div class="hud-shot-list">${rows}</div>`;
 
     if (html === this.#renderedHistory) return;
@@ -551,13 +546,25 @@ export class Hud {
   }
 }
 
-function tendencyLine(label: string, tendency: Tendency | null): string {
-  if (!tendency) return '';
+function tendencyLine({ label, tendency }: TendencyRow): string {
   const body =
     tendency.kind === 'even'
       ? 'no consistent bias'
-      : `<b>${tendency.degrees.toFixed(2)}&deg; ${tendency.kind}</b> on average`;
+      : `<b>${ofThePocket(tendency.share)} ${tendency.kind}</b> on average`;
   return `<div class="hud-sub hud-tendency">${label}: ${body} <span class="hud-note">(${tendency.samples})</span></div>`;
+}
+
+/** Below this share of the pocket a shot reads as dead centre. */
+const DEAD_CENTRE = 0.05;
+
+/** One shot's miss, as the history lists it: the share of the pocket, and which way. */
+function pocketShareLabel(entry: HistoryEntry): string {
+  const share = entry.pocketShare;
+  if (share === null) return 'no line drops';
+  if (Math.abs(share) <= DEAD_CENTRE) return 'dead centre';
+  const side = entry.cutSide === 'straight' ? (share > 0 ? 'left' : 'right') : share > 0 ? 'thick' : 'thin';
+  const used = Math.abs(share);
+  return `${used <= 1 ? percent(used) : `${used.toFixed(1)}&times;`} ${side}`;
 }
 
 function renderMilestone(milestone: Milestone): string {
@@ -598,19 +605,15 @@ function renderReport(
       : 'Off aim';
   const good = exam ? outcome.pottedTarget : outcome.qualifying;
 
+  const used = outcome.pocketUsed;
   const aim = !outcome.contacted
     ? 'missed the object ball'
-    : outcome.aimError.kind === 'on-line'
-      ? 'dead on the line'
-      : `${outcome.aimError.degrees.toFixed(2)}&deg; ${outcome.aimError.kind}`;
-
-  const pot = outcome.pottedTarget
-    ? 'potted'
-    : outcome.pottedWrong
-      ? `went in the ${outcome.objectPocket?.replace(/-/g, ' ')}`
-      : outcome.missDistance === null
-        ? 'no contact'
-        : `missed by ${(outcome.missDistance * 100).toFixed(1)} cm`;
+    : used === null
+      ? 'no line from here drops'
+      : used <= DEAD_CENTRE
+        ? 'dead centre of the pocket'
+        : `used ${ofThePocket(used)}, ${outcome.aimError.side}`;
+  const cut = `${((outcome.cutAngle * 180) / Math.PI).toFixed(1)}&deg; cut`;
 
   const notes: string[] = [];
   if (practice) notes.push('retry: practice, not counted');
@@ -619,11 +622,12 @@ function renderReport(
 
   return (
     `<div class="hud-verdict ${good ? 'good' : 'bad'}">${verdict}</div>` +
-    `<div class="hud-sub">Aim: ${aim} &middot; ${((outcome.cutAngle * 180) / Math.PI).toFixed(1)}&deg; cut</div>` +
-    (outcome.pocketUsed === null
-      ? ''
-      : `<div class="hud-sub">Used ${percent(outcome.pocketUsed)} of the pocket, ${percent(outcome.pocketAllowance)} allowed</div>`) +
-    `<div class="hud-sub">Result: ${pot}</div>` +
+    `<div class="hud-sub">Aim: ${aim}${used === null ? '' : ` &middot; ${percent(outcome.pocketAllowance)} allowed`}</div>` +
+    (outcome.fullnessHit === null
+      ? `<div class="hud-sub">${cut}</div>`
+      : `<div class="hud-sub">Hit ${percent(outcome.fullnessHit)} of the ball, needed ` +
+        `${percent(outcome.fullnessNeeded)} &middot; ${cut}</div>`) +
+    `<div class="hud-sub">Result: ${resultText(outcome.result)}</div>` +
     (notes.length ? `<div class="hud-sub hud-note">${notes.join(' &middot; ')}</div>` : '') +
     // Held under a summary card the layout has gone, and the card says what next.
     (held
@@ -636,6 +640,30 @@ function renderReport(
 /** A share as a whole percentage. */
 function percent(share: number): string {
   return `${Math.round(share * 100)}%`;
+}
+
+/** A share of the pocket: a percentage inside it, a multiple of it outside, where percentages run to four figures. */
+function ofThePocket(share: number): string {
+  return share <= 1 ? `${percent(share)} of the pocket` : `${share.toFixed(1)}&times; the pocket`;
+}
+
+/** What the object ball did, in table units. */
+function resultText(result: ShotResult): string {
+  const cm = (metres: number): string => `${(metres * 100).toFixed(1)} cm`;
+  switch (result.kind) {
+    case 'potted':
+      return 'potted';
+    case 'wrong-pocket':
+      return `went in the ${result.pocket.replace(/-/g, ' ')}`;
+    case 'rattled':
+      return result.hung ? 'hung in the jaws' : 'rattled out of the jaws';
+    case 'short':
+      return `on line, but stopped ${cm(result.by)} short`;
+    case 'wide':
+      return `missed the pocket by ${cm(result.by)}`;
+    case 'no-contact':
+      return 'no contact';
+  }
 }
 
 function speedLabel(timeScale: number): string {

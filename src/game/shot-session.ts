@@ -16,9 +16,11 @@ import {
   type ShotAnalysis,
   aimErrorAt,
   analyseShot,
+  firstTouch,
+  fullness,
   objectDeparture,
 } from '../geometry/shot';
-import { type PocketId, pocketById } from '../geometry/table';
+import { type PocketId, isOnShelf, nearestPocket, pocketById } from '../geometry/table';
 import { type Vec2, dist, fromAngle, signedAngleBetween, vec } from '../geometry/vec2';
 import {
   MAX_SHOT_DURATION,
@@ -67,6 +69,23 @@ export interface ShotSessionOptions {
   readonly aimSeed?: number;
 }
 
+/**
+ * What the object ball did, in table terms. Rattled means it got into the
+ * target's jaws and did not drop; hung, that it stopped on the shelf. Short
+ * and wide are both misses short of the jaws, told apart by the line it left
+ * on: short was going in and ran out of pace, wide was never going in. Both
+ * carry a distance, in metres: short, how far it stopped from where it would
+ * have dropped; wide, how far outside what would have dropped it went, out
+ * at the pocket.
+ */
+export type ShotResult =
+  | { readonly kind: 'potted' }
+  | { readonly kind: 'wrong-pocket'; readonly pocket: PocketId }
+  | { readonly kind: 'rattled'; readonly hung: boolean }
+  | { readonly kind: 'short'; readonly by: number }
+  | { readonly kind: 'wide'; readonly by: number }
+  | { readonly kind: 'no-contact' };
+
 export interface ShotOutcome {
   readonly shotId: string;
   readonly aimError: AimError;
@@ -82,6 +101,11 @@ export interface ShotOutcome {
   readonly pocketUsed: number | null;
   /** Drives progression: struck the object ball, using no more of the pocket than allowed. */
   readonly qualifying: boolean;
+  readonly result: ShotResult;
+  /** Fraction of the object ball the cue ball covered at contact: 1 is full, 0 an edge. Null with no contact. */
+  readonly fullnessHit: number | null;
+  /** The fraction the ideal line covers, throw allowed for. */
+  readonly fullnessNeeded: number;
   readonly contacted: boolean;
   readonly pottedTarget: boolean;
   readonly pottedWrong: boolean;
@@ -117,6 +141,8 @@ export class ShotSession {
   #cloth: ClothPreset;
   readonly #target: Vec2;
   #analysis: ShotAnalysis | undefined;
+  /** The object ball has been in the target's jaws. */
+  #inJaws = false;
 
   constructor(layout: ShotLayout, options: ShotSessionOptions = {}) {
     this.layout = layout;
@@ -332,6 +358,7 @@ export class ShotSession {
     const error = aimErrorAt(this.layout.cue, this.layout.object, analysis.ghostCenter, aim);
     const pocketUsed = this.#contacted ? this.#pocketUsed(analysis, aim) : null;
     const objectPocket = this.objectBall.potted ? this.objectBall.pocket : undefined;
+    const touch = this.#contacted ? firstTouch(this.layout.cue, this.layout.object, aim) : undefined;
 
     this.#outcome = {
       shotId: this.layout.id,
@@ -341,6 +368,9 @@ export class ShotSession {
       pocketAllowance: this.pocketAllowance,
       pocketUsed,
       qualifying: pocketUsed !== null && pocketUsed <= this.pocketAllowance,
+      result: this.#result(analysis, aim, objectPocket),
+      fullnessHit: touch ? fullness(touch.cut) : null,
+      fullnessNeeded: analysis.fullness,
       contacted: this.#contacted,
       pottedTarget: objectPocket === this.layout.targetPocket,
       pottedWrong: objectPocket !== undefined && objectPocket !== this.layout.targetPocket,
@@ -368,6 +398,30 @@ export class ShotSession {
     return Math.abs(turned) / (turned >= 0 ? window.counterClockwise : window.clockwise);
   }
 
+  /** What the object ball did, in the terms `ShotResult` sets out. */
+  #result(analysis: ShotAnalysis, aim: Vec2, objectPocket: PocketId | undefined): ShotResult {
+    if (!this.#contacted) return { kind: 'no-contact' };
+    if (objectPocket === this.layout.targetPocket) return { kind: 'potted' };
+    if (objectPocket !== undefined) return { kind: 'wrong-pocket', pocket: objectPocket };
+    const pocket = pocketById(this.layout.targetPocket);
+    if (this.#inJaws) {
+      const rest = this.objectBall.pos;
+      return { kind: 'rattled', hung: isOnShelf(rest) && nearestPocket(rest).id === pocket.id };
+    }
+
+    // Short or wide: the line it actually left on, at the stroke actually
+    // played, against the pot window.
+    const window = potWindow(this.layout, this.#cloth, analysis);
+    const { cue, object } = this.layout;
+    const rollingFriction = clothRollingFriction(this.#cloth);
+    const departure = objectDeparture(cue, object, aim, this.cueSpeed, rollingFriction);
+    if (!window || departure === undefined) return { kind: 'wide', by: this.#minDistanceToTarget };
+    const turned = signedAngleBetween(fromAngle(window.ideal), fromAngle(departure));
+    const room = turned >= 0 ? window.counterClockwise : window.clockwise;
+    if (Math.abs(turned) <= room) return { kind: 'short', by: dist(this.objectBall.pos, this.#target) };
+    return { kind: 'wide', by: (Math.abs(turned) - room) * analysis.objectToPocket };
+  }
+
   #settle(settled: boolean): void {
     this.#settled = settled;
     this.#phase = 'settled';
@@ -377,5 +431,9 @@ export class ShotSession {
   #recordMissDistance(): void {
     const d = dist(this.objectBall.pos, this.#target);
     if (d < this.#minDistanceToTarget) this.#minDistanceToTarget = d;
+    if (!this.#inJaws && !this.objectBall.potted) {
+      const pocket = pocketById(this.layout.targetPocket);
+      this.#inJaws = dist(this.objectBall.pos, pocket.center) <= pocket.mouthRadius;
+    }
   }
 }

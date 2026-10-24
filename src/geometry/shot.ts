@@ -56,7 +56,14 @@ export interface AimError {
   /** Absolute deviation in degrees. */
   readonly degrees: number;
   readonly kind: AimErrorKind;
+  /**
+   * Which way it was off, however little: `kind` without the on-line band.
+   * The pocket is fine enough that a miss inside that band still has a side.
+   */
+  readonly side: AimSide;
 }
+
+export type AimSide = 'thick' | 'thin' | 'left' | 'right';
 
 export type ShotBlocker =
   | 'pocket-closed'
@@ -174,17 +181,16 @@ export function aimErrorAt(
   const signed = signedAngleBetween(ideal, normalize(aimDirection));
   const degrees = Math.abs((signed * 180) / Math.PI);
 
-  if (Math.abs(signed) <= ON_LINE_LIMIT) return { signed, degrees, kind: 'on-line' };
-
   const cut = angleBetween(ideal, normalize(sub(objectCenter, ghost)));
+  let side: AimSide;
   if (cut <= STRAIGHT_CUT_LIMIT) {
-    return { signed, degrees, kind: signed > 0 ? 'left' : 'right' };
+    side = signed > 0 ? 'left' : 'right';
+  } else {
+    // Which way from the ideal line does the object ball's centre lie?
+    const towardCentre = signedAngleBetween(ideal, normalize(sub(objectCenter, cueCenter)));
+    side = signed > 0 === towardCentre > 0 ? 'thick' : 'thin';
   }
-
-  // Which way from the ideal line does the object ball's centre lie?
-  const towardCentre = signedAngleBetween(ideal, normalize(sub(objectCenter, cueCenter)));
-  const sameSide = signed > 0 === towardCentre > 0;
-  return { signed, degrees, kind: sameSide ? 'thick' : 'thin' };
+  return { signed, degrees, kind: Math.abs(signed) <= ON_LINE_LIMIT ? 'on-line' : side, side };
 }
 
 /** True when a ball can travel from `from` to `to` without touching any obstacle. */
@@ -632,18 +638,33 @@ export function objectDeparture(
   launchSpeed: number,
   rollingFriction: number = ROLLING_FRICTION,
 ): number | undefined {
+  const touch = firstTouch(cue, object, aimDirection);
+  if (!touch) return undefined;
+  const along = normalize(aimDirection);
+  const contact = contactState(launchSpeed, touch.run, rollingFriction);
+  const thrown = throwAngle(touch.cut, contact.speed, contact.rollFraction);
+  const turned = rotate(touch.line, Math.sign(signedAngleBetween(touch.line, along)) * thrown);
+  return Math.atan2(turned.y, turned.x);
+}
+
+/**
+ * Where a cue ball sent along `aimDirection` first touches the object ball:
+ * how far it runs, the line of centres there, and the cut that line makes
+ * with its path. Undefined when it misses.
+ */
+export function firstTouch(
+  cue: Vec2,
+  object: Vec2,
+  aimDirection: Vec2,
+): { readonly run: number; readonly line: Vec2; readonly cut: number } | undefined {
   const along = normalize(aimDirection);
   const fromObject = sub(cue, object);
   const ahead = dot(along, fromObject);
   const clearance = ahead * ahead - (dot(fromObject, fromObject) - 4 * BALL_RADIUS * BALL_RADIUS);
   if (ahead >= 0 || clearance < 0) return undefined;
-
   const run = -ahead - Math.sqrt(clearance);
   const line = normalize(sub(object, add(cue, scale(along, run))));
-  const contact = contactState(launchSpeed, run, rollingFriction);
-  const thrown = throwAngle(angleBetween(along, line), contact.speed, contact.rollFraction);
-  const turned = rotate(line, Math.sign(signedAngleBetween(line, along)) * thrown);
-  return Math.atan2(turned.y, turned.x);
+  return { run, line, cut: angleBetween(along, line) };
 }
 
 /** Which side of the ideal line the cue ball is being sent; used by the HUD arrows. */

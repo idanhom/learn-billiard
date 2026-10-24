@@ -211,18 +211,31 @@ it does not move you on again after every shot.
 
 ## Calibrating yourself
 
-After every shot the report tells you how you missed — `1.24° thick`, or
-`left`/`right` on a straight-in, where thick and thin have no meaning.
+After every shot the report says, in table terms, what you did and what
+happened:
+
+- **Aim**: how much of the pocket your line used, and which way, `thick` or
+  `thin` on a cut and `left` or `right` on a straight-in, against the share
+  the level allows.
+- **Hit**: how much of the object ball you covered, against how much the shot
+  needed, as fractions of a ball, which is how a cut is judged at a table.
+- **Result**: potted; rattled out of the jaws, or hung in them; on line but
+  stopped short by so many centimetres, which is the stroke and not the aim;
+  or missed the pocket by so many centimetres, measured out at the pocket.
 
 More useful is the **Recent shots** panel: the last twelve shots and, above
-them, the average. One shot being thick is noise; *consistently* hitting cuts
-0.9° thick is a bias you can carry to a real table and correct for. Cuts and
-straight-ins are averaged separately — a left bias on straight shots has nothing
-to do with a thick bias on cuts, and folding them together would cancel a real
-tendency against an unrelated one. Shots that miss the object ball entirely are
-excluded; they say nothing about how thick you are hitting them. Retries are
-listed but excluded too: a retry leans away from the miss it has just seen,
-and averaging it in would pull a real bias toward zero.
+them, the average. One shot being thick is noise; *consistently* using half
+the pocket thick is a bias you can carry to a real table and correct for. The
+average is a share of the pocket rather than degrees off the cue ball, so a
+long shot and a short one weigh the same. It is split by which way the shot
+cuts, since a player can favour one side, and by band of cut angle once the
+shots span more than one. Straight-ins are averaged on their own: a left bias
+on straight shots has nothing to do with a thick bias on cuts, and folding
+them together would cancel a real tendency against an unrelated one. Shots
+that miss the object ball entirely are excluded; they say nothing about how
+thick you are hitting them. Retries are listed but excluded too: a retry leans
+away from the miss it has just seen, and averaging it in would pull a real
+bias toward zero.
 
 The history clears when you change level, since a tendency measured on
 straight-ins tells you nothing about thin cuts.

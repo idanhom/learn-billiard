@@ -14,7 +14,7 @@ import { attachAimButtons, attachInput, attachTouchPower } from './game/input';
 import { speedBand } from './game/power';
 import { browserStorage, createProgressStore } from './game/progress-store';
 import { createSettingsStore, nextCloth, nextTimeScale } from './game/settings-store';
-import { ShotHistory } from './game/shot-history';
+import { ShotHistory, signedShare } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
 import { ADVANCE_REQUIRED } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
@@ -178,11 +178,12 @@ function recordOutcome(outcome: ShotOutcome): void {
   const level = campaign.level;
   const event = campaign.record(outcome);
   history.record({
-    aimError: outcome.aimError,
+    pocketShare: outcome.pocketUsed === null ? null : signedShare(outcome.pocketUsed, outcome.aimError.side),
     qualifying: outcome.qualifying,
     pottedTarget: outcome.pottedTarget,
     contacted: outcome.contacted,
     cutAngleDegrees: (outcome.cutAngle * 180) / Math.PI,
+    cutSide: outcome.cutSide,
     retry: event.practice,
   });
   if (event.examFinished) {
@@ -341,8 +342,7 @@ function frame(now: number): void {
     view: scene.view,
     outcome: session.outcome,
     history: history.entries,
-    cutTendency: history.cutTendency,
-    straightTendency: history.straightTendency,
+    tendencies: history.tendencies,
     timeScale: settings.timeScale,
     cloth: settings.cloth,
     clothLabel: CLOTH_LABELS[settings.cloth],
@@ -415,8 +415,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       recommendedPower: session.recommendedPower,
       timeScale: settings.timeScale,
       cloth: settings.cloth,
-      cutTendency: history.cutTendency,
-      straightTendency: history.straightTendency,
+      tendencies: history.tendencies,
       historyLength: history.entries.length,
       shotId: session.layout.id,
       levelId: campaign.level.id,

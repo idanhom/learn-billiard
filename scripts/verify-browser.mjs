@@ -475,21 +475,20 @@ for (const offsetDegrees of [1.2, 1.6, 1.0]) {
 }
 const calibrated = await state();
 check('the history records each shot', calibrated.historyLength === 3, `n=${calibrated.historyLength}`);
+// Layouts alternate their cut side, so the three shots split two and one
+// across the left and right lines; the side with two carries the tendency.
+const thick = calibrated.tendencies.find((row) => row.tendency.samples >= 2);
 check(
   'a consistent bias is reported as a tendency',
-  calibrated.cutTendency?.kind === 'thick',
-  JSON.stringify(calibrated.cutTendency),
+  thick?.tendency.kind === 'thick',
+  JSON.stringify(calibrated.tendencies),
 );
-// The mean lands on 1.267 when all three shots contact, but the layout is
-// seeded from the clock and an off-line shot can occasionally clip a rail or
-// find a pocket the ideal line cleared — in which case it is rightly left out
-// of the average. Assert the property, not the luck.
+// A degree or more off the cue ball is several pockets wide on a half-ball
+// hit, so the average share runs well past one.
 check(
-  'the tendency averages the deviations that counted',
-  (calibrated.cutTendency?.samples ?? 0) >= 2 &&
-    (calibrated.cutTendency?.degrees ?? 0) >= 1.0 &&
-    (calibrated.cutTendency?.degrees ?? 0) <= 1.6,
-  `${calibrated.cutTendency?.degrees?.toFixed(3)} deg over ${calibrated.cutTendency?.samples} of 3`,
+  'the tendency is a share of the pocket',
+  (thick?.tendency.share ?? 0) > 1,
+  `${thick?.tendency.share?.toFixed(2)} of the pocket over ${thick?.tendency.samples} shots`,
 );
 await page.screenshot({ path: `${OUT}calibration-history.png` });
 

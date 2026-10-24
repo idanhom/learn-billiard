@@ -245,6 +245,81 @@ describe('evaluation is a guarded one-shot transition', () => {
   });
 });
 
+/**
+ * The report says what happened in table terms: potted, rattled, short or
+ * wide by so many centimetres; and how much of the ball was covered against
+ * how much was needed.
+ */
+describe('the report in table units', () => {
+  test('perfect aim at the recommended stroke pots, covering just the ball it needed', () => {
+    const { layout } = generateShot(levelById(3), 31, { preferredSide: 'left' });
+    const session = new ShotSession(layout);
+    session.aimTo(idealAimAngle(layout));
+    session.beginCharge();
+    session.setPower(session.recommendedPower!);
+    session.release();
+    runToSettled(session);
+    const outcome = session.evaluate()!;
+    expect(outcome.result).toEqual({ kind: 'potted' });
+    expect(outcome.fullnessHit).toBeCloseTo(outcome.fullnessNeeded, 6);
+  });
+
+  test('well aimed but struck too softly is on line and short, by how far', () => {
+    const outcome = play(STRAIGHT_IN_DRILL, 0, 0.3)!;
+    expect(outcome.qualifying).toBe(true);
+    expect(outcome.result.kind).toBe('short');
+    const { by } = outcome.result as { by: number };
+    expect(by).toBeGreaterThan(0.1);
+    expect(by).toBeLessThan(1);
+  });
+
+  test('aimed outside the pocket misses it by so many centimetres', () => {
+    const near = play(STRAIGHT_IN_DRILL, deg(0.5), 0.5)!;
+    const far = play(STRAIGHT_IN_DRILL, deg(1.5), 0.5)!;
+    expect(near.result.kind).toBe('wide');
+    expect(far.result.kind).toBe('wide');
+    const [nearBy, farBy] = [near, far].map((o) => (o.result as { by: number }).by);
+    expect(nearBy).toBeGreaterThan(0);
+    expect(farBy).toBeGreaterThan(nearBy!);
+    expect(farBy).toBeLessThan(0.3);
+  });
+
+  /** Just outside what drops, struck firmly: into the jaws and back out. */
+  test('a ball that gets into the jaws and stays out has rattled', () => {
+    const layout = CUT_30_DRILL;
+    let rattled: ReturnType<ShotSession['evaluate']>;
+    for (let offset = 0.02; offset <= 0.6 && !rattled; offset += 0.02) {
+      for (const sign of [1, -1]) {
+        const outcome = play(layout, deg(sign * offset), 0.9);
+        if (outcome?.result.kind === 'rattled') {
+          rattled = outcome;
+          break;
+        }
+      }
+    }
+    expect(rattled, 'no aim in the sweep rattled').toBeDefined();
+    expect(rattled!.pottedTarget).toBe(false);
+  });
+
+  test('a thick hit covers more of the ball than it needed, a thin one less', () => {
+    const ideal = idealAimAngle(CUT_30_DRILL);
+    const centre = angleOf(sub(CUT_30_DRILL.object, CUT_30_DRILL.cue));
+    const towardCentre = Math.sign(signedAngleBetween(fromAngle(ideal), fromAngle(centre)));
+    const thick = play(CUT_30_DRILL, towardCentre * deg(0.3), 0.55)!;
+    const thin = play(CUT_30_DRILL, -towardCentre * deg(0.3), 0.55)!;
+    expect(thick.aimError.side).toBe('thick');
+    expect(thin.aimError.side).toBe('thin');
+    expect(thick.fullnessHit!).toBeGreaterThan(thick.fullnessNeeded);
+    expect(thin.fullnessHit!).toBeLessThan(thin.fullnessNeeded);
+  });
+
+  test('missing the object ball reports no contact, and no fraction hit', () => {
+    const outcome = play(STRAIGHT_IN_DRILL, deg(80), 0)!;
+    expect(outcome.result).toEqual({ kind: 'no-contact' });
+    expect(outcome.fullnessHit).toBeNull();
+  });
+});
+
 describe('the outcome contract', () => {
   test('a perfectly aimed straight-in shot qualifies and pots', () => {
     const outcome = play(STRAIGHT_IN_DRILL, 0, 0.5);
