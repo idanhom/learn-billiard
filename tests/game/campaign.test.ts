@@ -118,6 +118,20 @@ describe('progression', () => {
     expect(subject.tier).toBe(0);
   });
 
+  test('going back to a completed level is practice by choice, not a bounce onward', () => {
+    const subject = campaign();
+    play(subject, hit, 12);
+    expect(subject.level.id).toBe(2);
+    subject.selectLevel(1);
+    expect(subject.levelCompleted).toBe(true);
+    for (let i = 0; i < 4; i++) {
+      expect(subject.record(hit).levelCompleted).toBe(false);
+      subject.nextShot();
+    }
+    expect(subject.level.id).toBe(1);
+    expect(subject.stats.attempts).toBe(16);
+  });
+
   test('keeps per-level counts', () => {
     const subject = campaign();
     subject.record(hit);
@@ -297,6 +311,39 @@ describe('the exam', () => {
     expect(last!.potted).toBe(4);
     expect(last!.personalBest).toBe(false);
     expect(second.examBest).toBe(6);
+  });
+
+  test('a finished run gives way to a fresh one, on a layout nobody has played', () => {
+    const subject = campaign();
+    const exam = examLevel();
+    subject.selectLevel(exam.id);
+    play(subject, hit, exam.examShots - 1);
+    const last = subject.layout.id;
+    expect(subject.record(hit).examFinished).toBeDefined();
+    expect(subject.exam).toEqual({ shotsTaken: 0, total: exam.examShots, potted: 0 });
+    expect(subject.retrying).toBe(false);
+    expect(subject.layout.id).not.toBe(last);
+    expect(subject.record(hit).examFinished).toBeUndefined();
+    expect(subject.exam?.shotsTaken).toBe(1);
+  });
+
+  /**
+   * The bug this pins: the finished run used to keep counting, so an eleventh
+   * pot recorded a best of 11 out of 10 — which the store refuses to load, and
+   * the whole save went with it on the next visit.
+   */
+  test('the best score can never exceed the run, and the save survives a reload', () => {
+    const storage = new FakeStorage();
+    const exam = examLevel();
+    const subject = new Campaign(createProgressStore(storage), { seed: 3 });
+    subject.selectLevel(exam.id);
+    play(subject, hit, exam.examShots * 2 + 3);
+    expect(subject.examBest).toBe(exam.examShots);
+
+    const reloaded = new Campaign(createProgressStore(storage), { seed: 3 });
+    expect(reloaded.notice).toBeUndefined();
+    expect(reloaded.examBest).toBe(exam.examShots);
+    expect(reloaded.level.id).toBe(exam.id);
   });
 
   test('starting the exam again begins a fresh run', () => {

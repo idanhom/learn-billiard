@@ -138,6 +138,11 @@ tier, not the level's record, not the exam.
 
 Level 7 is the exam: no guides, no tiers, ten shots, scored on pots.
 
+The shot that clears a level, or ends an exam run, stays on the table with its
+report and a summary card until you move on (`N`, or Continue). Going back to a
+level you have already cleared is practice by choice: it keeps its record, and
+it does not move you on again after every shot.
+
 ## Calibrating yourself
 
 After every shot the report tells you how you missed — `1.24° thick`, or

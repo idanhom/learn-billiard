@@ -548,6 +548,62 @@ check(
   `n=${advanced.historyLength}`,
 );
 
+// The shot that cleared the level is reported, not swept away by the next one:
+// it stays on the table with its report, under a card saying what was cleared.
+check(
+  'the shot that completed the level is still on screen, reported',
+  advanced.phase === 'evaluated' && advanced.outcome?.qualifying === true,
+  advanced.phase,
+);
+check(
+  'and a summary card says what was cleared and what is next',
+  advanced.milestone?.kind === 'level-complete' &&
+    advanced.milestone.attempts === 12 &&
+    advanced.milestone.qualified === 12 &&
+    advanced.milestone.nextLevelName === 'Gentle cuts',
+  JSON.stringify(advanced.milestone),
+);
+await page.screenshot({ path: `${OUT}level-complete.png` });
+await page.locator('.hud-continue').click();
+await sleep(200);
+const continued = await state();
+check(
+  'Continue deals the next level its first shot',
+  continued.phase === 'aiming' && continued.milestone === null && continued.levelId === 2 && !continued.practice,
+  `${continued.phase} level=${continued.levelId} practice=${continued.practice}`,
+);
+
+// The exam the same way — and the run must start again afterwards. A finished
+// run used to keep counting, so an eleventh pot recorded a best of 11 out of
+// 10, which the store refuses to load: the whole save went with it.
+await page.evaluate(() => window.__debug.selectLevel(7));
+await sleep(300);
+for (let shot = 0; shot < 10; shot++) await playPerfect({ fresh: shot > 0 });
+const examDone = await state();
+check(
+  'ten exam shots finish the run and hold the result on screen',
+  examDone.phase === 'evaluated' && examDone.milestone?.kind === 'exam-finished' && examDone.milestone.total === 10,
+  JSON.stringify(examDone.milestone),
+);
+check('the next run starts from nothing', examDone.exam?.shotsTaken === 0, JSON.stringify(examDone.exam));
+await page.screenshot({ path: `${OUT}exam-finished.png` });
+await page.locator('#game').focus();
+await page.keyboard.press('KeyN');
+await sleep(200);
+const pastCard = await state();
+check(
+  'N moves on past the card as well',
+  pastCard.phase === 'aiming' && pastCard.milestone === null && !pastCard.practice,
+  `${pastCard.phase} practice=${pastCard.practice}`,
+);
+await playPerfect();
+const examAgain = await state();
+check(
+  'and a shot after it counts toward the new run, not the old one',
+  examAgain.exam?.shotsTaken === 1 && examAgain.milestone === null && examAgain.examBest <= 10,
+  `${JSON.stringify(examAgain.exam)} best=${examAgain.examBest}`,
+);
+
 // A clean aiming shot of a half-ball cut, guides up, numbered object ball.
 // From a fresh load, so no stale notice or report is left on screen.
 await page.evaluate(() => window.localStorage.clear());

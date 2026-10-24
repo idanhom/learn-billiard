@@ -149,6 +149,28 @@ body {
   text-align: center;
 }
 
+#hud-milestone {
+  min-width: 260px;
+  text-align: center;
+  border-color: rgba(111, 211, 160, 0.45);
+}
+
+.hud-continue {
+  margin: 10px 0 4px;
+  padding: 6px 18px;
+  border: 1px solid rgba(111, 211, 160, 0.6);
+  border-radius: 7px;
+  background: rgba(111, 211, 160, 0.14);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hud-continue:hover {
+  background: rgba(111, 211, 160, 0.26);
+}
+
 /*
  * The power meter is centred and 246px wide, so its left edge sits at
  * 50% - 123px. Cap the controls panel short of that, at any viewport width,

@@ -195,10 +195,13 @@ export class Campaign {
       return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordExam(shot) };
     }
 
+    // A level that was already complete stays where the player put it: going
+    // back to one is practice by choice, and must not bounce them on again.
+    const wasCompleted = this.#tiers.completed;
     const result = this.#tiers.record(shot.qualifying);
     this.#writeTier();
 
-    if (result.completed) {
+    if (result.completed && !wasCompleted) {
       this.#advanceToNextLevel();
       return { advancedTier: false, levelCompleted: true, practice: false };
     }
@@ -224,9 +227,9 @@ export class Campaign {
       shotsTaken: run.shotsTaken + 1,
       potted: run.potted + (shot.pottedTarget ? 1 : 0),
     };
-    this.#exam = next;
 
     if (next.shotsTaken < next.total) {
+      this.#exam = next;
       this.#persist();
       return {};
     }
@@ -234,6 +237,14 @@ export class Campaign {
     const previousBest = this.#state.examBest;
     const personalBest = previousBest === null || next.potted > previousBest;
     if (personalBest) this.#state = { ...this.#state, examBest: next.potted };
+
+    // The run is over, so the next shot starts a new one, on a layout nobody
+    // has played. Left as it was, the finished run kept counting — an
+    // eleventh pot made a best of 11 out of 10, which the store rightly
+    // refuses to load, and the whole save was thrown away with it.
+    this.#exam = freshExam(this.#level);
+    this.#shotCounter++;
+    this.#deal();
     this.#persist();
     return { examFinished: { potted: next.potted, total: next.total, personalBest } };
   }

@@ -13,6 +13,28 @@ import type { ShotOutcome, ShotPhase } from '../game/shot-session';
 import type { HistoryEntry, Tendency } from '../game/shot-history';
 import type { GuideVisibility } from '../game/tiers';
 
+/**
+ * A level just cleared or an exam just finished. Held on screen, under the
+ * report of the shot that did it, until the player moves on — rather than
+ * swept away by the next shot before anyone could read it.
+ */
+export type Milestone =
+  | {
+      readonly kind: 'level-complete';
+      readonly levelName: string;
+      readonly attempts: number;
+      readonly qualified: number;
+      readonly potted: number;
+      readonly nextLevelName: string;
+    }
+  | {
+      readonly kind: 'exam-finished';
+      readonly potted: number;
+      readonly total: number;
+      readonly personalBest: boolean;
+      readonly best: number | null;
+    };
+
 export interface HudLevelEntry {
   readonly id: number;
   readonly name: string;
@@ -48,6 +70,7 @@ export interface HudState {
   readonly examBest: number | null;
   /** The shot in play is a retry of a layout already played: practice, not counted. */
   readonly practice: boolean;
+  readonly milestone: Milestone | undefined;
   readonly notice: string | undefined;
   readonly view: string;
   readonly outcome: ShotOutcome | undefined;
@@ -63,6 +86,7 @@ export interface HudState {
 export interface HudActions {
   onReset(): void;
   onSelectLevel(id: number): void;
+  onContinue(): void;
 }
 
 const TIER_NAMES = ['full guides', 'no pocket line', 'no ghost ball', 'no guides'];
@@ -77,6 +101,7 @@ export class Hud {
   readonly #report: HTMLElement;
   readonly #notice: HTMLElement;
   readonly #history: HTMLElement;
+  readonly #milestone: HTMLElement;
   readonly #actions: HudActions;
 
   // Last markup written to each panel. `update` runs every frame but the
@@ -89,6 +114,7 @@ export class Hud {
   #renderedHistory = '';
   #renderedSpeed = '';
   #renderedMarker = '';
+  #renderedMilestone = '';
   #reportShown = false;
 
   constructor(root: HTMLElement, actions: HudActions) {
@@ -106,6 +132,9 @@ export class Hud {
     this.#notice.style.display = 'none';
     this.#history = panel(root, 'hud-history', 'top:150px; right:14px; text-align:right;');
     this.#history.style.display = 'none';
+    this.#milestone = panel(root, 'hud-milestone', 'top:50%; left:50%; transform:translate(-50%, -50%);');
+    this.#milestone.classList.add('interactive');
+    this.#milestone.style.display = 'none';
 
     const power = panel(root, 'hud-power', 'bottom:18px; left:50%; transform:translateX(-50%);');
     power.innerHTML =
@@ -139,6 +168,9 @@ export class Hud {
     this.#notice.addEventListener('click', () => {
       this.#notice.style.display = 'none';
     });
+    this.#milestone.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('.hud-continue')) this.#actions.onContinue();
+    });
   }
 
   update(state: HudState): void {
@@ -147,9 +179,10 @@ export class Hud {
     this.#renderLevels(state);
     this.#renderHistory(state);
     this.#renderPower(state);
+    this.#renderMilestone(state);
 
     if (state.outcome) {
-      const html = renderReport(state.outcome, state.exam, state.practice);
+      const html = renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
         this.#report.innerHTML = html;
@@ -193,6 +226,14 @@ export class Hud {
     this.#renderedMarker = marker;
     this.#powerMarker.style.display = marker === '' ? 'none' : '';
     if (marker !== '') this.#powerMarker.style.left = marker;
+  }
+
+  #renderMilestone(state: HudState): void {
+    const html = state.milestone ? renderMilestone(state.milestone) : '';
+    if (html === this.#renderedMilestone) return;
+    this.#renderedMilestone = html;
+    this.#milestone.innerHTML = html;
+    this.#milestone.style.display = html === '' ? 'none' : '';
   }
 
   #renderStatus(state: HudState): void {
@@ -330,7 +371,35 @@ function tendencyLine(label: string, tendency: Tendency | null): string {
   return `<div class="hud-sub hud-tendency">${label}: ${body} <span class="hud-note">(${tendency.samples})</span></div>`;
 }
 
-function renderReport(outcome: ShotOutcome, exam: ExamRun | undefined, practice: boolean): string {
+function renderMilestone(milestone: Milestone): string {
+  const body =
+    milestone.kind === 'level-complete'
+      ? '<div class="hud-label">Level complete</div>' +
+        `<div class="hud-big">${escape(milestone.levelName)}</div>` +
+        `<div class="hud-sub">${milestone.qualified} of ${milestone.attempts} on aim &middot; ` +
+        `${milestone.potted} potted</div>` +
+        `<div class="hud-sub">Next: ${escape(milestone.nextLevelName)}</div>`
+      : '<div class="hud-label">Exam finished</div>' +
+        `<div class="hud-big">${milestone.potted} of ${milestone.total} potted</div>` +
+        (milestone.personalBest
+          ? '<div class="hud-sub">A personal best.</div>'
+          : milestone.best === null
+            ? ''
+            : `<div class="hud-sub">Your best is ${milestone.best} of ${milestone.total}.</div>`) +
+        `<div class="hud-sub">Next: a fresh run of ${milestone.total}</div>`;
+  return (
+    body +
+    '<button type="button" class="hud-continue">Continue</button>' +
+    '<div class="hud-sub hud-note">or press N</div>'
+  );
+}
+
+function renderReport(
+  outcome: ShotOutcome,
+  exam: ExamRun | undefined,
+  practice: boolean,
+  held: boolean,
+): string {
   const verdict = exam
     ? outcome.pottedTarget
       ? 'Potted'
@@ -365,7 +434,8 @@ function renderReport(outcome: ShotOutcome, exam: ExamRun | undefined, practice:
     `&middot; tolerance ${outcome.toleranceDegrees}&deg;</div>` +
     `<div class="hud-sub">Result: ${pot}</div>` +
     (notes.length ? `<div class="hud-sub hud-note">${notes.join(' &middot; ')}</div>` : '') +
-    '<div class="hud-sub hud-note">R to retry this layout &middot; N for the next one</div>'
+    // Held under a summary card the layout has gone, and the card says what next.
+    (held ? '' : '<div class="hud-sub hud-note">R to retry this layout &middot; N for the next one</div>')
   );
 }
 

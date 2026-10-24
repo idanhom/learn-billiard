@@ -20,7 +20,7 @@ import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session
 import { ADVANCE_REQUIRED } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
 import { PoolScene } from './scene/pool-scene';
-import { Hud } from './ui/hud';
+import { Hud, type Milestone } from './ui/hud';
 
 /** Seconds of held Space to reach full power. */
 const CHARGE_SECONDS = 1.1;
@@ -46,6 +46,7 @@ const hud = new Hud(hudRoot, {
     startShot();
   },
   onSelectLevel: (id: number) => selectLevel(id),
+  onContinue: () => continueOn(),
 });
 
 const settingsStore = createSettingsStore(browserStorage());
@@ -60,6 +61,12 @@ let sessionsDealt = 0;
 let session = newSession();
 /** The session in play is a retry: practice, which the campaign will not count. */
 let practice = campaign.retrying;
+/**
+ * A level just completed, or an exam just finished. The shot that did it stays
+ * on the table with its report, and this card under it, until the player moves
+ * on: dealing the next shot at once threw the result away unread.
+ */
+let milestone: Milestone | undefined;
 let chargeSeconds = 0;
 let evaluations = 0;
 let notice = campaign.notice;
@@ -104,18 +111,32 @@ function newSession(): ShotSession {
 function startShot(): void {
   session = newSession();
   practice = campaign.retrying;
+  milestone = undefined;
   objectBallNumber = ballNumberFor(session.layout.id);
   chargeSeconds = 0;
 }
 
+/**
+ * Past a summary card the campaign has already dealt what comes next — the new
+ * level's first layout, or a fresh exam run's — and the layout the card sits
+ * over is gone. So R and N both just move on, as Continue does.
+ */
+function continueOn(): void {
+  if (!milestone) return;
+  startShot();
+  canvas.focus();
+}
+
 function retry(): void {
   if (session.phase === 'simulating') return;
+  if (milestone) return continueOn();
   campaign.retryShot();
   startShot();
 }
 
 function nextShot(): void {
   if (session.phase === 'simulating') return;
+  if (milestone) return continueOn();
   campaign.nextShot();
   startShot();
 }
@@ -133,6 +154,7 @@ function selectLevel(id: number): void {
 
 function recordOutcome(outcome: ShotOutcome): void {
   evaluations++;
+  const level = campaign.level;
   const event = campaign.record(outcome);
   history.record({
     aimError: outcome.aimError,
@@ -143,15 +165,20 @@ function recordOutcome(outcome: ShotOutcome): void {
     retry: event.practice,
   });
   if (event.examFinished) {
-    const { potted, total, personalBest } = event.examFinished;
-    notice = `Exam finished: ${potted} of ${total} potted${personalBest ? ' — a personal best' : ''}.`;
-    startShot();
+    milestone = { kind: 'exam-finished', ...event.examFinished, best: campaign.examBest };
   } else if (event.levelCompleted) {
-    notice = `Level complete. Moving on to ${campaign.level.name}.`;
+    const stats = campaign.levelStats(level.id);
+    milestone = {
+      kind: 'level-complete',
+      levelName: level.name,
+      attempts: stats.attempts,
+      qualified: stats.qualified,
+      potted: stats.potted,
+      nextLevelName: campaign.level.name,
+    };
     // The campaign has moved to a new level, exactly as a level select would,
     // and the calibration starts afresh for the same reason.
     history.clear();
-    startShot();
   } else if (event.advancedTier) {
     notice = `Tier ${campaign.tier}: one more guide comes away.`;
   }
@@ -270,6 +297,7 @@ function frame(now: number): void {
     exam: campaign.exam,
     examBest: campaign.examBest,
     practice,
+    milestone,
     notice,
     view: scene.view,
     outcome: session.outcome,
@@ -304,6 +332,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     },
     retry,
     next: nextShot,
+    continue: continueOn,
     selectLevel,
     cycleSpeed,
     cycleCloth,
@@ -363,6 +392,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       notice: notice ?? null,
       evaluations,
       practice,
+      milestone: milestone ?? null,
       outcome: session.outcome ?? null,
     }),
   };
