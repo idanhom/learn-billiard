@@ -478,3 +478,33 @@ describe('the mixed review', () => {
     for (const id of [1, 2, 4, 5]) expect(share(id), `level ${id}`).toBeGreaterThan(0.02);
   });
 });
+
+describe('the perception drills', () => {
+  const perception = LEVELS.find((level) => level.perception)!;
+
+  test('alternate a flash and a placing, dealt from the fraction levels, with no guides', () => {
+    const subject = resumed(perception.id, 0);
+    const kinds: (string | undefined)[] = [];
+    for (let i = 0; i < 6; i++) {
+      kinds.push(subject.drillKind);
+      expect([1, 2, 3, 4, 5]).toContain(subject.layoutLevel.id);
+      expect(Object.values(subject.guides).every((shown) => !shown)).toBe(true);
+      subject.nextShot();
+    }
+    expect(kinds).toEqual(['flash', 'place', 'flash', 'place', 'flash', 'place']);
+  });
+
+  test('start on a flash whenever the level is entered', () => {
+    const subject = campaign();
+    subject.nextShot();
+    subject.selectLevel(perception.id);
+    expect(subject.drillKind).toBe('flash');
+    subject.nextShot();
+    subject.selectLevel(perception.id);
+    expect(subject.drillKind).toBe('flash');
+  });
+
+  test('are not on any other level', () => {
+    expect(campaign().drillKind).toBeUndefined();
+  });
+});

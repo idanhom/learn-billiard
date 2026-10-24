@@ -46,12 +46,13 @@ describe('the seeded random source', () => {
 });
 
 describe('the curriculum', () => {
-  test('runs five fraction levels, distance and rails, the exam, then a mixed review', () => {
-    expect(LEVELS).toHaveLength(8);
+  test('runs five fraction levels, distance and rails, the exam, a mixed review and the perception drills', () => {
+    expect(LEVELS).toHaveLength(9);
     expect(LEVELS.slice(0, 5).map((l) => l.fraction)).toEqual(['full', 'three-quarter', 'half', 'quarter', 'eighth']);
     expect(LEVELS[6]!.exam).toBe(true);
     expect(examLevel().id).toBe(7);
     expect(LEVELS[7]!.review).toBe(true);
+    expect(LEVELS[8]!.perception).toBe(true);
     expect(LEVELS.filter((l) => l.exam)).toHaveLength(1);
   });
 

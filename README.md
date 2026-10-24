@@ -48,7 +48,7 @@ by that.
 | `C` | cycle fast / normal / slow cloth |
 | `R` | retry the same layout |
 | `N` | next shot |
-| `1`–`8` | jump to a level |
+| `1`–`9` | jump to a level |
 | `F` | call the fraction the shot needs |
 | `G` | get down on the line, or stand back up (last tier and exam) |
 
@@ -187,6 +187,15 @@ is named for is always the nearest. Level 6 is long shots with the object ball
 near a cushion, and level 7 the exam, which mixes in thin cuts to 70° and shots
 of up to 1.3 m. Level 8 is a mixed review of the five fractions, dealing more
 of the ones whose shots you miss most.
+
+Level 9, Read the angle, has no shots at all. It alternates two drills. In one
+the layout shows for a second and a half, then the balls go and you call the
+fraction the shot needed, by `1` to `5` or the buttons. In the other you click
+or tap where the ghost ball belongs, and the line of centres through where you
+put it is scored by the share of the pocket it would use, as a shot is. Either
+way the answer then shows on the table: the true ghost ball with its lines, and
+for a placing yours in red, with the line it would have sent the object ball
+on. The drills count toward the tiers as shots do, and show no guide at any.
 
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is

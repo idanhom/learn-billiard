@@ -414,6 +414,13 @@ body {
   background: rgba(111, 211, 160, 0.2);
 }
 
+/* A perception drill takes no shot: no meter, no strip, no aim buttons. */
+.drilling #hud-power,
+.drilling #hud-strip,
+.drilling #hud-aim {
+  display: none;
+}
+
 @media (any-pointer: coarse) {
   #hud-power {
     display: none;

@@ -328,6 +328,52 @@ await playPerfect();
 const examAfter = await state();
 check('an exam shot counts against the run', examAfter.exam?.shotsTaken === 1, JSON.stringify(examAfter.exam));
 
+// The perception drills: a flash, then a placing.
+await page.evaluate(() => window.__debug.selectLevel(9));
+await sleep(300);
+const flashing = await state();
+check('the perception level opens on a flash drill', flashing.drill?.kind === 'flash' && flashing.drill.stage === 'showing', JSON.stringify(flashing.drill));
+await sleep(1700);
+const flashed = await state();
+check('after its moment the balls go and the drill asks', flashed.drill?.stage === 'asking', JSON.stringify(flashed.drill));
+await page.screenshot({ path: `${OUT}perception-flash.png` });
+await page.focus('#game');
+await page.keyboard.press('Digit3');
+await sleep(150);
+const called = await state();
+check('a digit calls the fraction, and the answer shows', called.drill?.stage === 'answered' && called.drill.result?.called === 'half', JSON.stringify(called.drill));
+const drillHud = await page.evaluate(() => ({
+  power: getComputedStyle(document.getElementById('hud-power')).display,
+  status: document.getElementById('hud-status').textContent,
+  calls: document.querySelectorAll('#hud-shot [data-call]').length,
+}));
+check(
+  'a drill shows no power meter or shot call, and tallies reads, not pots',
+  drillHud.power === 'none' && drillHud.calls === 0 && drillHud.status.includes('read right') && !drillHud.status.includes('potted'),
+  JSON.stringify(drillHud),
+);
+
+await page.evaluate(() => window.__debug.next());
+await sleep(300);
+const placing = await state();
+check('the next drill is a placing', placing.drill?.kind === 'place' && placing.drill.stage === 'asking', JSON.stringify(placing.drill));
+const canvasBox = await page.locator('#game').boundingBox();
+await page.mouse.click(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+await sleep(150);
+const clicked = await state();
+check('a click on the table places the ghost ball', clicked.drill?.stage === 'answered' && clicked.drill.result?.kind === 'place', JSON.stringify(clicked.drill));
+await page.screenshot({ path: `${OUT}perception-place.png` });
+await page.evaluate(() => {
+  window.__debug.retry();
+});
+await sleep(200);
+const onTheGhost = await page.evaluate(() => {
+  const ghost = window.__debug.ghost();
+  window.__debug.placeDrill(ghost.x, ghost.y);
+  return window.__debug.state().drill;
+});
+check('placed on the ghost ball, it is right', onTheGhost?.result?.correct === true, JSON.stringify(onTheGhost));
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {

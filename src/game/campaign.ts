@@ -28,6 +28,7 @@ import {
   emptyProgress,
   levelProgress,
 } from './progress-store';
+import type { DrillKind } from './perception';
 import { makeRng } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
@@ -85,6 +86,8 @@ export class Campaign {
   /** A shot at the current layout has been scored, so any further one is a retry. */
   #layoutPlayed = false;
   #shotCounter = 0;
+  /** Layouts moved on through since the level in play was entered, so its perception drills start on a flash. */
+  #turnOnLevel = 0;
   #exam: ExamRun | undefined;
 
   constructor(store: ProgressStore, options: CampaignOptions = {}) {
@@ -127,9 +130,15 @@ export class Campaign {
     return this.#tiers.tier;
   }
 
-  /** The exam is exempt from tiers: no guide is ever shown during it. */
+  /** The exam is exempt from tiers, and it and the perception drills show no guide. */
   get guides(): GuideVisibility {
-    return this.#level.exam ? NO_GUIDES : this.#tiers.guides;
+    return this.#level.exam || this.#level.perception ? NO_GUIDES : this.#tiers.guides;
+  }
+
+  /** Which perception drill the current layout is for, on the level that has them: they alternate. */
+  get drillKind(): DrillKind | undefined {
+    if (!this.#level.perception) return undefined;
+    return this.#turnOnLevel % 2 === 0 ? 'flash' : 'place';
   }
 
   get pocketAllowance(): number {
@@ -184,6 +193,7 @@ export class Campaign {
 
   nextShot(): void {
     this.#shotCounter++;
+    this.#turnOnLevel++;
     this.#deal();
   }
 
@@ -194,6 +204,7 @@ export class Campaign {
     this.#exam = this.#level.exam ? freshExam(this.#level) : undefined;
     this.#state = { ...this.#state, currentLevel: id };
     this.#shotCounter++;
+    this.#turnOnLevel = 0;
     this.#deal();
     this.#persist();
     return true;
@@ -235,6 +246,7 @@ export class Campaign {
     this.#tiers = new TierTracker();
     this.#exam = undefined;
     this.#shotCounter++;
+    this.#turnOnLevel = 0;
     this.#deal();
   }
 
@@ -332,6 +344,7 @@ export class Campaign {
     if (this.#level.review) {
       return pickWeighted(fractions, fractions.map((level) => this.#missRate(level)), rng());
     }
+    if (this.#level.perception) return fractions[Math.floor(rng() * fractions.length)]!;
 
     // Only a fraction level with others before it has anything to mix in.
     const at = fractions.indexOf(this.#level);

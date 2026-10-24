@@ -20,12 +20,13 @@ import {
 } from 'three';
 import type { GuideVisibility } from '../game/tiers';
 import { BALL_RADIUS } from '../geometry/table';
-import type { Vec2 } from '../geometry/vec2';
+import { type Vec2, add, dist, normalize, scale, sub } from '../geometry/vec2';
 import { headingBetween, headingToRotationY, toWorld, writeWorld } from './coords';
 
 const AIM_COLOR = 0xf2f6ff;
 const GHOST_COLOR = 0x9fe8c4;
 const PATH_COLOR = 0xe2a03f;
+const PLACED_COLOR = 0xf07a7a;
 const LINE_THICKNESS = 0.006;
 
 export interface GuideState {
@@ -36,6 +37,8 @@ export interface GuideState {
   readonly ghost: Vec2;
   readonly object: Vec2;
   readonly pocket: Vec2;
+  /** A place drill's answer: where the player put the ghost ball. */
+  readonly placed?: Vec2 | undefined;
 }
 
 export class Guides {
@@ -43,18 +46,15 @@ export class Guides {
 
   readonly #aimLine = flatLine(AIM_COLOR, 0.85);
   readonly #objectPath = flatLine(PATH_COLOR, 0.7);
-  readonly #ghost: LineSegments;
+  readonly #ghost = wireBall(GHOST_COLOR);
+  readonly #placed = wireBall(PLACED_COLOR);
+  readonly #placedPath = flatLine(PLACED_COLOR, 0.7);
 
   constructor() {
     this.group.name = 'guides';
-    this.group.add(this.#aimLine, this.#objectPath);
-
-    this.#ghost = new LineSegments(
-      new WireframeGeometry(new SphereGeometry(BALL_RADIUS, 12, 8)),
-      new LineBasicMaterial({ color: GHOST_COLOR, transparent: true, opacity: 0.55 }),
-    );
     this.#ghost.name = 'ghost-ball';
-    this.group.add(this.#ghost);
+    this.#placed.name = 'placed-ghost-ball';
+    this.group.add(this.#aimLine, this.#objectPath, this.#ghost, this.#placed, this.#placedPath);
   }
 
   update(state: GuideState): void {
@@ -67,11 +67,29 @@ export class Guides {
     if (aimLine) placeLine(this.#aimLine, state.cue, state.aimEnd, 0.004);
     if (objectPath) placeLine(this.#objectPath, state.object, state.pocket, 0.004);
     if (ghostBall) this.#ghost.position.copy(toWorld(state.ghost, BALL_RADIUS));
+
+    // Where the placed ghost ball would have sent the object ball: along the
+    // line of centres through it, as far as the pocket is.
+    const placed = state.placed;
+    this.#placed.visible = placed !== undefined;
+    this.#placedPath.visible = placed !== undefined;
+    if (placed) {
+      this.#placed.position.copy(toWorld(placed, BALL_RADIUS));
+      const away = scale(normalize(sub(state.object, placed)), dist(state.object, state.pocket));
+      placeLine(this.#placedPath, state.object, add(state.object, away), 0.004);
+    }
   }
 
   setVisible(visible: boolean): void {
     this.group.visible = visible;
   }
+}
+
+function wireBall(color: number): LineSegments {
+  return new LineSegments(
+    new WireframeGeometry(new SphereGeometry(BALL_RADIUS, 12, 8)),
+    new LineBasicMaterial({ color, transparent: true, opacity: 0.55 }),
+  );
 }
 
 function flatLine(color: number, opacity: number): Mesh {

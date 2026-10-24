@@ -14,9 +14,12 @@ import {
   Mesh,
   MeshStandardMaterial,
   PerspectiveCamera,
+  Plane,
   Quaternion,
+  Raycaster,
   Scene,
   SphereGeometry,
+  Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -24,7 +27,7 @@ import { BALL_RADIUS, TABLE } from '../geometry/table';
 import { type Vec2, lerp as lerpVec, vec } from '../geometry/vec2';
 import type { Ball } from '../physics/world';
 import { CUE_BALL_NUMBER, ballTexture, companionBallNumber } from './ball-textures';
-import { headingToRotationY, writeHeading, writeWorld, writeWorldQuat } from './coords';
+import { fromWorld, headingToRotationY, writeHeading, writeWorld, writeWorldQuat } from './coords';
 import { Guides } from './guides';
 import { STANCE_BACK, STANCE_EYE_HEIGHT, stanceFraming } from './stance';
 import { FRAME_MARGIN, buildTable } from './table-mesh';
@@ -83,6 +86,8 @@ export interface RenderState {
   readonly shotLength: number;
   /** Cue ball to ghost ball, which the stance view keeps in frame. */
   readonly cueToGhost: number;
+  /** Take the balls off the table, as a flash drill does once its moment is up. */
+  readonly hideBalls?: boolean;
   /** Seconds since the last rendered frame, for frame-rate-independent easing. */
   readonly dt: number;
 }
@@ -171,6 +176,23 @@ export class PoolScene {
     return this.#camera.fov;
   }
 
+  /**
+   * The point on the table under a click, at the height of a ball's centre,
+   * in table coordinates: where a ghost ball dropped there would sit.
+   * Undefined when the click misses the table's plane.
+   */
+  pickTable(clientX: number, clientY: number): Vec2 | undefined {
+    const rect = this.#canvas.getBoundingClientRect();
+    const pointer = new Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const ray = new Raycaster();
+    ray.setFromCamera(pointer, this.#camera);
+    const hit = ray.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -BALL_RADIUS), new Vector3());
+    return hit ? fromWorld(hit.x, hit.z) : undefined;
+  }
+
   resize(): void {
     const width = this.#canvas.clientWidth || 1;
     const height = this.#canvas.clientHeight || 1;
@@ -224,7 +246,7 @@ export class PoolScene {
         material.needsUpdate = true;
       }
 
-      mesh.visible = !ball.potted;
+      mesh.visible = !ball.potted && !state.hideBalls;
       if (!ball.potted) {
         writeWorld(mesh.position, this.#interpolatedPosition(state, i), BALL_RADIUS);
         this.#writeOrientation(mesh.quaternion, state, i);

@@ -15,6 +15,7 @@
 import { FRACTIONS, type FractionName, fractionByName } from '../geometry/fractions';
 import type { CutSide } from '../geometry/shot';
 import { ESTIMATES, type Estimate, estimateLabel } from '../game/estimate';
+import type { DrillKind, DrillResult } from '../game/perception';
 import type { ExamRun } from '../game/campaign';
 import type { ShotOutcome, ShotPhase, ShotResult } from '../game/shot-session';
 import type { HistoryEntry, TendencyRow } from '../game/shot-history';
@@ -31,8 +32,10 @@ export type Milestone =
       readonly levelName: string;
       readonly attempts: number;
       readonly qualified: number;
-      readonly potted: number;
-      readonly nextLevelName: string;
+      /** Null on the level of drills, where nothing is ever played. */
+      readonly potted: number | null;
+      /** Null when it was the last level, which the player stays on. */
+      readonly nextLevelName: string | null;
     }
   | {
       readonly kind: 'exam-finished';
@@ -120,6 +123,14 @@ export interface HudState {
     readonly actual: Estimate;
     readonly straight: boolean;
   } | null;
+  /** The perception drill in play, if any: its kind, how far along, and how it went. */
+  readonly drill: {
+    readonly kind: DrillKind;
+    readonly stage: 'showing' | 'asking' | 'answered';
+    readonly result: DrillResult | null;
+    /** The cut the layout needs, to show once answered. */
+    readonly cutDegrees: number;
+  } | null;
   readonly outcome: ShotOutcome | undefined;
   /** Most recent first. */
   readonly history: readonly HistoryEntry[];
@@ -147,6 +158,8 @@ export interface HudActions {
   onGetDown(): void;
   /** The player's read of their own miss, or null to skip it. */
   onEstimate(said: Estimate | null): void;
+  /** A flash drill's call. */
+  onDrillCall(fraction: FractionName): void;
   /** Hand the keyboard back to the table. Called after every click on the HUD. */
   returnFocus(): void;
 }
@@ -163,6 +176,7 @@ export class Hud {
   readonly #eyeDistance: HTMLElement;
   readonly #shot: HTMLElement;
   readonly #levels: HTMLElement;
+  readonly #root: HTMLElement;
   readonly #powerFill: HTMLElement;
   readonly #powerMarker: HTMLElement;
   readonly #powerSpeed: HTMLElement;
@@ -209,6 +223,7 @@ export class Hud {
 
   constructor(root: HTMLElement, actions: HudActions) {
     root.innerHTML = '';
+    this.#root = root;
     this.#actions = actions;
 
     this.#status = panel(root, 'hud-status');
@@ -274,7 +289,7 @@ export class Hud {
       '<div class="hud-keys kbd-hint"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera: behind, overhead, stance &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
-      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>8</b> level &middot; ' +
+      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>9</b> level &middot; ' +
       '<b>F</b> call the fraction &middot; <b>G</b> get down on the line</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
       '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +
@@ -315,6 +330,8 @@ export class Hud {
     });
     this.#notice.addEventListener('click', () => this.#hideNotice());
     this.#report.addEventListener('click', (event) => {
+      const call = (event.target as HTMLElement).closest('[data-drill-call]');
+      if (call instanceof HTMLElement) this.#actions.onDrillCall(call.dataset.drillCall as FractionName);
       const button = (event.target as HTMLElement).closest('[data-estimate]');
       if (button instanceof HTMLElement) this.#actions.onEstimate(Number(button.dataset.estimate) as Estimate);
       if ((event.target as HTMLElement).closest('[data-estimate-skip]')) this.#actions.onEstimate(null);
@@ -373,6 +390,8 @@ export class Hud {
   }
 
   update(state: HudState): void {
+    // A perception drill takes no shot, so the controls for one go with it.
+    this.#root.classList.toggle('drilling', state.drill !== null);
     const eye = `${Math.round(state.viewingDistance * 100)} cm`;
     if (this.#eyeDistance.textContent !== eye) this.#eyeDistance.textContent = eye;
     this.#renderToolbar(state);
@@ -383,7 +402,17 @@ export class Hud {
     this.#renderPower(state);
     this.#renderMilestone(state);
 
-    if (state.outcome) {
+    if (state.drill) {
+      const html = renderDrill(state.drill, state.pocketAllowance);
+      if (html !== this.#renderedReport) {
+        this.#renderedReport = html;
+        this.#report.innerHTML = html;
+      }
+      if (!this.#reportShown) {
+        this.#reportShown = true;
+        this.#report.style.display = '';
+      }
+    } else if (state.outcome) {
       const html = state.estimate?.asking
         ? estimatePrompt(state.estimate.straight)
         : renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined, state.routineLog, state.estimate);
@@ -503,20 +532,26 @@ export class Hud {
       ? `Exam &mdash; shot ${Math.min(state.exam.shotsTaken + 1, state.exam.total)} of ${state.exam.total}`
       : state.tierComplete
         ? 'Level complete'
-        : `Tier ${state.tier} &mdash; ${TIER_NAMES[state.tier] ?? ''}`;
+        : state.drill
+          ? `Tier ${state.tier}`
+          : `Tier ${state.tier} &mdash; ${TIER_NAMES[state.tier] ?? ''}`;
 
+    // The drills show no guide at any tier, and a flash drill is judged on
+    // the fraction rather than the pocket.
     const line = state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
-      : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize} to advance &middot; ` +
-        `within ${percent(state.pocketAllowance)} of the pocket`;
+      : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize} to advance` +
+        (state.drill ? '' : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
+    const tally = state.drill
+      ? `${state.qualified}/${state.attempts} read right`
+      : `${state.qualified}/${state.attempts} on aim &middot; ${state.potted} potted`;
 
     const html =
       `<div class="hud-label">${escape(state.levelName)}</div>` +
       `<div class="hud-big">${heading}</div>` +
       `<div class="hud-sub">${line}</div>` +
       (state.practice ? '<div class="hud-sub hud-practice">Retry: practice, not counted</div>' : '') +
-      `<div class="hud-sub hud-extra">${state.qualified}/${state.attempts} on aim &middot; ` +
-      `${state.potted} potted</div>`;
+      `<div class="hud-sub hud-extra">${tally}</div>`;
     if (html === this.#renderedStatus) return;
     this.#renderedStatus = html;
     this.#status.innerHTML = html;
@@ -646,9 +681,10 @@ function renderMilestone(milestone: Milestone): string {
     milestone.kind === 'level-complete'
       ? '<div class="hud-label">Level complete</div>' +
         `<div class="hud-big">${escape(milestone.levelName)}</div>` +
-        `<div class="hud-sub">${milestone.qualified} of ${milestone.attempts} on aim &middot; ` +
-        `${milestone.potted} potted</div>` +
-        `<div class="hud-sub">Next: ${escape(milestone.nextLevelName)}</div>`
+        `<div class="hud-sub">${milestone.qualified} of ${milestone.attempts} ` +
+        (milestone.potted === null ? 'read right' : `on aim &middot; ${milestone.potted} potted`) +
+        '</div>' +
+        (milestone.nextLevelName === null ? '' : `<div class="hud-sub">Next: ${escape(milestone.nextLevelName)}</div>`)
       : '<div class="hud-label">Exam finished</div>' +
         `<div class="hud-big">${milestone.potted} of ${milestone.total} potted</div>` +
         (milestone.personalBest
@@ -765,6 +801,43 @@ function callButtons(call: FractionName | null): string {
       `<button type="button" class="hud-call" data-call="${f.name}" aria-pressed="${f.name === call}">${f.label}</button>`,
   ).join('');
   return `<div class="hud-calls"><span class="hud-note">Call it<kbd class="kbd-hint"> F</kbd></span>${buttons}</div>`;
+}
+
+/** A perception drill: what to do, then how it went. */
+function renderDrill(drill: NonNullable<HudState['drill']>, allowance: number): string {
+  const next =
+    '<div class="hud-sub hud-note"><b>Next</b><kbd class="kbd-hint"> N</kbd> for another &middot; ' +
+    '<b>Retry</b><kbd class="kbd-hint"> R</kbd> this one again</div>';
+  if (drill.kind === 'flash' && drill.stage === 'showing') {
+    return '<div class="hud-label">Read the angle</div><div class="hud-sub">Look now: the balls go in a moment.</div>';
+  }
+  if (drill.kind === 'flash' && drill.stage === 'asking') {
+    const buttons = FRACTIONS.map(
+      (f, i) =>
+        `<button type="button" class="hud-call" data-drill-call="${f.name}">${f.label}` +
+        `<kbd class="kbd-hint"> ${i + 1}</kbd></button>`,
+    ).join('');
+    return (
+      '<div class="hud-label">Read the angle</div><div class="hud-sub">Which fraction did that need?</div>' +
+      `<div class="hud-calls hud-estimates">${buttons}</div>`
+    );
+  }
+  if (drill.stage === 'asking') {
+    return (
+      '<div class="hud-label">Place the ghost ball</div>' +
+      '<div class="hud-sub">Click where the cue ball&rsquo;s centre has to be at contact.</div>'
+    );
+  }
+  const result = drill.result!;
+  const right = result.correct;
+  const verdict = `<div class="hud-verdict ${right ? 'good' : 'bad'}">${right ? 'Right' : 'Not quite'}</div>`;
+  const detail =
+    result.kind === 'flash'
+      ? `Called ${fractionByName(result.called).label}: it was ${fractionByName(result.needed).label}, ` +
+        `${drill.cutDegrees.toFixed(1)}&deg; of cut`
+      : `Off by ${(result.off * 100).toFixed(1)} cm: the line through it uses ` +
+        `${Number.isFinite(result.used) ? ofThePocket(result.used) : 'none of the pocket'}, ${percent(allowance)} allowed`;
+  return `${verdict}<div class="hud-sub">${detail}</div>${next}`;
 }
 
 /** Before the report: how did you hit it? */

@@ -64,9 +64,9 @@ export const AIM_DEGREES_PER_PIXEL = 0.08;
 /** Holding shift while dragging divides the rate, for the last half degree. */
 export const FINE_DRAG_DIVISOR = 5;
 
-/** Digit rows 1-8 select a level. Physical codes, so the layout does not matter. */
+/** Digit rows 1-9 select a level. Physical codes, so the layout does not matter. */
 const LEVEL_KEYS = new Map<string, number>(
-  [1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => [
+  [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((n) => [
     [`Digit${n}`, n] as [string, number],
     [`Numpad${n}`, n] as [string, number],
   ]),
