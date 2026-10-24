@@ -105,6 +105,10 @@ export interface HudState {
   readonly view: string;
   /** How far the player sits from the screen, in metres, for the stance view. */
   readonly viewingDistance: number;
+  /** The commit routine, where it runs: down on the line or still standing. */
+  readonly routine: { readonly down: boolean } | null;
+  /** How it went for the shot just played: time to shoot, and how often the player stood back up. */
+  readonly routineLog: { readonly seconds: number; readonly reAims: number } | null;
   readonly outcome: ShotOutcome | undefined;
   /** Most recent first. */
   readonly history: readonly HistoryEntry[];
@@ -128,6 +132,8 @@ export interface HudActions {
   onCall(fraction: FractionName | null): void;
   /** Move the viewing distance the stance view is drawn at, a step nearer or further. */
   onViewingDistance(steps: number): void;
+  /** Get down on the line, or stand back up: the commit routine. */
+  onGetDown(): void;
   /** Hand the keyboard back to the table. Called after every click on the HUD. */
   returnFocus(): void;
 }
@@ -255,7 +261,7 @@ export class Hud {
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera: behind, overhead, stance &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
       '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>8</b> level &middot; ' +
-      '<b>F</b> call the fraction</div>' +
+      '<b>F</b> call the fraction &middot; <b>G</b> get down on the line</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
       '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +
       'lift to strike; slide off its side to call the shot off. The buttons along the bottom do ' +
@@ -323,6 +329,8 @@ export class Hud {
         return this.#actions.onNext();
       case 'view':
         return this.#actions.onToggleView();
+      case 'down':
+        return this.#actions.onGetDown();
       case 'speed':
         return this.#actions.onCycleSpeed();
       case 'cloth':
@@ -357,7 +365,7 @@ export class Hud {
     this.#renderMilestone(state);
 
     if (state.outcome) {
-      const html = renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined);
+      const html = renderReport(state.outcome, state.exam, state.practice, state.milestone !== undefined, state.routineLog);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
         this.#report.innerHTML = html;
@@ -456,6 +464,7 @@ export class Hud {
       chip('retry', 'Retry', { key: 'R' }) +
       chip('next', 'Next', { key: 'N' }) +
       chip('view', VIEW_LABELS[state.view] ?? 'Behind', { key: 'V' }) +
+      (state.routine ? chip('down', state.routine.down ? 'Stand up' : 'Get down', { key: 'G' }) : '') +
       chip('speed', speedLabel(state.timeScale), { key: '.' }) +
       chip('cloth', `${escape(state.clothLabel)} cloth`, { key: 'C' }) +
       chip('levels', 'Levels', { compactOnly: true, pressed: this.#openSheet === 'levels' }) +
@@ -639,6 +648,7 @@ function renderReport(
   exam: ExamRun | undefined,
   practice: boolean,
   held: boolean,
+  routine: HudState['routineLog'],
 ): string {
   const verdict = exam
     ? outcome.pottedTarget
@@ -672,6 +682,10 @@ function renderReport(
       : `<div class="hud-sub">Hit ${percent(outcome.fullnessHit)} of the ball, needed ` +
         `${percent(outcome.fullnessNeeded)} &middot; ${cut}</div>`) +
     `<div class="hud-sub">Result: ${resultText(outcome.result)}</div>` +
+    (routine
+      ? `<div class="hud-sub hud-note">Struck ${routine.seconds.toFixed(1)} s after the deal` +
+        `${routine.reAims === 0 ? ', from the first line' : `, standing up ${routine.reAims === 1 ? 'once' : `${routine.reAims} times`} to re-aim`}</div>`
+      : '') +
     (outcome.call === null
       ? ''
       : `<div class="hud-sub">Called ${fractionByName(outcome.call).label}: ` +

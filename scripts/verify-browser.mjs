@@ -290,6 +290,32 @@ check('the exam turns every guide off', Object.values(exam.guides).every((v) => 
 check('the exam counts shots rather than tiers', exam.exam?.total === 10 && exam.exam?.shotsTaken === 0);
 await page.screenshot({ path: `${OUT}exam.png` });
 
+// The exam plays through the commit routine: the stroke waits until the player
+// has got down on the line, and been still there a moment.
+check('the exam starts each shot standing', exam.routine?.down === false, JSON.stringify(exam.routine));
+await page.focus('#game');
+await page.keyboard.down('Space');
+await sleep(150);
+await page.keyboard.up('Space');
+check('no stroke before getting down', (await state()).phase === 'aiming', (await state()).phase);
+await page.keyboard.press('KeyG');
+await sleep(100);
+const gotDown = await state();
+check(
+  'G gets down on the line, into the stance view',
+  gotDown.routine?.down === true && gotDown.view === 'stance',
+  `${JSON.stringify(gotDown.routine)} ${gotDown.view}`,
+);
+await sleep(700);
+await page.keyboard.down('Space');
+await sleep(250);
+await page.keyboard.up('Space');
+await sleep(100);
+check('after a still moment the stroke goes', (await state()).phase !== 'aiming', (await state()).phase);
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const timedReport = await page.evaluate(() => document.querySelector('#hud-report')?.textContent ?? '');
+check('the report times the shot', /after the deal/.test(timedReport), timedReport);
+
 await playPerfect();
 const examAfter = await state();
 check('an exam shot counts against the run', examAfter.exam?.shotsTaken === 1, JSON.stringify(examAfter.exam));

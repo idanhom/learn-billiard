@@ -27,6 +27,8 @@ export interface InputHandlers {
   onCycleCloth(): void;
   /** Step the fraction called for the shot: none, full, three quarters, and on to an eighth. */
   onCycleCall(): void;
+  /** Get down on the line, or stand back up: the commit routine's G. */
+  onGetDown(): void;
 }
 
 /**
@@ -144,6 +146,10 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
       case 'KeyF':
         if (event.repeat) return;
         handlers.onCycleCall();
+        return;
+      case 'KeyG':
+        if (event.repeat) return;
+        handlers.onGetDown();
         return;
       case 'Escape':
         if (charging) {

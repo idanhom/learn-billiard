@@ -17,6 +17,7 @@ import { browserStorage, createProgressStore } from './game/progress-store';
 import { createSettingsStore, nextCloth, nextTimeScale, stepViewingDistance } from './game/settings-store';
 import { ShotHistory, signedShare } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
+import { Routine } from './game/routine';
 import { ADVANCE_REQUIRED, ADVANCE_WINDOW, FINAL_TIER } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
 import { type CameraView, PoolScene } from './scene/pool-scene';
@@ -45,7 +46,8 @@ const hud = new Hud(hudRoot, {
   onContinue: () => continueOn(),
   onRetry: () => retry(),
   onNext: () => nextShot(),
-  onToggleView: () => scene.toggleView(),
+  onToggleView: () => (routine?.down ? toggleDown() : scene.toggleView()),
+  onGetDown: () => toggleDown(),
   onCycleSpeed: () => cycleSpeed(),
   onCycleCloth: () => cycleCloth(),
   onCall: (fraction) => session.callFraction(fraction),
@@ -60,11 +62,15 @@ const history = new ShotHistory();
 // first session is built on the cloth the player actually chose.
 let settings = settingsStore.load();
 scene.setViewingDistance(settings.viewingDistance);
-applyDefaultView();
 
 /** Sessions dealt so far. Seeds where the cue starts, so a retry starts somewhere new. */
 let sessionsDealt = 0;
+/** The commit routine for the shot in play, where it runs; see `routineActive`. */
+let routine: Routine | undefined;
+/** How the routine went for the shot just played: time to shoot, and re-aims. */
+let routineLog: { readonly seconds: number; readonly reAims: number } | null = null;
 let session = newSession();
+routine = routineActive() ? new Routine(now()) : undefined;
 /** The session in play is a retry: practice, which the campaign will not count. */
 let practice = campaign.retrying;
 /**
@@ -123,13 +129,47 @@ function changeViewingDistance(steps: number): void {
   scene.setViewingDistance(settings.viewingDistance);
 }
 
+/** Seconds on the wall clock, for the routine's timings. */
+function now(): number {
+  return performance.now() / 1000;
+}
+
 /**
- * Down in the stance once the guides are gone, at the last tier and in the
- * exam, which is how the shot will look at a real table; behind the cue
- * before that. V switches either way until the level or the tier changes.
+ * The commit routine runs once the guides are gone: at the last tier and in
+ * the exam. The line is chosen standing, from behind the cue, and played from
+ * the stance after getting down on it, which is how the shot will look at a
+ * real table.
  */
-function applyDefaultView(): void {
-  scene.setView(campaign.level.exam || campaign.tier === FINAL_TIER ? 'stance' : 'behind');
+function routineActive(): boolean {
+  return campaign.level.exam || campaign.tier === FINAL_TIER;
+}
+
+/** Every aim change goes through here, so the routine can hold it to the committed line. */
+function nudgeAim(delta: number): void {
+  const target = session.aimAngle + delta;
+  session.aimTo(routine ? routine.steer(target, now()) : target);
+}
+
+/** Start the stroke, unless the routine says not yet. */
+function mayCharge(): boolean {
+  const why = routine?.holdUp(now());
+  if (why === 'get down first') announce('Get down on the line first: G, or Get down.');
+  if (why === 'hold still') announce('Hold still a moment before the stroke.');
+  return why === undefined;
+}
+
+/** G: get down on the line as it stands, or stand back up to choose again. */
+function toggleDown(): void {
+  if (!routine || session.phase !== 'aiming') return;
+  if (routine.down) {
+    routine.standUp();
+    scene.setView('behind');
+    announce('Standing up. Choose the line again, then get down on it.');
+  } else {
+    routine.getDown(session.aimAngle, now());
+    scene.setView('stance');
+    announce('Down on the line: half a degree of adjustment either way from here.');
+  }
 }
 
 function newSession(): ShotSession {
@@ -146,6 +186,9 @@ function startShot(): void {
   milestone = undefined;
   objectBallNumber = ballNumberFor(session.layout.id);
   chargeSeconds = 0;
+  routine = routineActive() ? new Routine(now()) : undefined;
+  routineLog = null;
+  if (routine) scene.setView('behind');
 }
 
 /**
@@ -196,7 +239,6 @@ function selectLevel(id: number): void {
   if (session.phase === 'simulating') return;
   if (!campaign.selectLevel(id)) return;
   notice = undefined;
-  applyDefaultView();
   // A tendency measured on straight-ins says nothing about thin cuts, so the
   // calibration starts afresh with the level.
   history.clear();
@@ -232,33 +274,37 @@ function recordOutcome(outcome: ShotOutcome): void {
     // The campaign has moved to a new level, exactly as a level select would,
     // and the calibration starts afresh for the same reason.
     history.clear();
-    applyDefaultView();
   } else if (event.advancedTier && campaign.tier === FINAL_TIER) {
-    applyDefaultView();
-    announce(`Tier ${campaign.tier}: no guides, and the view drops into your stance. V switches.`);
+    announce(`Tier ${campaign.tier}: no guides. Line each shot up standing, then get down on it: G.`);
   } else if (event.advancedTier) {
     announce(`Tier ${campaign.tier}: one more guide comes away.`);
   }
 }
 
+/** The stroke has gone: note how the routine went, for the report. */
+function released(): void {
+  if (routine) routineLog = { seconds: routine.elapsed(now()), reAims: routine.reAims };
+}
+
 attachInput(canvas, {
-  onNudgeAim(delta: number) {
-    session.nudgeAim(delta);
-  },
+  onNudgeAim: nudgeAim,
   onChargeStart() {
-    if (session.beginCharge()) chargeSeconds = 0;
+    if (mayCharge() && session.beginCharge()) chargeSeconds = 0;
   },
   onChargeCancel() {
     session.cancelCharge();
     chargeSeconds = 0;
   },
   onRelease() {
-    session.release();
+    if (session.release()) released();
     chargeSeconds = 0;
   },
   onToggleView() {
-    scene.toggleView();
+    // Down in the stance, a change of view is standing back up.
+    if (routine?.down) toggleDown();
+    else scene.toggleView();
   },
+  onGetDown: toggleDown,
   onRetry: retry,
   onNext: nextShot,
   onSelectLevel: selectLevel,
@@ -274,13 +320,13 @@ attachInput(canvas, {
 
 attachTouchPower(hud.touch.power, {
   onChargeStart() {
-    touchCharging = session.beginCharge();
+    touchCharging = mayCharge() && session.beginCharge();
   },
   onSetPower(power: number) {
     if (touchCharging) session.setPower(power);
   },
   onRelease() {
-    if (touchCharging) session.release();
+    if (touchCharging && session.release()) released();
     touchCharging = false;
   },
   onChargeCancel() {
@@ -288,7 +334,7 @@ attachTouchPower(hud.touch.power, {
     touchCharging = false;
   },
 });
-attachAimButtons(hud.touch.aimLeft, hud.touch.aimRight, (delta) => session.nudgeAim(delta));
+attachAimButtons(hud.touch.aimLeft, hud.touch.aimRight, nudgeAim);
 
 window.addEventListener('resize', () => scene.resize());
 canvas.focus();
@@ -387,6 +433,8 @@ function frame(now: number): void {
     notice,
     view: scene.view,
     viewingDistance: settings.viewingDistance,
+    routine: routine ? { down: routine.down } : null,
+    routineLog,
     outcome: session.outcome,
     history: history.entries,
     tendencies: history.tendencies,
@@ -457,6 +505,8 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       view: scene.view,
       fieldOfView: scene.fieldOfView,
       viewingDistance: settings.viewingDistance,
+      routine: routine ? { down: routine.down, reAims: routine.reAims } : null,
+      routineLog,
       aimAngle: session.aimAngle,
       idealAimAngle: angleOf(session.analysis.aimDirection),
       power: session.power,
