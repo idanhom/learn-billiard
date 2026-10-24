@@ -17,6 +17,17 @@ export function makeRng(seed: number): () => number {
   };
 }
 
+/** One of `items`, each as likely as its weight; `draw` is uniform in [0, 1). */
+export function pickWeighted<T>(items: readonly T[], weights: readonly number[], draw: number): T {
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  let left = draw * total;
+  for (let i = 0; i < items.length; i++) {
+    left -= weights[i]!;
+    if (left < 0) return items[i]!;
+  }
+  return items[items.length - 1]!;
+}
+
 /** FNV-1a over a string, so a layout id can seed a draw of its own. */
 export function hashString(text: string): number {
   let hash = 0x811c9dc5;

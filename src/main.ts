@@ -49,6 +49,7 @@ const tablePanel = new TablePanel(document.getElementById('app') as HTMLElement,
     settings = { ...settings, tableFeet };
     settingsStore.save(settings);
   },
+  fractionMisses: () => campaign.fractionMisses,
 });
 
 const scene = new PoolScene(canvas);

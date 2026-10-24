@@ -28,8 +28,9 @@ import {
   emptyProgress,
   levelProgress,
 } from './progress-store';
+import type { FractionMiss } from './drill-sheet';
 import type { DrillKind } from './perception';
-import { makeRng } from './random';
+import { makeRng, pickWeighted } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
 /** The part of a shot outcome the campaign scores. */
@@ -133,6 +134,14 @@ export class Campaign {
   /** The exam is exempt from tiers, and it and the perception drills show no guide. */
   get guides(): GuideVisibility {
     return this.#level.exam || this.#level.perception ? NO_GUIDES : this.#tiers.guides;
+  }
+
+  /** How often each fraction level's shots miss, as the review weighs them: what a drill sheet leans on. */
+  get fractionMisses(): readonly FractionMiss[] {
+    return LEVELS.filter((level) => level.fraction !== undefined).map((level) => {
+      const { attempts, qualified } = levelProgress(this.#state, level.id);
+      return { level, missRate: this.#missRate(level), attempts, missed: attempts - qualified };
+    });
   }
 
   /** Which perception drill the current layout is for, on the level that has them: they alternate. */
@@ -377,17 +386,6 @@ const REVIEW_FLOOR = 0.1;
 
 /** Keeps the choice of level independent of the layout drawn from the same seed. */
 const SOURCE_SEED_MIX = 0x5bd1e995;
-
-/** One of `items`, each as likely as its weight; `draw` is uniform in [0, 1). */
-function pickWeighted<T>(items: readonly T[], weights: readonly number[], draw: number): T {
-  const total = weights.reduce((sum, weight) => sum + weight, 0);
-  let left = draw * total;
-  for (let i = 0; i < items.length; i++) {
-    left -= weights[i]!;
-    if (left < 0) return items[i]!;
-  }
-  return items[items.length - 1]!;
-}
 
 function freshExam(level: LevelDefinition): ExamRun {
   return { shotsTaken: 0, total: level.examShots, potted: 0 };

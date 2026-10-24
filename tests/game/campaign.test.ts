@@ -508,3 +508,28 @@ describe('the perception drills', () => {
     expect(campaign().drillKind).toBeUndefined();
   });
 });
+
+describe('the misses a drill sheet leans on', () => {
+  test('cover the five fractions, an even chance until a level is played', () => {
+    const subject = campaign();
+    const misses = subject.fractionMisses;
+    expect(misses.map((miss) => miss.level.fraction)).toEqual(['full', 'three-quarter', 'half', 'quarter', 'eighth']);
+    for (const miss of misses) {
+      expect(miss.attempts).toBe(0);
+      expect(miss.missRate).toBeCloseTo(0.5, 12);
+    }
+  });
+
+  test('rise on the level whose shots miss', () => {
+    const subject = campaign();
+    for (let i = 0; i < 4; i++) {
+      subject.record({ qualifying: false, pottedTarget: false });
+      subject.nextShot();
+    }
+    const [full, ...rest] = subject.fractionMisses;
+    expect(full!.attempts).toBe(4);
+    expect(full!.missed).toBe(4);
+    expect(full!.missRate).toBeCloseTo(5 / 6, 12);
+    for (const miss of rest) expect(miss.missRate).toBeCloseTo(0.5, 12);
+  });
+});

@@ -8,8 +8,12 @@
 
 import type { ClothPreset } from '../constants';
 import { TABLE_FEET, TIMING_RANGE, type TableFeet, timeCloth } from '../game/cloth-timing';
+import { type DrillSheet, type FractionMiss, type SheetShot, dealSheet, pocketName } from '../game/drill-sheet';
+import { toDiamonds } from '../geometry/diamonds';
+import type { PocketId } from '../geometry/table';
+import type { Vec2 } from '../geometry/vec2';
 
-export type TableTab = 'cloth' | 'limits';
+export type TableTab = 'sheet' | 'cloth' | 'limits';
 
 export interface TablePanelActions {
   /** The panel has closed: give the keyboard back to the table. */
@@ -18,9 +22,12 @@ export interface TablePanelActions {
   settings(): { readonly cloth: ClothPreset; readonly tableFeet: TableFeet };
   onSetCloth(cloth: ClothPreset): void;
   onSetTableFeet(feet: TableFeet): void;
+  /** How often each fraction's shots miss here, for a drill sheet to lean on. */
+  fractionMisses(): readonly FractionMiss[];
 }
 
 const TABS: readonly { readonly id: TableTab; readonly label: string }[] = [
+  { id: 'sheet', label: 'Drill sheet' },
   { id: 'cloth', label: 'Time your cloth' },
   { id: 'limits', label: 'What this can&rsquo;t teach' },
 ];
@@ -30,7 +37,10 @@ const CLOTH_NAMES: Record<ClothPreset, string> = { fast: 'fast', normal: 'normal
 export class TablePanel {
   readonly #element: HTMLElement;
   readonly #actions: TablePanelActions;
-  #tab: TableTab = 'cloth';
+  #tab: TableTab = 'sheet';
+  #sheet: DrillSheet | undefined;
+  /** The day the sheet was dealt, for the top of the print. */
+  #dealtOn = '';
   /** The time taken to roll a table length, once one is in. */
   #seconds: number | null = null;
   /** When the stopwatch started, while it runs; and what ticks its display. */
@@ -67,6 +77,16 @@ export class TablePanel {
         return;
       }
       if (target.closest('[data-stopwatch]')) return this.#stopwatch();
+      if (target.closest('[data-deal]')) {
+        this.#sheet = dealSheet(this.#actions.fractionMisses(), Math.floor(Math.random() * 9000) + 1000);
+        this.#dealtOn = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+        this.#render('[data-deal]');
+        return;
+      }
+      if (target.closest('[data-print]')) {
+        window.print();
+        return;
+      }
       const use = target.closest('[data-use-cloth]');
       if (use instanceof HTMLElement) {
         this.#actions.onSetCloth(use.dataset.useCloth as ClothPreset);
@@ -94,6 +114,8 @@ export class TablePanel {
     if (tab) this.#tab = tab;
     this.#render();
     this.#element.hidden = false;
+    // For the print stylesheet: with the panel open, a print is the panel.
+    this.#element.parentElement?.classList.add('table-open');
     (this.#element.querySelector('[data-close]') as HTMLElement | null)?.focus();
   }
 
@@ -101,6 +123,7 @@ export class TablePanel {
     if (this.#element.hidden) return;
     this.#stopTicking();
     this.#element.hidden = true;
+    this.#element.parentElement?.classList.remove('table-open');
     this.#actions.onClose();
   }
 
@@ -130,11 +153,42 @@ export class TablePanel {
 
   #body(): string {
     switch (this.#tab) {
+      case 'sheet':
+        return this.#sheetBody();
       case 'cloth':
         return this.#clothBody();
       case 'limits':
         return LIMITS;
     }
+  }
+
+  #sheetBody(): string {
+    const misses = [...this.#actions.fractionMisses()].sort((a, b) => b.missRate - a.missRate);
+    const played = misses.filter((miss) => miss.attempts > 0);
+    const leaning =
+      played.length === 0
+        ? 'Nothing is played on the fraction levels yet, so a sheet deals them evenly.'
+        : 'Leaning on what you miss here: ' +
+          misses
+            .map((miss) => {
+              const name = miss.level.name.toLowerCase();
+              return miss.attempts === 0 ? `${name} (not played)` : `${name} (${miss.missed} of ${miss.attempts} missed)`;
+            })
+            .join(', ') +
+          '.';
+    const sheet = this.#sheet;
+    return (
+      '<div class="no-print">' +
+      '<p>Ten shots for a real table, dealt from the fractions you miss most here. Set each one up by ' +
+      'the diamonds, counted from the bottom-left corner pocket: along the long rail, then across. ' +
+      'They are laid out for a 7-foot table, and the cut each should come to is there to check ' +
+      'against.</p>' +
+      `<p class="table-dim">${leaning}</p>` +
+      '<div class="table-row"><button type="button" class="hud-chip" data-deal>Deal a sheet</button>' +
+      (sheet ? '<button type="button" class="hud-chip" data-print>Print</button>' : '') +
+      '</div></div>' +
+      (sheet ? renderSheet(sheet, this.#dealtOn) : '')
+    );
   }
 
   #clothBody(): string {
@@ -220,6 +274,79 @@ export class TablePanel {
     this.#ticker = undefined;
     this.#started = null;
   }
+}
+
+/** The sheet, as it prints: a heading, then one row a shot with a picture of it. */
+function renderSheet(sheet: DrillSheet, dealtOn: string): string {
+  const rows = sheet.shots
+    .map((shot, i) => {
+      const side = shot.cutSide === 'straight' ? 'straight in' : `cut ${shot.cutSide}`;
+      return (
+        `<tr><td>${i + 1}</td><td>${diagram(shot)}</td>` +
+        `<td>${shot.fraction.label} ball<br>` +
+        `<span class="table-dim">${shot.cutDegrees.toFixed(1)}&deg; ${side}</span></td>` +
+        `<td>${pocketName(shot.layout.targetPocket)}</td>` +
+        `<td>${shot.cue}</td><td>${shot.object}</td></tr>`
+      );
+    })
+    .join('');
+  return (
+    `<h3>Drill sheet ${sheet.id}, ${dealtOn}</h3>` +
+    '<p class="table-dim">Diamonds from the bottom-left corner pocket: along, then across. ' +
+    'Laid out for a 7-foot table.</p>' +
+    '<div class="table-sheet-wrap"><table class="table-sheet"><thead><tr>' +
+    '<th>#</th><th></th><th>Hit</th><th>Pocket</th><th>Cue ball</th><th>Object ball</th>' +
+    `</tr></thead><tbody>${rows}</tbody></table></div>`
+  );
+}
+
+/** Pixels to a diamond in the sheet's pictures, and the margin round the cloth. */
+const DIAGRAM_SCALE = 20;
+const DIAGRAM_PAD = 6;
+
+/** Where each pocket is, in diamonds. */
+const POCKET_DIAMONDS: Record<PocketId, readonly [number, number]> = {
+  'bottom-left': [0, 0],
+  'bottom-middle': [4, 0],
+  'bottom-right': [8, 0],
+  'top-left': [0, 4],
+  'top-middle': [4, 4],
+  'top-right': [8, 4],
+};
+
+/** The table from above, with the diamond grid, both balls and the line to the pocket. */
+function diagram(shot: SheetShot): string {
+  // Across counts up from the bottom rail; an SVG's y counts down from the top.
+  const x = (along: number): string => (DIAGRAM_PAD + along * DIAGRAM_SCALE).toFixed(1);
+  const y = (across: number): string => (DIAGRAM_PAD + (4 - across) * DIAGRAM_SCALE).toFixed(1);
+  const line = (kind: string, from: readonly [number, number], to: readonly [number, number]): string =>
+    `<path class="sheet-${kind}" d="M${x(from[0])} ${y(from[1])}L${x(to[0])} ${y(to[1])}"/>`;
+  const circle = (kind: string, [along, across]: readonly [number, number], r: number): string =>
+    `<circle class="sheet-${kind}" cx="${x(along)}" cy="${y(across)}" r="${r}"/>`;
+  const at = (p: Vec2): readonly [number, number] => {
+    const { along, across } = toDiamonds(p);
+    return [along, across];
+  };
+
+  const width = 8 * DIAGRAM_SCALE + 2 * DIAGRAM_PAD;
+  const height = 4 * DIAGRAM_SCALE + 2 * DIAGRAM_PAD;
+  const grid = [1, 2, 3, 4, 5, 6, 7]
+    .map((k) => line('grid', [k, 0], [k, 4]))
+    .concat([1, 2, 3].map((k) => line('grid', [0, k], [8, k])))
+    .join('');
+  const pockets = (Object.entries(POCKET_DIAMONDS) as [PocketId, readonly [number, number]][])
+    .map(([id, place]) => circle(id === shot.layout.targetPocket ? 'target' : 'pocket', place, 4))
+    .join('');
+  return (
+    `<svg class="sheet-diagram" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" aria-hidden="true">` +
+    `<rect class="sheet-cloth" x="${DIAGRAM_PAD}" y="${DIAGRAM_PAD}" width="${8 * DIAGRAM_SCALE}" height="${4 * DIAGRAM_SCALE}"/>` +
+    grid +
+    pockets +
+    line('path', at(shot.layout.object), POCKET_DIAMONDS[shot.layout.targetPocket]) +
+    circle('object', at(shot.layout.object), 3.4) +
+    circle('cue', at(shot.layout.cue), 3.4) +
+    '</svg>'
+  );
 }
 
 /** Said plainly, so nothing learned here comes as a surprise at a table. */

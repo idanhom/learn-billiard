@@ -67,6 +67,10 @@ table keeps most of the screen. `?` opens the controls and the notes on what
 the physics leaves out.
 
 At the table (`T`) gathers what carries the trainer over to a real table.
+**Drill sheet** deals ten shots to set up at a real table, from the fractions
+you miss most here, weighted as the mixed review weights them. Each gives the
+hit, the cut it should come to, the pocket, and where both balls go in
+diamonds, with a picture; the sheet prints on its own, in black on white.
 **Time your cloth** is a stopwatch for the test below: roll a ball a table
 length so it just dies at the far cushion, time it, and the panel picks the
 cloth here that comes nearest, for a 7-, 8- or 9-foot table. It picks one of

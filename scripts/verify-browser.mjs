@@ -399,7 +399,36 @@ const tableOpen = await page.evaluate(() => {
   const panel = document.getElementById('table-panel');
   return { shown: panel && !panel.hidden, text: panel?.textContent ?? '' };
 });
-check('T opens the at-the-table panel, on timing the cloth', tableOpen.shown && tableOpen.text.includes('Your table'), JSON.stringify(tableOpen.shown));
+check('T opens the at-the-table panel, on the drill sheet', tableOpen.shown && tableOpen.text.includes('Deal a sheet'), JSON.stringify(tableOpen.shown));
+
+// A drill sheet: ten shots placed in diamonds, and a print of only the sheet.
+await page.click('#table-panel [data-deal]');
+await sleep(300);
+const sheet = await page.evaluate(() =>
+  [...document.querySelectorAll('#table-panel .table-sheet tbody tr')].map((row) => row.textContent ?? ''),
+);
+check(
+  'a dealt sheet has ten shots, each with both balls in diamonds',
+  sheet.length === 10 && sheet.every((row) => /\d\.\d, \d\.\d.*\d\.\d, \d\.\d/.test(row)),
+  `${sheet.length} rows; ${sheet[0]}`,
+);
+await page.screenshot({ path: `${OUT}table-sheet.png` });
+await page.emulateMedia({ media: 'print' });
+const printed = await page.evaluate(() => ({
+  game: getComputedStyle(document.getElementById('game')).display,
+  hud: getComputedStyle(document.getElementById('hud')).display,
+  sheet: getComputedStyle(document.querySelector('#table-panel .table-sheet')).display,
+  buttons: getComputedStyle(document.querySelector('#table-panel .no-print')).display,
+}));
+await page.screenshot({ path: `${OUT}table-sheet-print.png`, fullPage: true });
+await page.emulateMedia({ media: 'screen' });
+check(
+  'printed, it is the sheet alone: no game, no HUD, no buttons',
+  printed.game === 'none' && printed.hud === 'none' && printed.buttons === 'none' && printed.sheet !== 'none',
+  JSON.stringify(printed),
+);
+await page.click('#table-panel [data-tab="cloth"]');
+await sleep(100);
 
 // Timing the cloth: the stopwatch takes a time, and a typed one picks the
 // nearest preset for the table it was taken on.

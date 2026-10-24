@@ -483,6 +483,159 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.table-dim {
+  color: var(--ink-dim);
+}
+
+.table-sheet-wrap {
+  overflow-x: auto;
+}
+
+.table-sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-sheet th,
+.table-sheet td {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table-sheet th {
+  color: var(--ink-dim);
+  font-weight: 500;
+}
+
+.sheet-diagram {
+  display: block;
+}
+
+.sheet-cloth {
+  fill: #1f6b4a;
+  stroke: rgba(255, 255, 255, 0.4);
+}
+
+.sheet-grid {
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1;
+}
+
+.sheet-pocket {
+  fill: #08110d;
+  stroke: rgba(255, 255, 255, 0.4);
+}
+
+.sheet-target {
+  fill: #08110d;
+  stroke: var(--warn);
+  stroke-width: 2;
+}
+
+.sheet-path {
+  stroke: var(--warn);
+  stroke-dasharray: 3 3;
+}
+
+.sheet-object {
+  fill: var(--warn);
+}
+
+.sheet-cue {
+  fill: #f5f3ec;
+  stroke: #10151a;
+}
+
+/*
+ * With the panel open, a print is the panel: its sheet in black on white,
+ * without the buttons round it.
+ */
+@media print {
+  html,
+  body {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+    color: #000;
+  }
+
+  #app {
+    height: auto;
+  }
+
+  .table-open #game,
+  .table-open #hud,
+  #table-panel .table-head,
+  #table-panel .table-tabs,
+  #table-panel .no-print {
+    display: none;
+  }
+
+  #table-panel {
+    position: static;
+    transform: none;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border: none;
+    background: none;
+    backdrop-filter: none;
+  }
+
+  .table-body,
+  .table-dim,
+  .table-sheet th,
+  .table-body h3 {
+    color: #000;
+  }
+
+  .table-sheet th,
+  .table-sheet td {
+    border-bottom-color: #999;
+  }
+
+  .table-sheet tr {
+    break-inside: avoid;
+  }
+
+  .sheet-cloth {
+    fill: #fff;
+    stroke: #000;
+  }
+
+  .sheet-grid {
+    stroke: #ccc;
+  }
+
+  .sheet-pocket,
+  .sheet-target {
+    fill: #000;
+  }
+
+  .sheet-target {
+    stroke: #000;
+  }
+
+  .sheet-path {
+    stroke: #000;
+  }
+
+  .sheet-object {
+    fill: #888;
+    stroke: #000;
+  }
+
+  .sheet-cue {
+    fill: #fff;
+    stroke: #000;
+  }
+}
+
 #table-panel input {
   width: 6em;
   padding: 3px 6px;
