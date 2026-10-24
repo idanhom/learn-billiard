@@ -66,11 +66,15 @@ and the recent shots fold away behind toolbar buttons of their own, so the
 table keeps most of the screen. `?` opens the controls and the notes on what
 the physics leaves out.
 
-At the table (`T`) gathers what carries the trainer over to a real table. It
-starts with what this cannot teach: stance and sighting, a bridge, a straight
-stroke (with a test for it), spin and cue ball control, speed by feel, and the
-table you play on. Every stroke here goes exactly where you aimed, so every
-miss here is the aim; at a table it may be the stroke.
+At the table (`T`) gathers what carries the trainer over to a real table.
+**Time your cloth** is a stopwatch for the test below: roll a ball a table
+length so it just dies at the far cushion, time it, and the panel picks the
+cloth here that comes nearest, for a 7-, 8- or 9-foot table. It picks one of
+the three; a hand-held stopwatch is not good enough to fit a new coefficient.
+**What this can't teach** is the rest: stance and sighting, a bridge, a
+straight stroke (with a test for it), spin and cue ball control, speed by feel,
+and the table you play on. Every stroke here goes exactly where you aimed, so
+every miss here is the aim; at a table it may be the stroke.
 
 Aiming is by drag rather than by pointing at the cloth. Pointing reads well on
 paper, but behind the cue the camera sits low and close to the table, so a few
@@ -390,7 +394,9 @@ three presets come out at 4.7 s, 4.0 s and 3.4 s for a table length.
 Whether it has gone too far the other way is open — nobody has timed it against
 a real table. **Do that.** Roll a ball the length of your table so it just dies
 at the far cushion, and time it: about 5.8 s means the published value is right
-and this is wrong, about 4 s means this is. Every figure above is held to the
+and this is wrong, about 4 s means this is. On a 9-foot table the three cloths
+take 5.4, 4.6 and 3.9 s and the published value 6.6 s; Time your cloth, under
+At the table, works these out for your table and has the stopwatch. Every figure above is held to the
 code by `tests/documented-figures.test.ts`, the knee's own two numbers
 included. That the simulation actually behaves that way — rather than merely
 being configured to — is `tests/physics/world.test.ts`'s job.

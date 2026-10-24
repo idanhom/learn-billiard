@@ -10,6 +10,7 @@
  */
 
 import { CLOTH_PRESET_IDS, type ClothPreset, DEFAULT_CLOTH } from '../constants';
+import { TABLE_FEET, type TableFeet } from './cloth-timing';
 import type { StorageLike } from './progress-store';
 
 export const SETTINGS_VERSION = 1;
@@ -38,6 +39,8 @@ export interface Settings {
    * table as a window would.
    */
   readonly viewingDistance: number;
+  /** The size of the player's own table, for timing its cloth and logging sessions on it. */
+  readonly tableFeet: TableFeet;
 }
 
 /** The viewing distances on offer, and the step between them, in metres. */
@@ -61,7 +64,7 @@ export interface SettingsStore {
 }
 
 export function defaultSettings(): Settings {
-  return { timeScale: TIME_SCALES[0], cloth: DEFAULT_CLOTH, viewingDistance: VIEWING_DISTANCE.default };
+  return { timeScale: TIME_SCALES[0], cloth: DEFAULT_CLOTH, viewingDistance: VIEWING_DISTANCE.default, tableFeet: 7 };
 }
 
 /** Next speed in the cycle; an unrecognised value restarts at full speed. */
@@ -101,7 +104,14 @@ export function validateSettings(raw: unknown): Settings | undefined {
     viewingDistance = value;
   }
 
-  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance };
+  // And the player's own table, which came last.
+  let tableFeet: TableFeet = 7;
+  if (record.tableFeet !== undefined) {
+    if (!TABLE_FEET.includes(record.tableFeet as TableFeet)) return undefined;
+    tableFeet = record.tableFeet as TableFeet;
+  }
+
+  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance, tableFeet };
 }
 
 export function createSettingsStore(

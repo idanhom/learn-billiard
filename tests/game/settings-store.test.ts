@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { StorageLike } from '../../src/game/progress-store';
 import { CLOTH_PRESET_IDS, clothRollingFriction } from '../../src/constants';
 import { TABLE } from '../../src/geometry/table';
-import { rollOutSeconds } from '../support/roll-time';
+import { rollOutSeconds } from '../../src/geometry/roll-time';
 import {
   SETTINGS_KEY,
   TIME_SCALES,
@@ -92,6 +92,7 @@ describe('validation', () => {
       timeScale: 0.5,
       cloth: 'slow',
       viewingDistance: 0.6,
+      tableFeet: 7,
     });
   });
 
@@ -106,6 +107,7 @@ describe('validation', () => {
       timeScale: 0.25,
       cloth: 'normal',
       viewingDistance: 0.6,
+      tableFeet: 7,
     });
   });
 
@@ -136,7 +138,7 @@ describe('the store', () => {
   test('round-trips a setting', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6 });
+    store.save({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7 });
     const loaded = createSettingsStore(storage).load();
     expect(loaded.timeScale).toBe(0.25);
     expect(loaded.cloth).toBe('slow');
@@ -150,25 +152,25 @@ describe('the store', () => {
   test('changing the cloth leaves the time scale alone', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6 });
+    store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7 });
     const current = store.load();
     store.save({ ...current, cloth: 'fast' });
-    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast', viewingDistance: 0.6 });
+    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast', viewingDistance: 0.6, tableFeet: 7 });
   });
 
   test('changing the time scale leaves the cloth alone', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 1, cloth: 'slow', viewingDistance: 0.6 });
+    store.save({ timeScale: 1, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7 });
     const current = store.load();
     store.save({ ...current, timeScale: 0.25 });
-    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6 });
+    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6, tableFeet: 7 });
   });
 
   test('a record saved before cloth existed keeps its remembered speed', () => {
     const storage = new FakeStorage();
     storage.items.set(SETTINGS_KEY, JSON.stringify({ version: 1, timeScale: 0.5 }));
-    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6 });
+    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7 });
   });
 
   test('an empty store is full speed', () => {
@@ -191,13 +193,13 @@ describe('the store', () => {
   test('a storage that refuses to write does not throw', () => {
     const storage = new FakeStorage();
     storage.failOnWrite = true;
-    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6 })).not.toThrow();
+    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7 })).not.toThrow();
   });
 
   test('works with no storage at all', () => {
     const store = createSettingsStore(undefined);
     expect(store.load()).toEqual(defaultSettings());
-    expect(() => store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6 })).not.toThrow();
+    expect(() => store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6, tableFeet: 7 })).not.toThrow();
   });
 });
 
@@ -219,5 +221,20 @@ describe('the viewing distance', () => {
     expect(stepViewingDistance(0.6, -1)).toBe(0.55);
     expect(stepViewingDistance(0.25, -1)).toBe(0.25);
     expect(stepViewingDistance(1.5, 1)).toBe(1.5);
+  });
+});
+
+describe('the player\u2019s own table', () => {
+  test('is a 7-foot one until said otherwise, as is a record from before it existed', () => {
+    expect(defaultSettings().tableFeet).toBe(7);
+    expect(validateSettings({ version: 1, timeScale: 1, cloth: 'normal' })!.tableFeet).toBe(7);
+  });
+
+  test('keeps an 8 or a 9, and rejects any other size', () => {
+    expect(validateSettings({ version: 1, timeScale: 1, tableFeet: 9 })!.tableFeet).toBe(9);
+    expect(validateSettings({ version: 1, timeScale: 1, tableFeet: 8 })!.tableFeet).toBe(8);
+    for (const bad of [6, 10, '9', null]) {
+      expect(validateSettings({ version: 1, timeScale: 1, tableFeet: bad }), String(bad)).toBeUndefined();
+    }
   });
 });

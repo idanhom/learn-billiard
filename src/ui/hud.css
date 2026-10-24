@@ -433,6 +433,10 @@ body {
   display: none;
 }
 
+#table-panel:focus {
+  outline: none;
+}
+
 .table-head {
   display: flex;
   align-items: center;
@@ -460,6 +464,33 @@ body {
 
 .table-body p {
   margin: 0 0 6px;
+}
+
+.table-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.table-row .hud-label {
+  margin: 0 4px 0 0;
+}
+
+.table-clock {
+  min-width: 4ch;
+  font-variant-numeric: tabular-nums;
+}
+
+#table-panel input {
+  width: 6em;
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  font: inherit;
 }
 
 #table-panel kbd {

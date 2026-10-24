@@ -1,11 +1,10 @@
 /**
  * How long a roll-out takes, as opposed to how far it goes.
  *
- * `src/geometry/shot.ts` answers distances, because distances are what aiming
- * and power need. Times are only ever asserted about — the cloth presets are
- * calibrated against a table length of free roll in 4.7 / 4.0 / 3.4 seconds,
- * and `README.md` invites the reader to check that against a real table with a
- * stopwatch. So the formula lives here rather than in `src`.
+ * `shot.ts` answers distances, because distances are what aiming and power
+ * need. Times are what a stopwatch measures: the cloth presets are calibrated
+ * against a table length of free roll in 4.7 / 4.0 / 3.4 seconds, and the
+ * at-the-table panel times a real table's cloth against them.
  *
  * It lives in ONE place because it is piecewise: `TERMINAL_ROLL_SPEED` splits
  * the roll phase in two, and three test files quietly copying the single-rate
@@ -14,13 +13,8 @@
  * a fast step sat at the other end; that step has gone.)
  */
 
-import {
-  GRAVITY,
-  SLIDING_FRICTION,
-  TERMINAL_ROLL_BOOST,
-  TERMINAL_ROLL_SPEED,
-} from '../../src/constants';
-import { rollPhaseDistance, speedForStoppingDistance } from '../../src/geometry/shot';
+import { GRAVITY, SLIDING_FRICTION, TERMINAL_ROLL_BOOST, TERMINAL_ROLL_SPEED } from '../constants';
+import { rollPhaseDistance, speedForStoppingDistance } from './shot';
 
 /** Seconds for a ball already rolling at `speed` to come to a stop. */
 export function rollSeconds(speed: number, rollingFriction: number): number {
@@ -44,8 +38,8 @@ export function rollOutSeconds(distance: number, rollingFriction: number): numbe
 /**
  * How long the last `speed` of a rolling ball lasts, and how far it drifts.
  *
- * The distance is `src/geometry/shot.ts`'s own roll phase, not a second copy of
- * it — only the *time* is missing from `src`, and only the time is derived here.
+ * The distance is `shot.ts`'s own roll phase, not a second copy of it: only the
+ * time is derived here.
  */
 export function terminalDrift(
   speed: number,

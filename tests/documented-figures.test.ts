@@ -20,6 +20,7 @@ import {
   TERMINAL_ROLL_SPEED,
   clothRollingFriction,
 } from '../src/constants';
+import { timeCloth } from '../src/game/cloth-timing';
 import { generateShot } from '../src/game/generator';
 import { LEVELS, levelById } from '../src/game/levels';
 import { potWindow } from '../src/game/pot-window';
@@ -29,7 +30,7 @@ import { analyseShot, cutAngle, fullness, objectDeparture } from '../src/geometr
 import { PLAY_LENGTH } from '../src/geometry/table';
 import { add, fromAngle, len, scale, signedAngleBetween, vec } from '../src/geometry/vec2';
 import { type CushionImpulse, resolveCushion } from '../src/physics/collision';
-import { rollOutSeconds, terminalDrift } from './support/roll-time';
+import { rollOutSeconds, terminalDrift } from '../src/geometry/roll-time';
 import { straightShot } from './support/shots';
 
 const linearMeter = (speed: number): number =>
@@ -60,6 +61,15 @@ describe('the cloth timings quoted for each preset', () => {
    * terminal knee applies on both sides, and the published model has no knee at
    * all. Taking it out of the published side would widen the gap, not close it.
    */
+  test('on a 9-foot table the cloths take 5.4, 4.6 and 3.9 s, and the published value 6.6', () => {
+    const { predicted, published } = timeCloth(4, 9);
+    expect(predicted.fast).toBeCloseTo(5.4, 1);
+    expect(predicted.normal).toBeGreaterThan(4.55);
+    expect(predicted.normal).toBeLessThan(4.65);
+    expect(predicted.slow).toBeCloseTo(3.9, 1);
+    expect(published).toBeCloseTo(6.6, 1);
+  });
+
   test('at the published 0.01 a table length takes 5.8 s and the double trip 8.4', () => {
     expect(rollOutSeconds(PLAY_LENGTH, 0.01)).toBeCloseTo(5.8, 1);
     expect(rollOutSeconds(2 * PLAY_LENGTH, 0.01)).toBeCloseTo(8.4, 1);

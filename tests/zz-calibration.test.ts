@@ -43,7 +43,7 @@ import {
   vec,
 } from '../src/geometry/vec2';
 import { type Ball, createBall, simulateToRest, stepWorld } from '../src/physics/world';
-import { rollOutSeconds, terminalDrift } from './support/roll-time';
+import { rollOutSeconds, terminalDrift } from '../src/geometry/roll-time';
 import { straightShot } from './support/shots';
 
 const pct = (x: number): string => `${(x * 100).toFixed(1)}%`;
@@ -208,7 +208,7 @@ declare const process: { readonly env: Readonly<Record<string, string | undefine
 test.runIf(process.env.MEASURE)('the coupled calibration list', () => {
   const out: string[] = [];
 
-  out.push('== roll times (tests/support/roll-time.ts)');
+  out.push('== roll times (src/geometry/roll-time.ts)');
   for (const cloth of CLOTH_PRESET_IDS) {
     out.push(`  ${cloth.padEnd(6)} mu ${clothRollingFriction(cloth)}  table length ${rollOutSeconds(PLAY_LENGTH, clothRollingFriction(cloth)).toFixed(3)} s`);
   }

@@ -399,7 +399,42 @@ const tableOpen = await page.evaluate(() => {
   const panel = document.getElementById('table-panel');
   return { shown: panel && !panel.hidden, text: panel?.textContent ?? '' };
 });
-check('T opens the at-the-table panel, on what this cannot teach', tableOpen.shown && tableOpen.text.includes('A straight stroke'), JSON.stringify(tableOpen.shown));
+check('T opens the at-the-table panel, on timing the cloth', tableOpen.shown && tableOpen.text.includes('Your table'), JSON.stringify(tableOpen.shown));
+
+// Timing the cloth: the stopwatch takes a time, and a typed one picks the
+// nearest preset for the table it was taken on.
+await page.click('#table-panel [data-stopwatch]');
+await sleep(1200);
+await page.click('#table-panel [data-stopwatch]');
+const stopped = Number(await page.inputValue('#cloth-seconds'));
+// Playwright's clicks take their own time on top of the 1.2 s between them.
+check('the stopwatch takes the time between Start and Stop', stopped >= 1.1 && stopped <= 2.5, String(stopped));
+await page.click('#table-panel [data-feet="9"]');
+await page.fill('#cloth-seconds', '3.95');
+await sleep(100);
+const timed = await page.evaluate(() => ({
+  text: document.querySelector('#table-panel .table-timing')?.textContent ?? '',
+  use: document.querySelector('#table-panel [data-use-cloth]')?.getAttribute('data-use-cloth') ?? null,
+  saved: JSON.parse(window.localStorage.getItem('pool-angle-trainer/settings/v1') ?? '{}').tableFeet,
+}));
+check(
+  '3.95 s on a 9-foot table is nearest slow cloth, and the table size is kept',
+  timed.text.includes('On a 9-foot table') && timed.text.includes('nearest slow') && timed.use === 'slow' && timed.saved === 9,
+  JSON.stringify(timed),
+);
+await page.screenshot({ path: `${OUT}table-cloth.png` });
+await page.click('#table-panel [data-use-cloth]');
+await sleep(100);
+check('and one press plays on it', (await state()).cloth === 'slow', (await state()).cloth);
+await page.fill('#cloth-seconds', '4.6');
+await sleep(100);
+await page.click('#table-panel [data-use-cloth]');
+await sleep(100);
+check('which a time nearer normal undoes', (await state()).cloth === 'normal', (await state()).cloth);
+await page.click('#table-panel [data-feet="7"]');
+await page.click('#table-panel [data-tab="limits"]');
+await sleep(100);
+check('the limits tab says what this cannot teach', (await page.textContent('#table-panel')).includes('A straight stroke'));
 await page.screenshot({ path: `${OUT}table-limits.png` });
 await page.keyboard.press('Escape');
 await sleep(100);

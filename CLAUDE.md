@@ -48,7 +48,7 @@ values that go stale silently:
   0.01. That is a deliberate departure, not a measurement, and it has never been
   checked against a real table. Say so; do not restate it as though the
   literature were wrong. If you move it, re-time it — the timing formula is
-  piecewise now and lives in `tests/support/roll-time.ts`, in one place on
+  piecewise now and lives in `src/geometry/roll-time.ts`, in one place on
   purpose.
 - `TERMINAL_ROLL_SPEED` / `TERMINAL_ROLL_BOOST` have **no published value at
   all**, unlike everything else in that file. Never cite them. The knee also

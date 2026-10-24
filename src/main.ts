@@ -43,6 +43,12 @@ const canvas = document.getElementById('game') as HTMLCanvasElement;
 const hudRoot = document.getElementById('hud') as HTMLElement;
 const tablePanel = new TablePanel(document.getElementById('app') as HTMLElement, {
   onClose: () => canvas.focus(),
+  settings: () => settings,
+  onSetCloth: (cloth) => setCloth(cloth),
+  onSetTableFeet: (tableFeet) => {
+    settings = { ...settings, tableFeet };
+    settingsStore.save(settings);
+  },
 });
 
 const scene = new PoolScene(canvas);
@@ -136,8 +142,12 @@ function cycleSpeed(): void {
  * other command that would change the table under a moving ball.
  */
 function cycleCloth(): void {
+  setCloth(nextCloth(settings.cloth));
+}
+
+function setCloth(cloth: ClothPreset): void {
   if (session.phase === 'simulating') return;
-  settings = { ...settings, cloth: nextCloth(settings.cloth) };
+  settings = { ...settings, cloth };
   settingsStore.save(settings);
   session.setCloth(settings.cloth);
   announce(`${CLOTH_LABELS[settings.cloth]} cloth.`);
