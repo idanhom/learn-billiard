@@ -91,9 +91,10 @@ rate at the recommended power, since a longer legal thin cut is a harder one.
 
 ## Mobile browsers (Android and iOS), and hosting on GitHub Pages
 
-**Status:** next, straight after roadmap step B2 (the cushion model), ahead of
-B3. Asked for on 2026-10-24. It absorbs roadmap steps E8 (HUD density) and E9
-(touch), which were the mobile work in all but name.
+**Status:** built, apart from the checks only a real phone can make; see
+"Still open" at the end. Done straight after roadmap step B2, ahead of B3, as
+asked on 2026-10-24, and it absorbed roadmap steps E8 (HUD density) and E9
+(touch). The rest of this entry is the record of what it found and why.
 
 The goal: one URL — the repo's GitHub Pages site — that plays properly on a
 desktop browser, on Android (Chrome, Samsung Internet, Firefox) and on iOS.
@@ -180,3 +181,18 @@ already aims. And the production build is static files with Vite's
 - **Frame time is unmeasured on a phone.** The budget check in
   `verify:browser` runs in headless software rendering. Check a mid-range
   phone.
+
+### Still open
+
+- **A real iPhone and a real Android phone.** Everything above is checked in
+  Chromium emulating a phone (`npm run verify:browser`, the phone pass). iOS
+  is WebKit, and its touch handling, viewport and storage are what most needs
+  a real device.
+- **Frame time on a mid-range phone,** with the overhead and behind views both.
+- **The behind-the-cue camera upright.** On a phone held upright the vertical
+  field of view widens so the view across stays usable, but the top third of
+  the screen is sky. The roadmap's stance camera (D3) is where the framing
+  gets designed properly.
+- **Turning on GitHub Pages:** the repository must be made public, and Pages
+  set to deploy from GitHub Actions. Both are settings, not code.
+

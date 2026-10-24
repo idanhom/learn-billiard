@@ -108,6 +108,21 @@ await sleep(1000);
 
 check('debug hook is exposed on the production build', await page.evaluate(() => Boolean(window.__debug)));
 
+// Installable on a phone: the manifest and every icon it names are served
+// beside the page, at paths relative to it, as they will be under a sub-path.
+const install = await page.evaluate(async () => {
+  const link = document.querySelector('link[rel="manifest"]');
+  const manifest = await (await fetch(link.href)).json();
+  const icons = await Promise.all(manifest.icons.map(async (icon) => (await fetch(new URL(icon.src, link.href))).ok));
+  const touchIcon = (await fetch(document.querySelector('link[rel="apple-touch-icon"]').href)).ok;
+  return { display: manifest.display, icons: icons.every(Boolean), touchIcon };
+});
+check(
+  'it installs to a home screen: manifest, icons and touch icon are all served',
+  install.display === 'standalone' && install.icons && install.touchIcon,
+  JSON.stringify(install),
+);
+
 const initial = await state();
 check('starts in the aiming phase', initial.phase === 'aiming', initial.phase);
 check('starts on level 1 at tier 0', initial.levelId === 1 && initial.tier === 0);

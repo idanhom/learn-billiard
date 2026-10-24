@@ -18,6 +18,24 @@ npm run build
 npm run preview    # http://127.0.0.1:4173
 ```
 
+On a phone on the same network, `npm run preview:lan` serves the build to the
+LAN instead of just this machine; open the address it prints.
+
+### Hosting
+
+Every push to `main` builds the trainer and publishes it to GitHub Pages
+(`.github/workflows/pages.yml`), at https://idanhom.github.io/learn-billiard/.
+One-time setup, in the repository's settings: the repository has to be
+public, and Pages > Build and deployment > Source is set to **GitHub
+Actions**.
+
+It is one site for every device. A phone gets the touch controls and the small
+layout because it has a touch screen and a small one, not because of which
+browser it runs. Added to a home screen it runs full screen like an app, and on
+an iPhone that is also what keeps its progress: Safari clears a site's saved
+data after 7 days of use without a visit, and a home-screen app is not caught
+by that.
+
 ## Playing
 
 | | |
