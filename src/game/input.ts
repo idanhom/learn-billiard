@@ -25,6 +25,8 @@ export interface InputHandlers {
   onSelectLevel(id: number): void;
   onCycleSpeed(): void;
   onCycleCloth(): void;
+  /** Step the fraction called for the shot: none, full, three quarters, and on to an eighth. */
+  onCycleCall(): void;
 }
 
 /**
@@ -138,6 +140,10 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
       case 'KeyC':
         if (event.repeat) return;
         handlers.onCycleCloth();
+        return;
+      case 'KeyF':
+        if (event.repeat) return;
+        handlers.onCycleCall();
         return;
       case 'Escape':
         if (charging) {

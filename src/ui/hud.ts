@@ -12,6 +12,7 @@
  * toolbar chips, and the stylesheet decides when.
  */
 
+import { FRACTIONS, type FractionName, fractionByName } from '../geometry/fractions';
 import type { CutSide } from '../geometry/shot';
 import type { ExamRun } from '../game/campaign';
 import type { ShotOutcome, ShotPhase, ShotResult } from '../game/shot-session';
@@ -70,6 +71,15 @@ export interface HudState {
   readonly recommendedPower: number | null;
   readonly cutAngleDegrees: number;
   readonly cutSide: CutSide;
+  /**
+   * The overlap the line as it stands makes, as seen down the cue: how much of
+   * the object ball it covers, and which side the cue ball sits. Null when the
+   * line misses the object ball.
+   */
+  readonly aimOverlap: { readonly fullness: number; readonly side: 'left' | 'right' } | null;
+  /** The fraction called for this shot, and whether calling one is offered now. */
+  readonly call: FractionName | null;
+  readonly calling: boolean;
   readonly fullness: number;
   readonly guides: GuideVisibility;
   readonly tier: number;
@@ -112,6 +122,8 @@ export interface HudActions {
   onToggleView(): void;
   onCycleSpeed(): void;
   onCycleCloth(): void;
+  /** Call a fraction for the shot, or take the call back. */
+  onCall(fraction: FractionName | null): void;
   /** Hand the keyboard back to the table. Called after every click on the HUD. */
   returnFocus(): void;
 }
@@ -175,6 +187,7 @@ export class Hud {
 
     this.#status = panel(root, 'hud-status');
     this.#shot = panel(root, 'hud-shot');
+    this.#shot.classList.add('interactive');
     this.#levels = panel(root, 'hud-levels');
     this.#levels.classList.add('interactive');
     this.#report = panel(root, 'hud-report');
@@ -234,7 +247,8 @@ export class Hud {
       '<div class="hud-keys kbd-hint"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
       '<b>V</b> camera &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
-      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level</div>' +
+      '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>7</b> level &middot; ' +
+      '<b>F</b> call the fraction</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
       '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +
       'lift to strike; slide off its side to call the shot off. The buttons along the bottom do ' +
@@ -264,6 +278,13 @@ export class Hud {
       this.#renderedLevels = '';
     });
     this.#notice.addEventListener('click', () => this.#hideNotice());
+    this.#shot.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest('[data-call]');
+      if (!(button instanceof HTMLElement)) return;
+      const fraction = button.dataset.call as FractionName;
+      // A second press on the called fraction takes the call back.
+      this.#actions.onCall(button.getAttribute('aria-pressed') === 'true' ? null : fraction);
+    });
     this.#milestone.addEventListener('click', (event) => {
       if ((event.target as HTMLElement).closest('.hud-continue')) this.#actions.onContinue();
     });
@@ -464,7 +485,9 @@ export class Hud {
           : ['no guides', 'read the angle yourself'];
       this.#writeShot(
         `<div class="hud-label">This shot</div><div class="hud-big">${left}</div>` +
-          `<div class="hud-sub">${hint}</div>`,
+          `<div class="hud-sub">${hint}</div>` +
+          (state.guides.overlap ? overlapPicture(state.aimOverlap) : '') +
+          (state.calling ? callButtons(state.call) : ''),
       );
       return;
     }
@@ -631,6 +654,10 @@ function renderReport(
       : `<div class="hud-sub">Hit ${percent(outcome.fullnessHit)} of the ball, needed ` +
         `${percent(outcome.fullnessNeeded)} &middot; ${cut}</div>`) +
     `<div class="hud-sub">Result: ${resultText(outcome.result)}</div>` +
+    (outcome.call === null
+      ? ''
+      : `<div class="hud-sub">Called ${fractionByName(outcome.call).label}: ` +
+        `${outcome.call === outcome.needed ? 'right' : `it was ${fractionByName(outcome.needed).label}`}</div>`) +
     (notes.length ? `<div class="hud-sub hud-note">${notes.join(' &middot; ')}</div>` : '') +
     // Held under a summary card the layout has gone, and the card says what next.
     (held
@@ -654,6 +681,32 @@ function tierPips(state: HudState): string {
   const onAim = state.tierWindow.filter(Boolean).length;
   const label = `${onAim} of the last ${state.tierWindow.length} on aim, ${state.windowNeeded} needed`;
   return `<span class="hud-pips" role="img" aria-label="${label}">${pips}</span>`;
+}
+
+/**
+ * The line as it stands, as seen down the cue: the object ball, and the cue
+ * ball's outline over it, a diameter times the uncovered share to one side.
+ */
+function overlapPicture(overlap: HudState['aimOverlap']): string {
+  const r = 13;
+  const centre = 44;
+  const cue = overlap
+    ? `<circle class="cue" cx="${centre + (overlap.side === 'right' ? 1 : -1) * 2 * r * (1 - overlap.fullness)}" cy="16" r="${r}"/>`
+    : '';
+  return (
+    `<svg class="hud-overlap" viewBox="0 0 88 32" width="88" height="32" role="img" ` +
+    `aria-label="${overlap ? 'The cue ball over the object ball, down this line' : 'This line misses the object ball'}">` +
+    `<circle class="object" cx="${centre}" cy="16" r="${r}"/>${cue}</svg>`
+  );
+}
+
+/** Call the fraction the shot needs before playing it: F, or these. */
+function callButtons(call: FractionName | null): string {
+  const buttons = FRACTIONS.map(
+    (f) =>
+      `<button type="button" class="hud-call" data-call="${f.name}" aria-pressed="${f.name === call}">${f.label}</button>`,
+  ).join('');
+  return `<div class="hud-calls"><span class="hud-note">Call it<kbd class="kbd-hint"> F</kbd></span>${buttons}</div>`;
 }
 
 /** A share as a whole percentage. */

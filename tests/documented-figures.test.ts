@@ -155,7 +155,7 @@ describe('the power meter', () => {
    * `tests/zz-calibration.test.ts` prints it from: what each level asks of the
    * meter, on normal cloth.
    */
-  test('levels ask 32% to 88% of the meter, the median climbing 39/40/44/50/64%', () => {
+  test('levels ask 32% to 66% of the meter, the median climbing 39/41/44/48/54%', () => {
     const asked = LEVELS.slice(0, 5).map((level) =>
       Array.from({ length: 200 }, (_, seed) => {
         const { layout } = generateShot(level, 50_000 + seed * 7919, {
@@ -165,9 +165,9 @@ describe('the power meter', () => {
       }).sort((a, b) => a - b),
     );
     const median = (sorted: number[]): number => (sorted[99]! + sorted[100]!) / 2;
-    expect(asked.map(median).map((p) => Math.round(p * 100))).toEqual([39, 40, 44, 50, 64]);
+    expect(asked.map(median).map((p) => Math.round(p * 100))).toEqual([39, 41, 44, 48, 54]);
     expect(Math.round(asked[0]![0]! * 100)).toBe(32);
-    expect(Math.round(asked[4]![199]! * 100)).toBe(88);
+    expect(Math.round(asked[4]![199]! * 100)).toBe(66);
   });
 
   /**
@@ -254,14 +254,12 @@ describe('scoring on the pocket', () => {
     return (rooms[19]! + rooms[20]!) / 2;
   }
 
-  test('a straight-in leaves about a fifth of a degree of aim, a thin cut or a long shot about a tenth', () => {
+  test('a straight-in leaves about a fifth of a degree of aim, a long shot off a rail about a tenth', () => {
     const straight = medianAimRoom(1);
     expect(straight).toBeGreaterThan(0.17);
     expect(straight).toBeLessThan(0.27);
-    for (const levelId of [5, 6]) {
-      const room = medianAimRoom(levelId);
-      expect(room, `level ${levelId}`).toBeGreaterThan(0.07);
-      expect(room, `level ${levelId}`).toBeLessThan(0.15);
-    }
+    const rail = medianAimRoom(6);
+    expect(rail).toBeGreaterThan(0.07);
+    expect(rail).toBeLessThan(0.15);
   });
 });

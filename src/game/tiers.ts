@@ -37,6 +37,12 @@ export interface GuideVisibility {
    * goes away.
    */
   readonly powerHint: boolean;
+  /**
+   * The cue ball's outline over the object ball, as seen down the cue, for
+   * the line as it stands. The middle tier's help, once the ghost ball has
+   * gone: it shows what the line does, never what the shot needs.
+   */
+  readonly overlap: boolean;
 }
 
 export interface RecordResult {
@@ -45,10 +51,10 @@ export interface RecordResult {
 }
 
 const GUIDES: Record<Tier, GuideVisibility> = {
-  0: { aimLine: true, ghostBall: true, objectPath: true, readout: true, powerHint: true },
-  1: { aimLine: true, ghostBall: true, objectPath: false, readout: false, powerHint: false },
-  2: { aimLine: true, ghostBall: false, objectPath: false, readout: false, powerHint: false },
-  3: { aimLine: false, ghostBall: false, objectPath: false, readout: false, powerHint: false },
+  0: { aimLine: true, ghostBall: true, objectPath: true, readout: true, powerHint: true, overlap: false },
+  1: { aimLine: true, ghostBall: true, objectPath: false, readout: false, powerHint: false, overlap: false },
+  2: { aimLine: true, ghostBall: false, objectPath: false, readout: false, powerHint: false, overlap: true },
+  3: { aimLine: false, ghostBall: false, objectPath: false, readout: false, powerHint: false, overlap: false },
 };
 
 export class TierTracker {

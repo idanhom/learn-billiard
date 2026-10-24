@@ -113,10 +113,16 @@ describe('tier tracker', () => {
 describe('guide visibility follows the tier', () => {
   test('every tier shows less than the one before it', () => {
     const seen = [0, 1, 2, 3].map((tier) => new TierTracker({ tier: tier as 0, completed: false }).guides);
-    expect(seen[0]).toEqual({ aimLine: true, ghostBall: true, objectPath: true, readout: true, powerHint: true });
-    expect(seen[1]).toEqual({ aimLine: true, ghostBall: true, objectPath: false, readout: false, powerHint: false });
-    expect(seen[2]).toEqual({ aimLine: true, ghostBall: false, objectPath: false, readout: false, powerHint: false });
-    expect(seen[3]).toEqual({ aimLine: false, ghostBall: false, objectPath: false, readout: false, powerHint: false });
+    expect(seen[0]).toEqual({ aimLine: true, ghostBall: true, objectPath: true, readout: true, powerHint: true, overlap: false });
+    expect(seen[1]).toEqual({ aimLine: true, ghostBall: true, objectPath: false, readout: false, powerHint: false, overlap: false });
+    expect(seen[2]).toEqual({ aimLine: true, ghostBall: false, objectPath: false, readout: false, powerHint: false, overlap: true });
+    expect(seen[3]).toEqual({ aimLine: false, ghostBall: false, objectPath: false, readout: false, powerHint: false, overlap: false });
+  });
+
+  /** It stands in for the ghost ball once that has gone, and goes in its turn. */
+  test('the overlap picture belongs to the middle tier alone', () => {
+    const at = (tier: 0 | 1 | 2 | 3) => new TierTracker({ tier, completed: false }).guides.overlap;
+    expect([at(0), at(1), at(2), at(3)]).toEqual([false, false, true, false]);
   });
 
   test('the cut and fullness numbers are a tier-0 guide, not a permanent fixture', () => {

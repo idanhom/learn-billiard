@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { SLOWEST_CLOTH, clothRollingFriction } from '../../src/constants';
+import { FRACTIONS, nearestFraction } from '../../src/geometry/fractions';
 import { type ShotAnalysis, analyseShot } from '../../src/geometry/shot';
 import {
   BALL_RADIUS,
@@ -53,11 +54,24 @@ describe('the curriculum', () => {
   });
 
   test('cut ranges climb from straight-in to thin', () => {
-    expect(levelById(1).cutRange).toEqual([0, 5]);
-    expect(levelById(2).cutRange).toEqual([5, 20]);
-    expect(levelById(3).cutRange).toEqual([20, 40]);
-    expect(levelById(4).cutRange).toEqual([40, 60]);
-    expect(levelById(5).cutRange).toEqual([60, 80]);
+    expect(levelById(1).cutRange).toEqual([0, 7.2]);
+    expect(levelById(2).cutRange).toEqual([7.2, 22.2]);
+    expect(levelById(3).cutRange).toEqual([22.2, 39.3]);
+    expect(levelById(4).cutRange).toEqual([39.3, 54.8]);
+    expect(levelById(5).cutRange).toEqual([54.8, 67.3]);
+  });
+
+  /** Each practice level is named for a fraction, and that fraction is nearest to all its shots. */
+  test('each of the first five levels is centred on a reference fraction', () => {
+    LEVELS.slice(0, 5).forEach((level, i) => {
+      const fraction = FRACTIONS[i]!;
+      const [low, high] = level.cutRange;
+      expect(fraction.cutDegrees).toBeGreaterThanOrEqual(low);
+      expect(fraction.cutDegrees).toBeLessThanOrEqual(high);
+      for (const cut of [low + 0.06, (low + high) / 2, high - 0.06]) {
+        expect(nearestFraction((cut * Math.PI) / 180).name, `level ${level.id} at ${cut}`).toBe(fraction.name);
+      }
+    });
   });
 
   test('the share of the pocket allowed tightens as the levels get harder', () => {

@@ -7,8 +7,9 @@
  */
 
 import type { ClothPreset } from './constants';
-import { fullness as fullnessOf } from './geometry/shot';
-import { add, angleOf, fromAngle } from './geometry/vec2';
+import { FRACTIONS } from './geometry/fractions';
+import { firstTouch, fullness as fullnessOf } from './geometry/shot';
+import { add, angleOf, fromAngle, signedAngleBetween } from './geometry/vec2';
 import { Campaign } from './game/campaign';
 import { attachAimButtons, attachInput, attachTouchPower } from './game/input';
 import { speedBand } from './game/power';
@@ -19,7 +20,7 @@ import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session
 import { ADVANCE_REQUIRED, ADVANCE_WINDOW } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
 import { PoolScene } from './scene/pool-scene';
-import { Hud, type Milestone, type Notice } from './ui/hud';
+import { Hud, type HudState, type Milestone, type Notice } from './ui/hud';
 
 /** Seconds of held Space to reach full power. */
 const CHARGE_SECONDS = 1.1;
@@ -47,6 +48,7 @@ const hud = new Hud(hudRoot, {
   onToggleView: () => scene.toggleView(),
   onCycleSpeed: () => cycleSpeed(),
   onCycleCloth: () => cycleCloth(),
+  onCall: (fraction) => session.callFraction(fraction),
   returnFocus: () => canvas.focus(),
 });
 
@@ -162,6 +164,15 @@ function resetProgress(): void {
   startShot();
 }
 
+/** The overlap the line as it stands makes, as the HUD draws it down the cue. */
+function overlapOfLine(): HudState['aimOverlap'] {
+  const aim = fromAngle(session.aimAngle);
+  const touch = firstTouch(session.layout.cue, session.layout.object, aim);
+  if (!touch) return null;
+  // The object ball goes off to one side of the line; the cue ball sits on the other.
+  return { fullness: fullnessOf(touch.cut), side: signedAngleBetween(aim, touch.line) > 0 ? 'right' : 'left' };
+}
+
 function selectLevel(id: number): void {
   if (session.phase === 'simulating') return;
   if (!campaign.selectLevel(id)) return;
@@ -229,6 +240,12 @@ attachInput(canvas, {
   onSelectLevel: selectLevel,
   onCycleSpeed: cycleSpeed,
   onCycleCloth: cycleCloth,
+  onCycleCall() {
+    // None, then fullest to thinnest, then none again.
+    const names = FRACTIONS.map((f) => f.name);
+    const at = session.call === null ? -1 : names.indexOf(session.call);
+    session.callFraction(at + 1 < names.length ? names[at + 1]! : null);
+  },
 });
 
 attachTouchPower(hud.touch.power, {
@@ -317,6 +334,9 @@ function frame(now: number): void {
     cutAngleDegrees: (analysis.cutAngle * 180) / Math.PI,
     cutSide: analysis.cutSide,
     fullness: fullnessOf(analysis.cutAngle),
+    aimOverlap: overlapOfLine(),
+    call: session.call,
+    calling: aiming && !campaign.guides.readout,
     guides: campaign.guides,
     tier: campaign.tier,
     tierComplete: campaign.levelCompleted,
@@ -421,6 +441,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       shotId: session.layout.id,
       levelId: campaign.level.id,
       tier: campaign.tier,
+      call: session.call,
       tierComplete: campaign.levelCompleted,
       guides: campaign.guides,
       stats: campaign.stats,

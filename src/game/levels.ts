@@ -1,8 +1,11 @@
 /**
  * The curriculum.
  *
- * Levels 1-5 walk the cut angle out from dead straight to a thin cut. A shot
- * qualifies on how much of the pocket its aim used: where the object ball
+ * Levels 1-5 each practise one of the ball fractions players aim by (full,
+ * three quarters, half, a quarter, an eighth: see `src/geometry/fractions.ts`),
+ * with cuts from halfway to the fraction below up to halfway to the one above,
+ * so the fraction a level is named for is always the nearest to its shots.
+ * A shot qualifies on how much of the pocket its aim used: where the object ball
  * would go, against how far it could go either side of the ideal line and
  * still drop. That window already shrinks, in aim, as the cut thins and the
  * shot lengthens, so the share allowed only tightens a little on top. Level 6
@@ -11,6 +14,7 @@
  * good" and starts being "can you make the ball".
  */
 
+import { FRACTIONS, type FractionName } from '../geometry/fractions';
 import { type ShotLayout, layoutWithCut } from './drills';
 
 export interface LevelDefinition {
@@ -42,12 +46,26 @@ export interface LevelDefinition {
 /** Effectively "anywhere on the table" for levels that do not care about rails. */
 const NO_RAIL_CONSTRAINT = 1;
 
+/**
+ * The cuts nearer one fraction than any other: from halfway to the fraction
+ * below it to halfway to the one above, in degrees, to a tenth. Full starts at
+ * dead straight; an eighth runs as far above itself as it reaches below.
+ */
+function bandAround(name: FractionName): readonly [number, number] {
+  const i = FRACTIONS.findIndex((f) => f.name === name);
+  const at = FRACTIONS[i]!.cutDegrees;
+  const below = i === 0 ? at : (at + FRACTIONS[i - 1]!.cutDegrees) / 2;
+  const above = i === FRACTIONS.length - 1 ? 2 * at - below : (at + FRACTIONS[i + 1]!.cutDegrees) / 2;
+  const tenth = (degrees: number): number => Math.round(degrees * 10) / 10;
+  return [tenth(below), tenth(above)];
+}
+
 export const LEVELS: readonly LevelDefinition[] = [
   {
     id: 1,
-    name: 'Straight in',
-    description: 'Dead straight. Learn what a full ball looks like.',
-    cutRange: [0, 5],
+    name: 'Full ball',
+    description: 'Straight in: the cue ball covers the whole of the object ball.',
+    cutRange: bandAround('full'),
     pocketAllowance: 1,
     cueDistance: [0.35, 0.9],
     potDistance: [0.3, 0.9],
@@ -59,9 +77,9 @@ export const LEVELS: readonly LevelDefinition[] = [
   },
   {
     id: 2,
-    name: 'Gentle cuts',
-    description: 'Up to twenty degrees. The ghost ball starts to move off centre.',
-    cutRange: [5, 20],
+    name: 'Three-quarter ball',
+    description: 'About 15 degrees: the cue ball covers three quarters of the object ball.',
+    cutRange: bandAround('three-quarter'),
     pocketAllowance: 0.9,
     cueDistance: [0.35, 1],
     potDistance: [0.3, 1],
@@ -74,8 +92,8 @@ export const LEVELS: readonly LevelDefinition[] = [
   {
     id: 3,
     name: 'Half ball',
-    description: 'Twenty to forty degrees, around the half-ball hit.',
-    cutRange: [20, 40],
+    description: 'About 30 degrees: the centre of the cue ball at the edge of the object ball.',
+    cutRange: bandAround('half'),
     pocketAllowance: 0.8,
     cueDistance: [0.35, 1],
     potDistance: [0.3, 1],
@@ -87,9 +105,9 @@ export const LEVELS: readonly LevelDefinition[] = [
   },
   {
     id: 4,
-    name: 'Steep cuts',
-    description: 'Forty to sixty degrees. Small aim errors start to cost pots.',
-    cutRange: [40, 60],
+    name: 'Quarter ball',
+    description: 'About 49 degrees: a quarter of the object ball covered.',
+    cutRange: bandAround('quarter'),
     pocketAllowance: 0.8,
     cueDistance: [0.3, 0.9],
     potDistance: [0.25, 0.8],
@@ -101,9 +119,9 @@ export const LEVELS: readonly LevelDefinition[] = [
   },
   {
     id: 5,
-    name: 'Thin cuts',
-    description: 'Sixty to eighty degrees. Barely more than an edge.',
-    cutRange: [60, 80],
+    name: 'Eighth ball',
+    description: 'About 61 degrees: barely more than an edge.',
+    cutRange: bandAround('eighth'),
     pocketAllowance: 0.7,
     cueDistance: [0.3, 0.8],
     potDistance: [0.2, 0.6],
@@ -111,7 +129,7 @@ export const LEVELS: readonly LevelDefinition[] = [
     railBand: NO_RAIL_CONSTRAINT,
     exam: false,
     examShots: 0,
-    template: layoutWithCut('level-5-template', { x: 0.55, y: 0.2 }, 'top-right', -70, 0.45),
+    template: layoutWithCut('level-5-template', { x: 0.55, y: 0.2 }, 'top-right', -61, 0.45),
   },
   {
     id: 6,

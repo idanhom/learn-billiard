@@ -67,6 +67,7 @@ const NO_GUIDES: GuideVisibility = {
   objectPath: false,
   readout: false,
   powerHint: false,
+  overlap: false,
 };
 
 export class Campaign {

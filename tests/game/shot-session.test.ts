@@ -320,6 +320,34 @@ describe('the report in table units', () => {
   });
 });
 
+describe('calling the fraction', () => {
+  test('is offered before the shot and reported after it, against the nearest reference', () => {
+    const session = new ShotSession(CUT_30_DRILL);
+    expect(session.call).toBeNull();
+    expect(session.callFraction('half')).toBe(true);
+    session.aimTo(idealAimAngle(CUT_30_DRILL));
+    session.beginCharge();
+    expect(session.callFraction('quarter')).toBe(true);
+    session.setPower(0.55);
+    session.release();
+    expect(session.callFraction('half')).toBe(false);
+    runToSettled(session);
+    const outcome = session.evaluate()!;
+    expect(outcome.call).toBe('quarter');
+    // The 30-degree drill needs half a ball, and the half-ball reference is 30.
+    expect(outcome.needed).toBe('half');
+  });
+
+  test('is optional, and taken back with null', () => {
+    const session = new ShotSession(STRAIGHT_IN_DRILL);
+    session.callFraction('full');
+    session.callFraction(null);
+    expect(session.call).toBeNull();
+    expect(play(STRAIGHT_IN_DRILL, 0, 0.5)!.call).toBeNull();
+    expect(play(STRAIGHT_IN_DRILL, 0, 0.5)!.needed).toBe('full');
+  });
+});
+
 describe('the outcome contract', () => {
   test('a perfectly aimed straight-in shot qualifies and pots', () => {
     const outcome = play(STRAIGHT_IN_DRILL, 0, 0.5);
@@ -476,9 +504,10 @@ describe('the simulation clock', () => {
    * only then: never before contact, when the object ball is also at rest.
    */
   test('plays out faster once the object ball is down, and only then', () => {
-    // The object ball drops 0.92 s in and the cue ball runs on to 4.24 s: over
-    // three seconds of watching nothing, spent in under one instead.
-    const { layout } = generateShot(levelById(5), 4243, { preferredSide: 'left' });
+    // A 78-degree cut close to the corner: the object ball drops 1.18 s in and
+    // the cue ball runs on to 3.50 s, over two seconds of watching nothing,
+    // spent in about half of one instead.
+    const layout = layoutWithCut('run-on', vec(0.75, 0.3), 'top-right', 78, 0.35);
     const session = new ShotSession(layout);
     session.aimTo(idealAimAngle(layout));
     session.beginCharge();
@@ -499,7 +528,7 @@ describe('the simulation clock', () => {
       if (done) fastFrames++;
     }
     expect(session.evaluate()!.pottedTarget).toBe(true);
-    expect(fastFrames).toBeGreaterThan(40);
+    expect(fastFrames).toBeGreaterThan(25);
   });
 
   test('ignores advance outside the simulating phase', () => {

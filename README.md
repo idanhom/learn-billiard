@@ -49,6 +49,7 @@ by that.
 | `R` | retry the same layout |
 | `N` | next shot |
 | `1`–`7` | jump to a level |
+| `F` | call the fraction the shot needs |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
 degree at a time with the `‹` `›` buttons. Power is the strip down the right edge:
@@ -116,8 +117,9 @@ pot lands near 40%:
 | 100% | 4.50 m/s | power |
 
 Measured over 200 generated layouts per level, the stroke each one asks for now
-runs from 32% on a straight-in to 88% on the worst thin cut, with the median
-climbing 39% → 40% → 44% → 50% → 64% as the cut angle opens up. What pushes you
+runs from 32% on a straight-in to 66% on the thinnest eighth-ball cut, with the
+median climbing 39% → 41% → 44% → 48% → 54% from the full-ball level to the
+eighth-ball one. What pushes you
 up the meter is the *cut*, which is worth feeling: a thin cut throws away
 `cos(θ)` of the speed at contact, so a 70° cut has to arrive almost three times
 as fast as a straight-in to send the object ball the same distance.
@@ -151,6 +153,29 @@ times the speed: off a thin cut the cue ball can run on for three seconds and
 as many rails after the part you were watching. It is the same shot, tick for
 tick — only the clock is faster.
 
+## The levels
+
+Levels 1 to 5 are the five ball fractions players aim by: how much of the
+object ball the cue ball covers at contact, as seen down the cue.
+
+| level | fraction | cut |
+|---|---|---|
+| 1 | full | 0° |
+| 2 | ¾ | 14.5° |
+| 3 | ½ | 30° |
+| 4 | ¼ | 48.6° |
+| 5 | ⅛ | 61° |
+
+Each level's shots run halfway to the fraction either side of it, so the one it
+is named for is always the nearest. Level 6 is long shots with the object ball
+near a cushion, and level 7 the exam.
+
+Before a shot you can call the fraction you think it needs (`F`, or the
+buttons in the shot panel once the numbers are hidden); the report says
+whether you were right. At the middle tier, once the ghost ball has gone, the
+panel draws the overlap your line makes as seen down the cue, so you learn
+what each fraction looks like without being told which one the shot needs.
+
 ## How it scores you
 
 **On your aim, not on whether the ball goes in.** A pot depends on power as
@@ -163,7 +188,7 @@ wrong-pocket drops are all reported, but they don't drive progression.
 
 That is a much finer test than the cue-ball degrees it replaced. On an
 ordinary straight-in the pocket leaves about a fifth of a degree of aim either
-side, and a thin cut or a long shot about a tenth; the two degrees level 1
+side, and a long shot off a rail about a tenth; the two degrees level 1
 used to forgive sent the object ball some seventeen degrees off line. Hence
 the twentieth-of-a-degree nudge. A simulated player whose aim wanders by 0.15°
 clears every practice level; one who wanders by a whole degree rarely

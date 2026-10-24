@@ -260,6 +260,7 @@ describe('the exam', () => {
       objectPath: false,
       readout: false,
       powerHint: false,
+      overlap: false,
     });
   });
 

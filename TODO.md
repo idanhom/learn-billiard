@@ -20,19 +20,20 @@ against the slowest cloth (which is what generation validates against), as the
 ratio of the feasibility limit to the distance the layout actually asks for:
 
 ```
-L1 Straight in         max cut  5.0 deg   tightest headroom 13.08x
-L2 Gentle cuts         max cut 20.0 deg   tightest headroom 11.38x
-L3 Half ball           max cut 40.0 deg   tightest headroom  7.78x
-L4 Steep cuts          max cut 60.0 deg   tightest headroom  4.14x
-L5 Thin cuts           max cut 80.0 deg   tightest headroom  1.00x   <-- binding
+L1 Full ball           max cut  7.2 deg   tightest headroom 13.07x
+L2 Three-quarter ball  max cut 22.2 deg   tightest headroom 11.18x
+L3 Half ball           max cut 39.3 deg   tightest headroom  7.93x
+L4 Quarter ball        max cut 54.8 deg   tightest headroom  5.57x
+L5 Eighth ball         max cut 67.3 deg   tightest headroom  3.36x
 L6 Distance and rails  max cut 45.0 deg   tightest headroom  4.85x
 L7 Exam                max cut 54.8 deg   tightest headroom  4.14x
 ```
 
 (`MEASURE=1 npx vitest run tests/zz-calibration.test.ts --reporter=verbose`
-prints this table, seeded.) Level 5 still generates right up against the
-limit, so the check still decides which thin cuts the curriculum can offer;
-it is now the real limit rather than an estimate erring one way.
+prints this table, seeded.) Since the practice levels were centred on the ball
+fractions (roadmap step D1), the thinnest cut they deal is 67 degrees, and the
+check binds nowhere: it used to be level 5's 80-degree cuts, at 1.00x. A level
+that deals thinner cuts again, or longer ones, is where it will matter.
 `tests/game/generator.test.ts` asserts generated layouts are never
 `underpowered`, which is the invariant that must survive.
 

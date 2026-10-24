@@ -10,6 +10,7 @@
  */
 
 import { type ClothPreset, DEFAULT_CLOTH, clothRollingFriction } from '../constants';
+import { type FractionName, nearestFraction } from '../geometry/fractions';
 import {
   type AimError,
   type CutSide,
@@ -106,6 +107,10 @@ export interface ShotOutcome {
   readonly fullnessHit: number | null;
   /** The fraction the ideal line covers, throw allowed for. */
   readonly fullnessNeeded: number;
+  /** The fraction the player called before the shot, if they did. */
+  readonly call: FractionName | null;
+  /** The reference fraction nearest what the shot needed: the right call. */
+  readonly needed: FractionName;
   readonly contacted: boolean;
   readonly pottedTarget: boolean;
   readonly pottedWrong: boolean;
@@ -143,6 +148,7 @@ export class ShotSession {
   #analysis: ShotAnalysis | undefined;
   /** The object ball has been in the target's jaws. */
   #inJaws = false;
+  #call: FractionName | null = null;
 
   constructor(layout: ShotLayout, options: ShotSessionOptions = {}) {
     this.layout = layout;
@@ -264,6 +270,18 @@ export class ShotSession {
     return this.#analysis;
   }
 
+  /** The fraction called for this shot, or null. */
+  get call(): FractionName | null {
+    return this.#call;
+  }
+
+  /** Call the fraction the shot needs, or take a call back with null. Only before the shot. */
+  callFraction(fraction: FractionName | null): boolean {
+    if (this.#phase !== 'aiming' && this.#phase !== 'charging') return false;
+    this.#call = fraction;
+    return true;
+  }
+
   aimTo(angle: number): boolean {
     if (this.#phase !== 'aiming' && this.#phase !== 'charging') return false;
     this.#aimAngle = angle;
@@ -371,6 +389,8 @@ export class ShotSession {
       result: this.#result(analysis, aim, objectPocket),
       fullnessHit: touch ? fullness(touch.cut) : null,
       fullnessNeeded: analysis.fullness,
+      call: this.#call,
+      needed: nearestFraction(analysis.cutAngle).name,
       contacted: this.#contacted,
       pottedTarget: objectPocket === this.layout.targetPocket,
       pottedWrong: objectPocket !== undefined && objectPocket !== this.layout.targetPocket,

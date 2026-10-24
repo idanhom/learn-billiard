@@ -227,6 +227,27 @@ check(
 );
 await page.screenshot({ path: `${OUT}tier-2.png` });
 
+// The middle tier draws the overlap the line makes, and offers the call. A
+// retry is practice, so playing one here leaves the counts below alone.
+await page.evaluate(() => window.__debug.retry());
+await sleep(200);
+const middle = await page.evaluate(() => ({
+  overlap: Boolean(document.querySelector('#hud-shot .hud-overlap')),
+  calls: [...document.querySelectorAll('#hud-shot .hud-call')].map((button) => button.textContent),
+}));
+check('the middle tier draws the overlap the line makes', middle.overlap);
+check('and offers a call for each reference fraction', middle.calls.join() === 'full,¾,½,¼,⅛', middle.calls.join());
+await page.locator('#hud-shot .hud-call').nth(2).click();
+await sleep(100);
+check('a call is made from the panel', (await state()).call === 'half', String((await state()).call));
+await page.evaluate(() => {
+  window.__debug.aimIdeal();
+  window.__debug.fire(0.5);
+});
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const calledReport = await page.evaluate(() => document.querySelector('#hud-report')?.textContent ?? '');
+check('the report says how the call went', /Called ½/.test(calledReport), calledReport);
+
 // Progress survives a reload.
 await page.reload({ waitUntil: 'load' });
 await sleep(900);
@@ -579,7 +600,7 @@ check(
   advanced.milestone?.kind === 'level-complete' &&
     advanced.milestone.attempts === 12 &&
     advanced.milestone.qualified === 12 &&
-    advanced.milestone.nextLevelName === 'Gentle cuts',
+    advanced.milestone.nextLevelName === 'Three-quarter ball',
   JSON.stringify(advanced.milestone),
 );
 await page.screenshot({ path: `${OUT}level-complete.png` });
