@@ -43,7 +43,7 @@ by that.
 | drag with the left button | aim (hold `Shift` to fine-tune) |
 | `←` / `→` | nudge the aim a twentieth of a degree (hold `Shift` for a whole one) |
 | hold `Space` | charge power, release to strike |
-| `V` | switch between behind-the-cue and overhead |
+| `V` | switch between behind the cue, overhead, and down in your stance |
 | `.` | cycle full / half / quarter speed |
 | `C` | cycle fast / normal / slow cloth |
 | `R` | retry the same layout |
@@ -70,6 +70,16 @@ pixels near the horizon sweep an enormous angle. A drag maps a fixed number of
 pixels to a fixed number of degrees no matter where the camera is. The rate is
 `AIM_DEGREES_PER_PIXEL` in `src/game/input.ts` — one constant, currently 0.08°,
 about 8° per 100px.
+
+The stance view puts the eye where a player's is when down on the shot, on the
+cue line 45 cm behind the cue ball and 30 cm over the cloth, and draws it at
+true scale: the screen is a window onto the table, so an angle on screen is the
+angle at the table. True scale depends on how far you sit from the screen,
+which the controls panel lets you set; 60 cm to start. A desktop window is
+often too short to hold both balls at true scale, and then the view widens just
+enough to keep them. It is the default at the last tier and in the exam, when
+the guides have gone and the question is how the shot looks from where you
+will play it.
 
 Every shot is dealt with the cue pointed 3–8° off the object ball's centre, to
 one side or the other, and never within 3° of the line. Finding the line is the

@@ -14,12 +14,12 @@ import { Campaign } from './game/campaign';
 import { attachAimButtons, attachInput, attachTouchPower } from './game/input';
 import { speedBand } from './game/power';
 import { browserStorage, createProgressStore } from './game/progress-store';
-import { createSettingsStore, nextCloth, nextTimeScale } from './game/settings-store';
+import { createSettingsStore, nextCloth, nextTimeScale, stepViewingDistance } from './game/settings-store';
 import { ShotHistory, signedShare } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
-import { ADVANCE_REQUIRED, ADVANCE_WINDOW } from './game/tiers';
+import { ADVANCE_REQUIRED, ADVANCE_WINDOW, FINAL_TIER } from './game/tiers';
 import { ballNumberFor } from './scene/ball-textures';
-import { PoolScene } from './scene/pool-scene';
+import { type CameraView, PoolScene } from './scene/pool-scene';
 import { Hud, type HudState, type Milestone, type Notice } from './ui/hud';
 
 /** Seconds of held Space to reach full power. */
@@ -49,6 +49,7 @@ const hud = new Hud(hudRoot, {
   onCycleSpeed: () => cycleSpeed(),
   onCycleCloth: () => cycleCloth(),
   onCall: (fraction) => session.callFraction(fraction),
+  onViewingDistance: (steps) => changeViewingDistance(steps),
   returnFocus: () => canvas.focus(),
 });
 
@@ -58,6 +59,8 @@ const history = new ShotHistory();
 // Load one complete settings object before anything reads a preference, so the
 // first session is built on the cloth the player actually chose.
 let settings = settingsStore.load();
+scene.setViewingDistance(settings.viewingDistance);
+applyDefaultView();
 
 /** Sessions dealt so far. Seeds where the cue starts, so a retry starts somewhere new. */
 let sessionsDealt = 0;
@@ -111,6 +114,22 @@ function cycleCloth(): void {
   settingsStore.save(settings);
   session.setCloth(settings.cloth);
   announce(`${CLOTH_LABELS[settings.cloth]} cloth.`);
+}
+
+/** A step nearer the screen or further from it, for the stance view's true scale. */
+function changeViewingDistance(steps: number): void {
+  settings = { ...settings, viewingDistance: stepViewingDistance(settings.viewingDistance, steps) };
+  settingsStore.save(settings);
+  scene.setViewingDistance(settings.viewingDistance);
+}
+
+/**
+ * Down in the stance once the guides are gone, at the last tier and in the
+ * exam, which is how the shot will look at a real table; behind the cue
+ * before that. V switches either way until the level or the tier changes.
+ */
+function applyDefaultView(): void {
+  scene.setView(campaign.level.exam || campaign.tier === FINAL_TIER ? 'stance' : 'behind');
 }
 
 function newSession(): ShotSession {
@@ -177,6 +196,7 @@ function selectLevel(id: number): void {
   if (session.phase === 'simulating') return;
   if (!campaign.selectLevel(id)) return;
   notice = undefined;
+  applyDefaultView();
   // A tendency measured on straight-ins says nothing about thin cuts, so the
   // calibration starts afresh with the level.
   history.clear();
@@ -212,6 +232,10 @@ function recordOutcome(outcome: ShotOutcome): void {
     // The campaign has moved to a new level, exactly as a level select would,
     // and the calibration starts afresh for the same reason.
     history.clear();
+    applyDefaultView();
+  } else if (event.advancedTier && campaign.tier === FINAL_TIER) {
+    applyDefaultView();
+    announce(`Tier ${campaign.tier}: no guides, and the view drops into your stance. V switches.`);
   } else if (event.advancedTier) {
     announce(`Tier ${campaign.tier}: one more guide comes away.`);
   }
@@ -321,6 +345,7 @@ function frame(now: number): void {
     showCue: aiming,
     objectBallNumber,
     shotLength: analysis.cueToGhost + analysis.objectToPocket,
+    cueToGhost: analysis.cueToGhost,
     dt,
   });
 
@@ -361,6 +386,7 @@ function frame(now: number): void {
     milestone,
     notice,
     view: scene.view,
+    viewingDistance: settings.viewingDistance,
     outcome: session.outcome,
     history: history.entries,
     tendencies: history.tendencies,
@@ -405,7 +431,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       return settings.timeScale;
     },
     resetProgress,
-    setView: (view: 'behind' | 'overhead') => scene.setView(view),
+    setView: (view: CameraView) => scene.setView(view),
     frameCost: () => ({
       samples: frameCost.samples,
       mean: frameCost.samples === 0 ? 0 : frameCost.total / frameCost.samples,
@@ -429,6 +455,8 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
         potted: b.potted,
       })),
       view: scene.view,
+      fieldOfView: scene.fieldOfView,
+      viewingDistance: settings.viewingDistance,
       aimAngle: session.aimAngle,
       idealAimAngle: angleOf(session.analysis.aimDirection),
       power: session.power,

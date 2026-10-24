@@ -8,6 +8,7 @@ import {
   TIME_SCALES,
   createSettingsStore,
   defaultSettings,
+  stepViewingDistance,
   nextCloth,
   nextTimeScale,
   validateSettings,
@@ -90,6 +91,7 @@ describe('validation', () => {
     expect(validateSettings({ version: 1, timeScale: 0.5, cloth: 'slow' })).toEqual({
       timeScale: 0.5,
       cloth: 'slow',
+      viewingDistance: 0.6,
     });
   });
 
@@ -103,6 +105,7 @@ describe('validation', () => {
     expect(validateSettings({ version: 1, timeScale: 0.25 })).toEqual({
       timeScale: 0.25,
       cloth: 'normal',
+      viewingDistance: 0.6,
     });
   });
 
@@ -133,7 +136,7 @@ describe('the store', () => {
   test('round-trips a setting', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.25, cloth: 'slow' });
+    store.save({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6 });
     const loaded = createSettingsStore(storage).load();
     expect(loaded.timeScale).toBe(0.25);
     expect(loaded.cloth).toBe('slow');
@@ -147,25 +150,25 @@ describe('the store', () => {
   test('changing the cloth leaves the time scale alone', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 0.5, cloth: 'normal' });
+    store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6 });
     const current = store.load();
     store.save({ ...current, cloth: 'fast' });
-    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast' });
+    expect(store.load()).toEqual({ timeScale: 0.5, cloth: 'fast', viewingDistance: 0.6 });
   });
 
   test('changing the time scale leaves the cloth alone', () => {
     const storage = new FakeStorage();
     const store = createSettingsStore(storage);
-    store.save({ timeScale: 1, cloth: 'slow' });
+    store.save({ timeScale: 1, cloth: 'slow', viewingDistance: 0.6 });
     const current = store.load();
     store.save({ ...current, timeScale: 0.25 });
-    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow' });
+    expect(store.load()).toEqual({ timeScale: 0.25, cloth: 'slow', viewingDistance: 0.6 });
   });
 
   test('a record saved before cloth existed keeps its remembered speed', () => {
     const storage = new FakeStorage();
     storage.items.set(SETTINGS_KEY, JSON.stringify({ version: 1, timeScale: 0.5 }));
-    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal' });
+    expect(createSettingsStore(storage).load()).toEqual({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6 });
   });
 
   test('an empty store is full speed', () => {
@@ -188,12 +191,33 @@ describe('the store', () => {
   test('a storage that refuses to write does not throw', () => {
     const storage = new FakeStorage();
     storage.failOnWrite = true;
-    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal' })).not.toThrow();
+    expect(() => createSettingsStore(storage).save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6 })).not.toThrow();
   });
 
   test('works with no storage at all', () => {
     const store = createSettingsStore(undefined);
     expect(store.load()).toEqual(defaultSettings());
-    expect(() => store.save({ timeScale: 0.5, cloth: 'normal' })).not.toThrow();
+    expect(() => store.save({ timeScale: 0.5, cloth: 'normal', viewingDistance: 0.6 })).not.toThrow();
+  });
+});
+
+describe('the viewing distance', () => {
+  test('defaults to 60 cm, and a record written before it existed loads with that', () => {
+    expect(defaultSettings().viewingDistance).toBe(0.6);
+    expect(validateSettings({ version: 1, timeScale: 1, cloth: 'normal' })!.viewingDistance).toBe(0.6);
+  });
+
+  test('round-trips, and is rejected outside the range or as nonsense', () => {
+    expect(validateSettings({ version: 1, timeScale: 1, cloth: 'normal', viewingDistance: 0.4 })!.viewingDistance).toBe(0.4);
+    for (const bad of [0.1, 2, 'far', null, Number.NaN]) {
+      expect(validateSettings({ version: 1, timeScale: 1, cloth: 'normal', viewingDistance: bad }), String(bad)).toBeUndefined();
+    }
+  });
+
+  test('steps by 5 cm and stays inside 25-150 cm', () => {
+    expect(stepViewingDistance(0.6, 1)).toBe(0.65);
+    expect(stepViewingDistance(0.6, -1)).toBe(0.55);
+    expect(stepViewingDistance(0.25, -1)).toBe(0.25);
+    expect(stepViewingDistance(1.5, 1)).toBe(1.5);
   });
 });

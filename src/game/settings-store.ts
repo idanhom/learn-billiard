@@ -32,6 +32,27 @@ export interface Settings {
    * maps to is physics, and lives in `constants`.
    */
   readonly cloth: ClothPreset;
+  /**
+   * How far the player's eyes are from the screen, in metres. The stance view
+   * is drawn at true scale against it, so a screen at arm's length shows the
+   * table as a window would.
+   */
+  readonly viewingDistance: number;
+}
+
+/** The viewing distances on offer, and the step between them, in metres. */
+export const VIEWING_DISTANCE: { readonly min: number; readonly max: number; readonly step: number; readonly default: number } = {
+  min: 0.25,
+  max: 1.5,
+  step: 0.05,
+  default: 0.6,
+};
+
+/** A viewing distance moved `steps` steps, kept on the grid and inside the range. */
+export function stepViewingDistance(current: number, steps: number): number {
+  const { min, max, step } = VIEWING_DISTANCE;
+  const next = Math.round((current + steps * step) / step) * step;
+  return Math.min(max, Math.max(min, Math.round(next * 100) / 100));
 }
 
 export interface SettingsStore {
@@ -40,7 +61,7 @@ export interface SettingsStore {
 }
 
 export function defaultSettings(): Settings {
-  return { timeScale: TIME_SCALES[0], cloth: DEFAULT_CLOTH };
+  return { timeScale: TIME_SCALES[0], cloth: DEFAULT_CLOTH, viewingDistance: VIEWING_DISTANCE.default };
 }
 
 /** Next speed in the cycle; an unrecognised value restarts at full speed. */
@@ -72,7 +93,15 @@ export function validateSettings(raw: unknown): Settings | undefined {
     cloth = record.cloth as ClothPreset;
   }
 
-  return { timeScale: record.timeScale as TimeScale, cloth };
+  // The same for the viewing distance, which came later still.
+  let viewingDistance = VIEWING_DISTANCE.default;
+  if (record.viewingDistance !== undefined) {
+    const value = record.viewingDistance;
+    if (typeof value !== 'number' || !(value >= VIEWING_DISTANCE.min && value <= VIEWING_DISTANCE.max)) return undefined;
+    viewingDistance = value;
+  }
+
+  return { timeScale: record.timeScale as TimeScale, cloth, viewingDistance };
 }
 
 export function createSettingsStore(

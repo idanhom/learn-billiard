@@ -26,9 +26,13 @@ import type { Ball } from '../physics/world';
 import { CUE_BALL_NUMBER, ballTexture, companionBallNumber } from './ball-textures';
 import { headingToRotationY, writeHeading, writeWorld, writeWorldQuat } from './coords';
 import { Guides } from './guides';
+import { STANCE_BACK, STANCE_EYE_HEIGHT, stanceFraming } from './stance';
 import { FRAME_MARGIN, buildTable } from './table-mesh';
 
-export type CameraView = 'behind' | 'overhead';
+export type CameraView = 'behind' | 'overhead' | 'stance';
+
+/** The order V steps through the views. */
+const VIEW_CYCLE: readonly CameraView[] = ['behind', 'overhead', 'stance'];
 
 const MAX_PIXEL_RATIO = 1.5;
 const CUE_LENGTH = 1.35;
@@ -77,6 +81,8 @@ export interface RenderState {
   readonly objectBallNumber: number;
   /** How far ahead the shot reaches, used to frame the behind-cue camera. */
   readonly shotLength: number;
+  /** Cue ball to ghost ball, which the stance view keeps in frame. */
+  readonly cueToGhost: number;
   /** Seconds since the last rendered frame, for frame-rate-independent easing. */
   readonly dt: number;
 }
@@ -103,6 +109,9 @@ export class PoolScene {
 
   #view: CameraView = 'behind';
   #viewSettled = false;
+  /** The canvas's height in CSS pixels, and how far the player sits from it, for the stance view's true scale. */
+  #cssHeight = 1;
+  #viewingDistance = 0.6;
 
   constructor(canvas: HTMLCanvasElement) {
     this.#canvas = canvas;
@@ -148,8 +157,18 @@ export class PoolScene {
   }
 
   toggleView(): CameraView {
-    this.#view = this.#view === 'behind' ? 'overhead' : 'behind';
+    this.#view = VIEW_CYCLE[(VIEW_CYCLE.indexOf(this.#view) + 1) % VIEW_CYCLE.length]!;
     return this.#view;
+  }
+
+  /** How far the player's eyes are from the screen, in metres: what true scale is measured against. */
+  setViewingDistance(metres: number): void {
+    this.#viewingDistance = metres;
+  }
+
+  /** The camera's vertical field of view, in degrees. */
+  get fieldOfView(): number {
+    return this.#camera.fov;
   }
 
   resize(): void {
@@ -157,6 +176,7 @@ export class PoolScene {
     const height = this.#canvas.clientHeight || 1;
     this.#renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.#renderer.setSize(width, height, false);
+    this.#cssHeight = height;
     this.#camera.aspect = width / height;
     this.#camera.fov = fieldOfView(this.#camera.aspect);
     this.#camera.updateProjectionMatrix();
@@ -254,6 +274,25 @@ export class PoolScene {
   }
 
   #placeCamera(cuePos: Vec2, state: RenderState): void {
+    if (this.#view === 'stance') {
+      // Down on the shot: on the cue line, the eye where a player's would be,
+      // tipped down to keep cue ball and object ball both in frame.
+      const framing = stanceFraming(this.#cssHeight, this.#viewingDistance, state.cueToGhost);
+      this.#setFov(framing.fov);
+      const direction = writeHeading(this.#direction, state.aimAngle);
+      const origin = writeWorld(this.#origin, cuePos, 0);
+      this.#camera.position.copy(origin).addScaledVector(direction, -STANCE_BACK);
+      this.#camera.position.y = STANCE_EYE_HEIGHT;
+      const pitch = (framing.pitch * Math.PI) / 180;
+      this.#cameraTarget.copy(this.#camera.position).addScaledVector(direction, Math.cos(pitch));
+      this.#cameraTarget.y -= Math.sin(pitch);
+      this.#camera.up.set(0, 1, 0);
+      this.#camera.lookAt(this.#cameraTarget);
+      this.#viewSettled = false;
+      return;
+    }
+    this.#setFov(fieldOfView(this.#camera.aspect));
+
     if (this.#view === 'overhead') {
       // The whole table, frame and all, on any shape of screen. Upright, the
       // table turns so its length runs up the screen rather than off its sides.
@@ -299,6 +338,12 @@ export class PoolScene {
 
     this.#camera.up.set(0, 1, 0);
     this.#camera.lookAt(this.#cameraTarget);
+  }
+
+  #setFov(fov: number): void {
+    if (Math.abs(this.#camera.fov - fov) < 1e-9) return;
+    this.#camera.fov = fov;
+    this.#camera.updateProjectionMatrix();
   }
 }
 

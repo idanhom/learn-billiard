@@ -157,6 +157,24 @@ await page.evaluate(() => window.__debug.setView('overhead'));
 await sleep(300);
 await page.screenshot({ path: `${OUT}camera-overhead.png` });
 
+// The stance view is at least true scale: never narrower than the window the
+// screen makes at the viewing distance, and wider only to keep both balls in.
+await page.evaluate(() => window.__debug.setView('stance'));
+await sleep(300);
+const stance = await page.evaluate(() => {
+  const s = window.__debug.state();
+  const height = document.getElementById('game').clientHeight;
+  const honest = (2 * Math.atan((height * 0.0254) / 96 / 2 / s.viewingDistance) * 180) / Math.PI;
+  return { view: s.view, fov: s.fieldOfView, honest };
+});
+check(
+  'the stance view is drawn at true scale or wider',
+  stance.view === 'stance' && stance.fov >= stance.honest - 1e-6 && stance.fov <= 80,
+  `fov ${stance.fov.toFixed(1)} deg, true scale ${stance.honest.toFixed(1)}`,
+);
+await page.screenshot({ path: `${OUT}camera-stance.png` });
+await page.evaluate(() => window.__debug.setView('behind'));
+
 const canvasPixels = await page.evaluate(() => {
   const canvas = document.getElementById('game');
   return { width: canvas.width, height: canvas.height };

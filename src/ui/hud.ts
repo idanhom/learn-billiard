@@ -103,6 +103,8 @@ export interface HudState {
   readonly milestone: Milestone | undefined;
   readonly notice: Notice | undefined;
   readonly view: string;
+  /** How far the player sits from the screen, in metres, for the stance view. */
+  readonly viewingDistance: number;
   readonly outcome: ShotOutcome | undefined;
   /** Most recent first. */
   readonly history: readonly HistoryEntry[];
@@ -124,6 +126,8 @@ export interface HudActions {
   onCycleCloth(): void;
   /** Call a fraction for the shot, or take the call back. */
   onCall(fraction: FractionName | null): void;
+  /** Move the viewing distance the stance view is drawn at, a step nearer or further. */
+  onViewingDistance(steps: number): void;
   /** Hand the keyboard back to the table. Called after every click on the HUD. */
   returnFocus(): void;
 }
@@ -133,8 +137,11 @@ type Sheet = 'levels' | 'history';
 
 const TIER_NAMES = ['full guides', 'no pocket line', 'no ghost ball', 'no guides'];
 
+const VIEW_LABELS: Readonly<Record<string, string>> = { behind: 'Behind', overhead: 'Overhead', stance: 'Stance' };
+
 export class Hud {
   readonly #status: HTMLElement;
+  readonly #eyeDistance: HTMLElement;
   readonly #shot: HTMLElement;
   readonly #levels: HTMLElement;
   readonly #powerFill: HTMLElement;
@@ -246,7 +253,7 @@ export class Hud {
       '<div class="hud-label">Controls</div>' +
       '<div class="hud-keys kbd-hint"><b>Drag</b> to aim (hold <b>Shift</b> to fine-tune) &middot; ' +
       '<b>&larr;/&rarr;</b> nudge &middot; hold <b>Space</b> for power<br>' +
-      '<b>V</b> camera &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
+      '<b>V</b> camera: behind, overhead, stance &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
       '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>8</b> level &middot; ' +
       '<b>F</b> call the fraction</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
@@ -255,8 +262,17 @@ export class Hud {
       'everything the keys do.</div>' +
       // Say plainly what this simulation is not, so nothing learned here comes
       // as a surprise on a real table.
+      '<div class="hud-keys hud-eye">The stance view is true to scale with your eyes ' +
+      '<b class="hud-eye-distance"></b> from the screen ' +
+      '<button type="button" class="hud-call" data-eye="-1" aria-label="Nearer">&minus;</button> ' +
+      '<button type="button" class="hud-call" data-eye="1" aria-label="Further">+</button></div>' +
       '<div class="hud-keys hud-note" id="hud-model">Idealised physics: centre-ball hits only, ' +
       'no english, no sidespin off the cushions. The ghost ball allows for throw.</div>';
+    this.#eyeDistance = this.#help.querySelector('.hud-eye-distance') as HTMLElement;
+    this.#help.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest('[data-eye]');
+      if (button instanceof HTMLElement) this.#actions.onViewingDistance(Number(button.dataset.eye));
+    });
 
     this.#levels.addEventListener('click', (event) => {
       const target = (event.target as HTMLElement).closest('[data-level], [data-action]');
@@ -330,6 +346,8 @@ export class Hud {
   }
 
   update(state: HudState): void {
+    const eye = `${Math.round(state.viewingDistance * 100)} cm`;
+    if (this.#eyeDistance.textContent !== eye) this.#eyeDistance.textContent = eye;
     this.#renderToolbar(state);
     this.#renderStatus(state);
     this.#renderShot(state);
@@ -437,7 +455,7 @@ export class Hud {
     const html =
       chip('retry', 'Retry', { key: 'R' }) +
       chip('next', 'Next', { key: 'N' }) +
-      chip('view', state.view === 'overhead' ? 'Overhead' : 'Behind', { key: 'V' }) +
+      chip('view', VIEW_LABELS[state.view] ?? 'Behind', { key: 'V' }) +
       chip('speed', speedLabel(state.timeScale), { key: '.' }) +
       chip('cloth', `${escape(state.clothLabel)} cloth`, { key: 'C' }) +
       chip('levels', 'Levels', { compactOnly: true, pressed: this.#openSheet === 'levels' }) +
