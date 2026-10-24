@@ -901,3 +901,69 @@ describe('the events say how hard each contact was', () => {
 function normalizeTo(v: Vec2): Vec2 {
   return scale(v, 1 / len(v));
 }
+
+/**
+ * The two rules players aim the cue ball by, centre ball, held to the solver:
+ * a stunned cue ball leaves square to the object ball's line (the 90° rule),
+ * and a rolling one ends up about 30° off its own line once the cloth has
+ * curved it (the 30° rule). Neither is exact here, nor at a table: this is how
+ * far off each is, and why.
+ */
+describe('the cue ball off an object ball, struck centre', () => {
+  /** A cue ball a millimetre from contact at `cutDegrees`, stunned or rolling, and where it goes. */
+  function deflection(cutDegrees: number, rolling: boolean, speed: number) {
+    const cut = (cutDegrees * Math.PI) / 180;
+    const object = createBall(1, vec(0.3, 0));
+    const contact = sub(object.pos, scale(vec(Math.cos(cut), Math.sin(cut)), 2 * BALL_RADIUS));
+    const start = sub(contact, vec(0.001, 0));
+    const vel = vec(speed, 0);
+    const hit = stepUntil([rolling ? rollingBall(0, start, vel) : createBall(0, start, vel), object], (events) =>
+      events.some((e) => e.type === 'ball-ball'),
+    );
+    const objectLine = scale(hit.balls[1]!.vel, 1 / len(hit.balls[1]!.vel));
+    const leaving = scale(hit.balls[0]!.vel, 1 / len(hit.balls[0]!.vel));
+    const settled = stepUntil([hit.balls[0]!], (_e, current) => len(sub(current[0]!.vel, current[0]!.roll)) < 1e-9);
+    const final = settled.balls[0]!.vel;
+    const degrees = (radians: number): number => (Math.abs(radians) * 180) / Math.PI;
+    return {
+      offObjectLine: degrees(Math.acos(Math.min(1, Math.abs(leaving.x * objectLine.x + leaving.y * objectLine.y)))),
+      offOwnLine: degrees(Math.atan2(final.y, final.x)),
+    };
+  }
+
+  /**
+   * Short of 90°, by 3° on a thin cut to 9° on a three-quarter hit: with
+   * restitution at 0.95 the cue ball keeps a little of its speed along the
+   * line of centres, and the rub at contact throws both balls a little more.
+   * The fuller the hit the more that forward part counts against the small
+   * sideways one, which is why players are told the rule is least reliable
+   * near full.
+   */
+  test('stunned, it leaves within 10° of square to the object ball, nearer square the thinner the cut', () => {
+    for (const speed of [0.5, 1, 2]) {
+      const angles = [14.5, 30, 48.6].map((cut) => deflection(cut, false, speed).offObjectLine);
+      for (const angle of angles) {
+        expect(angle).toBeGreaterThan(80);
+        expect(angle).toBeLessThan(90);
+      }
+      expect(angles[0]!).toBeLessThan(angles[2]!);
+    }
+  });
+
+  /**
+   * The textbook figures, with no friction and perfect restitution, are 27.6°
+   * at three-quarter ball, 33.7° at half and 27.3° at quarter: here 27-29.5°,
+   * 33-35° and 27-27.6° across 0.5 to 2 m/s.
+   */
+  test('rolling, it ends up about 30° off its own line from a quarter to a three-quarter hit, most at half', () => {
+    for (const speed of [0.5, 1, 2]) {
+      const [threeQuarter, half, quarter] = [14.5, 30, 48.6].map((cut) => deflection(cut, true, speed).offOwnLine);
+      for (const angle of [threeQuarter!, half!, quarter!]) {
+        expect(angle).toBeGreaterThan(26);
+        expect(angle).toBeLessThan(36);
+      }
+      expect(half!).toBeGreaterThan(threeQuarter!);
+      expect(half!).toBeGreaterThan(quarter!);
+    }
+  });
+});

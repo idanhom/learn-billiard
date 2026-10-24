@@ -499,6 +499,15 @@ tangent line: with restitution below 1 and a sliding cue ball picking up follow,
 the cue ball doesn't leave along the tangent, so drawing that line would teach
 you something this table then contradicts.
 
+The two rules players steer the cue ball by hold here about as well as they
+do at a table. Struck centre and arriving stunned, the cue ball leaves 81° to
+87° from the object ball's line rather than 90°: restitution of 0.95 keeps a
+little of its speed along the line of centres, and the rub at contact throws
+both balls a little more, so it falls furthest short on full hits. Arriving
+rolling, it ends up 27° to 35° off its own line from a quarter to a
+three-quarter hit, most at half ball, against the textbook 27.3° to 33.7°.
+`tests/physics/world.test.ts` holds both.
+
 Angles transfer to a real table. Cue ball control does not.
 
 ## Diamonds
