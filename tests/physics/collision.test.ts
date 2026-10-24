@@ -267,12 +267,82 @@ describe('cushion impulse', () => {
     expect(resolveCushion(vec(1, -2), vec(1, -2), normal)).toBeUndefined();
   });
 
+  /**
+   * The published ball-rail coefficient of restitution is 0.6-0.9 (Alciatore,
+   * "physical properties"), and both of these used to sit far apart: a rolling
+   * ball at 0.65, a stun ball at 0.31 — the old impulse could only turn the
+   * ball by pushing above its centre, so a ball without topspin to give up came
+   * off half-dead. With the normal through the centre and friction at the nose,
+   * both land in the published range.
+   */
   test('a rolling ball hitting the rail square rebounds within the published range', () => {
     const inbound = vec(0, 2);
     const out = resolveCushion(inbound, inbound, normal)!;
-    // Ball-rail coefficient of restitution, measured at the moment of rebound.
     expect(-out.vel.y / inbound.y).toBeGreaterThan(0.6);
-    expect(-out.vel.y / inbound.y).toBeLessThan(0.75);
+    expect(-out.vel.y / inbound.y).toBeLessThan(0.9);
+  });
+
+  test('and so does a stun ball, which used to come off at 0.31', () => {
+    const inbound = vec(0, 2);
+    const out = resolveCushion(inbound, STILL, normal)!;
+    expect(-out.vel.y / inbound.y).toBeGreaterThan(0.6);
+    expect(-out.vel.y / inbound.y).toBeLessThan(0.9);
+  });
+
+  /**
+   * The measurements the cushion constants are fitted to: Alciatore's
+   * high-speed video of square hits on typical cloth (HSV B.15). A rolling
+   * ball comes off at 0.72 and settles at 0.52; a stun ball comes off at 0.58
+   * and settles at 0.54. Single shots, so held loosely, but held.
+   */
+  test('a rolling ball lands near the measured 0.72 off the rail and 0.52 once it rolls', () => {
+    const inbound = vec(0, 2);
+    const out = resolveCushion(inbound, inbound, normal)!;
+    expect(Math.abs(-out.vel.y / inbound.y - 0.72)).toBeLessThan(0.03);
+    expect(Math.abs(settledSpeed(out.vel, out.roll) / len(inbound) - 0.52)).toBeLessThan(0.05);
+  });
+
+  test('and a stun ball near the measured 0.58 off the rail and 0.54 once it rolls', () => {
+    const inbound = vec(0, 2);
+    const out = resolveCushion(inbound, STILL, normal)!;
+    expect(Math.abs(-out.vel.y / inbound.y - 0.58)).toBeLessThan(0.07);
+    expect(Math.abs(settledSpeed(out.vel, out.roll) / len(inbound) - 0.54)).toBeLessThan(0.05);
+  });
+
+  /**
+   * The model's one known miss, pinned so it cannot change unnoticed. Measured,
+   * a ball with draw comes off the rail FASTER than a stun ball (0.71 against
+   * 0.58 in HSV B.15). Here it is the other way round, because Han has no table
+   * friction during the impact. Nothing in the trainer draws yet; when
+   * something does, this is the test to turn round.
+   */
+  test('draw comes off slower than stun here, the reverse of the measurement', () => {
+    const inbound = vec(0, 2);
+    const draw = resolveCushion(inbound, vec(0, -1), normal)!;
+    const stun = resolveCushion(inbound, STILL, normal)!;
+    expect(-draw.vel.y).toBeLessThan(-stun.vel.y);
+  });
+
+  /**
+   * What friction at the nose does to the spin, and the reason it is there. The
+   * nose sits above the centre, so a rolling ball's surface rubs DOWN the
+   * cushion and friction fights its topspin; a stun ball's surface barely
+   * moves there, and friction winds topspin up in the direction it leaves.
+   */
+  test('the nose fights a rolling ball’s topspin down and winds a stun ball’s up', () => {
+    const inbound = vec(0, 2);
+    const away = vec(0, -1);
+    const rolling = resolveCushion(inbound, inbound, normal)!;
+    const stun = resolveCushion(inbound, STILL, normal)!;
+    expect(dot(rolling.roll, away)).toBeLessThan(0); // still turning toward the rail
+    expect(dot(stun.roll, away)).toBeGreaterThan(0); // turning the way it now goes
+  });
+
+  test('and it costs a ball some of its run along the rail', () => {
+    const inbound = vec(Math.SQRT1_2, Math.SQRT1_2);
+    const out = resolveCushion(inbound, STILL, normal)!;
+    expect(out.vel.x).toBeGreaterThan(0);
+    expect(out.vel.x).toBeLessThan(inbound.x);
   });
 
   test('and once the skid is done it has lost about half its speed', () => {

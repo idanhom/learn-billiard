@@ -128,28 +128,42 @@ export const TERMINAL_ROLL_BOOST = 2;
  * its centre. The WPA specifies the cushion nose at 62.5-64.5% of ball diameter
  * (nominal 63.5%), and the centre sits at 50%, so contact is 0.27R up.
  *
- * This is the whole reason a rail behaves the way it does. Contact above the
- * centre means the impulse also torques the ball toward rolling in its new
- * direction, which is why real rebounds keep more speed than they would if the
- * spin simply carried on unchanged.
+ * That tilts the contact normal, which on a sphere runs through the centre,
+ * 15.7 degrees below horizontal. The rail pushes the ball back AND down into
+ * the cloth, and only friction at the nose can turn it.
  */
 export const CUSHION_CONTACT_HEIGHT_RATIO = 0.27;
 
 /**
- * Restitution AT THE CONTACT POINT — not the published ball-rail coefficient of
- * restitution, which is measured on the ball's centre. The two differ because
- * the contact point sits above the centre and moves faster than it.
+ * Ball-rail coefficient of restitution, applied along that tilted normal as in
+ * Han (2005). Fitted together with `CUSHION_FRICTION`, not chosen: the pair is
+ * the best match to Alciatore's measured rebounds on typical cloth. His
+ * high-speed video of square hits (HSV B.15) has a rolling ball coming off at
+ * 0.72 and settling at 0.52, and a stun ball at 0.58 and 0.54; TP B.11
+ * measures the rebound angles of a slow rolling ball. The model gives 0.71 and
+ * 0.48, 0.63 and 0.51, and angles within 6 degrees (3 degrees rms). Both
+ * values sit inside Han's published ranges (0.6-0.95 and 0.1-0.35), and this
+ * one inside Alciatore's 0.6-0.9. pooltool's defaults for the same model, 0.85
+ * and 0.2, fit the same data worse.
  *
- * At 0.54 the model reproduces both published figures, which describe different
- * moments of the same event: a square rebound at 0.65 of the incoming speed
- * (published ball-rail COR is 0.6-0.9), settling to 0.50 once the ball has
- * skidded out of its now-backwards roll (published: "loses about half of its
- * speed after rebound and skid").
+ * Constant in speed, on purpose. The sources disagree on which way it moves:
+ * Mathavan measured a fall on snooker cushions, mostly above 2.5 m/s, and Han
+ * fitted a rise on a carom table. Nobody has measured a pool table, so there is
+ * no slope to fit.
+ *
+ * One known miss: measured draw comes off a rail faster than stun, and here it
+ * comes off slower, because Han has no table friction during the impact. No
+ * shot draws yet. Revisit when one does.
  */
-export const CUSHION_CONTACT_RESTITUTION = 0.54;
+export const CUSHION_RESTITUTION = 0.74;
 
-/** Fraction of tangential speed a ball keeps after a cushion contact. */
-export const CUSHION_TANGENT_RETENTION = 0.95;
+/**
+ * Friction between ball and cushion nose, fitted with `CUSHION_RESTITUTION`.
+ * It is what turns a ball at the rail: it fights a rolling ball's topspin down
+ * and winds a stun ball's up. It also costs a ball some of its run along the
+ * rail.
+ */
+export const CUSHION_FRICTION = 0.23;
 
 /** Speed transferred to the object ball on a dead-straight full hit. */
 export const NORMAL_TRANSFER = (1 + BALL_RESTITUTION) / 2;

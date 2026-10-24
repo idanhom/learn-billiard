@@ -123,14 +123,16 @@ function side(id: PocketId, center: Vec2): Pocket {
   };
 }
 
+/** Segment with the normal on whichever side `side` points to. */
+function segmentFacing(a: Vec2, b: Vec2, side: Vec2): Segment {
+  const n = perp(normalize(sub(b, a)));
+  const flip = n.x * side.x + n.y * side.y < 0;
+  return { a, b, normal: flip ? scale(n, -1) : n };
+}
+
 /** Segment with the normal chosen to point toward the table centre. */
 function segmentFacingCenter(a: Vec2, b: Vec2): Segment {
-  const along = normalize(sub(b, a));
-  const n = perp(along);
-  const mid = vec((a.x + b.x) / 2, (a.y + b.y) / 2);
-  const towardCenter = scale(mid, -1);
-  const flip = n.x * towardCenter.x + n.y * towardCenter.y < 0;
-  return { a, b, normal: flip ? scale(n, -1) : n };
+  return segmentFacing(a, b, scale(vec((a.x + b.x) / 2, (a.y + b.y) / 2), -1));
 }
 
 function buildRails(): Segment[] {
@@ -168,7 +170,12 @@ function buildJaws(rails: readonly Segment[]): Segment[] {
         ),
       );
       const tip = vec(nose.x + dir.x * JAW_LENGTH, nose.y + dir.y * JAW_LENGTH);
-      jaws.push(segmentFacingCenter(nose, tip));
+      // Facing the way its rail faces, which is into the mouth. Not toward the
+      // table centre: a corner jaw on a long rail, carried on as a line, passes
+      // the centre on its cushion side, and a jaw built that way faced into its
+      // own rubber. Balls in the mouth were behind it, passed through it, and
+      // could wedge between it and the nose.
+      jaws.push(segmentFacing(nose, tip, rail.normal));
     }
   }
   return jaws;

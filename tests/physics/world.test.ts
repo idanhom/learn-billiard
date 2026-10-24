@@ -177,6 +177,43 @@ describe('cushions', () => {
     expect(retained).toBeLessThan(0.6);
   });
 
+  /**
+   * Alciatore measured where a slow rolling ball goes off a rail, at incoming
+   * angles from 10 to 80 degrees (TP B.11): the angle it leaves at, and the
+   * angle it settles on once the cloth has curved its path. The cushion
+   * constants are fitted to these, so they are held here through the whole
+   * solver, cloth included. The old impulse missed them by 5 degrees rms.
+   */
+  test('send a slow rolling ball off at the angles Alciatore measured', () => {
+    const measured = [
+      [10, 5, 3.5],
+      [20, 10.5, 8.4],
+      [30, 23, 16.9],
+      [40, 37, 25.2],
+      [50, 46, 35.7],
+      [60, 56, 48.7],
+      [70, 70, 64.1],
+      [80, 79.95, 75.5],
+    ] as const;
+    const fromRail = (v: Vec2): number => (Math.atan2(-v.y, v.x) * 180) / Math.PI;
+    const errors = measured.map(([incoming, off, after]) => {
+      const angle = (incoming * Math.PI) / 180;
+      const vel = vec(0.5 * Math.cos(angle), 0.5 * Math.sin(angle));
+      const hit = stepUntil([rollingBall(0, vec(-0.6, TABLE.bounds.maxY - 0.01), vel)], (events) =>
+        events.some((e) => e.type === 'cushion'),
+      );
+      const settled = stepUntil(hit.balls, (_e, current) => len(sub(current[0]!.vel, current[0]!.roll)) < 1e-9);
+      return [fromRail(hit.balls[0]!.vel) - off, fromRail(settled.balls[0]!.vel) - after] as const;
+    });
+    const rms = (values: number[]): number => Math.sqrt(values.reduce((s, v) => s + v * v, 0) / values.length);
+    for (const [index, [off, after]] of errors.entries()) {
+      expect(Math.abs(off), `${measured[index]![0]} deg off the rail`).toBeLessThan(6);
+      expect(Math.abs(after), `${measured[index]![0]} deg after the curve`).toBeLessThan(6);
+    }
+    expect(rms(errors.map(([off]) => off))).toBeLessThan(3);
+    expect(rms(errors.map(([, after]) => after))).toBeLessThan(2.5);
+  });
+
   test('send the ball back the way it came', () => {
     const start = rollingBall(0, vec(0.4, -0.2), vec(0, 1.4));
     const { balls } = stepUntil([start], (events) => events.some((e) => e.type === 'cushion'));
@@ -197,13 +234,13 @@ describe('cushions', () => {
     expect(kept(hitGlancing)).toBeGreaterThan(kept(hitSquare));
     expect(kept(hitGlancing)).toBeGreaterThan(0.85);
 
-    // The square rebound is the pair of published figures the contact
-    // restitution was chosen to reproduce, and they are two moments of the
-    // same event: 0.65 of the incoming speed straight off the rail, settling
-    // to 0.50 once the ball has skidded out of its now-backwards roll.
+    // The square rebound, at the two moments Alciatore measured (HSV B.15:
+    // 0.72 straight off the rail, 0.52 once the ball has skidded out of its
+    // now-backwards roll). The model gives 0.70 and 0.48 through the solver;
+    // the figures quoted in `README.md` and `src/constants.ts` are these.
     const straightOff = len(hitSquare.balls[0]!.vel) / len(hitSquare.before[0]!.vel);
-    expect(straightOff).toBeCloseTo(0.65, 2);
-    expect(kept(hitSquare)).toBeCloseTo(0.5, 2);
+    expect(straightOff).toBeCloseTo(0.705, 2);
+    expect(kept(hitSquare)).toBeCloseTo(0.481, 2);
   });
 
   /**

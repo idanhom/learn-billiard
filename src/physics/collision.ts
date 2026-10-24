@@ -10,8 +10,8 @@ import {
   BALL_CONTACT_FRICTION,
   BALL_RESTITUTION,
   CUSHION_CONTACT_HEIGHT_RATIO,
-  CUSHION_CONTACT_RESTITUTION,
-  CUSHION_TANGENT_RETENTION,
+  CUSHION_FRICTION,
+  CUSHION_RESTITUTION,
 } from '../constants';
 import type { Segment } from '../geometry/table';
 import { type Vec2, add, dot, normalize, scale, sub, vec } from '../geometry/vec2';
@@ -220,53 +220,64 @@ export interface CushionImpulse {
 }
 
 /**
- * Cushion rebound as a point impulse applied above the ball's centre.
+ * Cushion rebound: Han (2005), "Dynamics in carom and three cushion billiards",
+ * as pooltool implements it, restated in this solver's 2D state.
  *
- * The cushion nose sits at 0.27R above centre, so three things follow, and all
- * three matter:
+ * The cushion nose touches the ball 0.27R above its centre, so the contact
+ * normal, which on a sphere runs through the centre, tilts below horizontal.
+ * Two impulses act there:
  *
- *  - The contact point is not the centre. For a rolling ball it is moving 1.27x
- *    faster than the centre, so that is the velocity restitution applies to.
- *  - An impulse there also spins the ball, by `2.5 * (h/R) * j`, toward rolling
- *    in its new direction.
- *  - The ball resists an impulse at that point with a rotational effective
- *    mass, hence the `1 + 2.5c^2` divisor.
+ *  - Along the normal, (1 + e) times the approach along it. It passes through
+ *    the centre, so it turns nothing. Its vertical share pushes the ball into
+ *    the cloth, and the table absorbs that.
+ *  - Friction at the nose, against the slip of the ball's surface over the
+ *    cushion: enough to stop the slip if `CUSHION_FRICTION` allows it, and
+ *    `CUSHION_FRICTION` times the normal impulse if not. This is the only thing
+ *    that turns the ball, which is the point: it fights a rolling ball's
+ *    topspin down and winds a stun ball's up.
  *
- * Getting the first and third wrong is not a rounding error: computing the
- * impulse from the centre velocity and then adding the angular term creates
- * energy — around +58% for a ball whose roll opposes its motion, a state
- * `resolveBallPair` produces routinely, since it changes velocity and leaves
- * roll alone. With the contact-point velocity and effective mass, a rail is
- * passive by construction at every spin state.
+ * Han's slip and impulses carry a vertical-axis spin (english) too. This model
+ * has no english, so that spin is never read, and the share of the friction
+ * that would create it is discarded. That is passive, since it only takes
+ * energy away, and it means a cushion still puts no sidespin on a ball. What
+ * the friction does to the ball's travel along the rail and to its roll is
+ * kept.
  *
- * What is deliberately NOT modelled: tangential cushion friction, and so no
- * cushion-induced sidespin. The tangential retention factor stands in for it.
+ * In the frame used here `a` points into the cushion and `b` along it; with
+ * up, they are right-handed, so `roll` maps to Han's angular velocity as
+ * roll.a = R*w_b and roll.b = -R*w_a.
+ *
+ * Undefined when the ball is not moving into the cushion. Han's normal impulse
+ * is driven by the centre's approach, so unlike the impulse this replaced, a
+ * spinning ball cannot hold the contact open while its centre drives in.
  */
 export function resolveCushion(vel: Vec2, roll: Vec2, normal: Vec2): CushionImpulse | undefined {
-  const c = CUSHION_CONTACT_HEIGHT_RATIO;
+  const a = scale(normal, -1);
+  const b = vec(-a.y, a.x);
+  const approach = dot(vel, a);
+  if (approach <= 0) return undefined;
 
-  // Normal velocity of the contact point, not of the centre.
-  const closing = dot(vel, normal) + c * dot(roll, normal);
-  if (closing >= 0) {
-    // Enough backspin can carry the contact point away while the centre is
-    // still moving in, and a rail the centre can drive into is no rail. Stop
-    // the centre's approach dead and leave the spin to the cloth: it only takes
-    // speed away, so it is passive like the rest of this.
-    const approach = dot(vel, normal);
-    if (approach >= 0) return undefined;
-    return { vel: sub(vel, scale(normal, approach)), roll };
-  }
+  const sin = CUSHION_CONTACT_HEIGHT_RATIO;
+  const cos = Math.sqrt(1 - sin * sin);
+  const along = dot(vel, b);
+  const rollIn = dot(roll, a);
+  const rollAlong = dot(roll, b);
 
-  const effectiveMass = 1 + 2.5 * c * c;
-  const j = (-(1 + CUSHION_CONTACT_RESTITUTION) * closing) / effectiveMass;
+  // Everything per unit mass from here on.
+  const push = (1 + CUSHION_RESTITUTION) * approach * cos;
 
-  const bounced = add(vel, scale(normal, j));
-  const normalPart = scale(normal, dot(bounced, normal));
-  const tangentPart = sub(bounced, normalPart);
+  // Slip of the ball's surface over the nose: down the contact plane, and
+  // along the rail. Two sevenths of it is the impulse that would stop it.
+  const slipDown = approach * sin + rollIn;
+  const slipAlong = -along - rollAlong * sin;
+  const slip = Math.hypot(slipDown, slipAlong);
+  const friction = Math.min((2 / 7) * slip, CUSHION_FRICTION * push);
+  const frictionDown = slip === 0 ? 0 : (friction * slipDown) / slip;
+  const frictionAlong = slip === 0 ? 0 : (friction * slipAlong) / slip;
 
   return {
-    vel: add(normalPart, scale(tangentPart, CUSHION_TANGENT_RETENTION)),
-    roll: add(roll, scale(normal, 2.5 * c * j)),
+    vel: add(scale(a, approach - frictionDown * sin - push * cos), scale(b, along + frictionAlong)),
+    roll: add(scale(a, rollIn - 2.5 * frictionDown), scale(b, rollAlong + 2.5 * frictionAlong * sin)),
   };
 }
 

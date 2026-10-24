@@ -10,6 +10,8 @@
 
 import { describe, expect, test } from 'vitest';
 import {
+  CUSHION_FRICTION,
+  CUSHION_RESTITUTION,
   MAX_CUE_SPEED,
   MIN_CUE_SPEED,
   POWER_CURVE_EXPONENT,
@@ -24,7 +26,8 @@ import { cueSpeedForPower, recommendedPower } from '../src/game/power';
 import { ShotSession } from '../src/game/shot-session';
 import { analyseShot, fullness } from '../src/geometry/shot';
 import { BALL_RADIUS, PLAY_LENGTH, pocketById } from '../src/geometry/table';
-import { normalize, scale, sub, vec } from '../src/geometry/vec2';
+import { add, len, normalize, scale, sub, vec } from '../src/geometry/vec2';
+import { type CushionImpulse, resolveCushion } from '../src/physics/collision';
 import { rollOutSeconds, terminalDrift } from './support/roll-time';
 
 const linearMeter = (speed: number): number =>
@@ -200,5 +203,31 @@ describe('the power meter', () => {
     // without failing, which is the one thing this file exists to stop.
     expect(exponentFor(ROLLING_FRICTION)).toBeCloseTo(POWER_CURVE_EXPONENT, 2);
     expect(exponentFor(0.01)).toBeCloseTo(2.251, 3);
+  });
+});
+
+/**
+ * The cushion, quoted in `README.md` and `src/constants.ts` beside the
+ * measurements it is fitted to (Alciatore, HSV B.15: 0.72 and 0.52 rolling,
+ * 0.58 and 0.54 stun). These are the model's side of that comparison, square
+ * hits through the impulse itself. The angle fit is
+ * `tests/physics/world.test.ts`'s.
+ */
+describe('the cushion', () => {
+  test('restitution 0.74 and friction 0.23, the fitted pair', () => {
+    expect(CUSHION_RESTITUTION).toBe(0.74);
+    expect(CUSHION_FRICTION).toBe(0.23);
+  });
+
+  test('a rolling ball comes off at 0.71 and settles at 0.48, a stun ball 0.63 and 0.51', () => {
+    const inbound = vec(0, 1);
+    const square = (roll: typeof inbound): CushionImpulse => resolveCushion(inbound, roll, vec(0, -1))!;
+    const settled = (out: CushionImpulse): number => len(add(scale(out.vel, 5 / 7), scale(out.roll, 2 / 7)));
+    const rolling = square(inbound);
+    const stun = square(vec(0, 0));
+    expect(len(rolling.vel)).toBeCloseTo(0.71, 2);
+    expect(settled(rolling)).toBeCloseTo(0.48, 2);
+    expect(len(stun.vel)).toBeCloseTo(0.63, 2);
+    expect(settled(stun)).toBeCloseTo(0.51, 2);
   });
 });

@@ -111,9 +111,9 @@ It answers for the object ball, not for the cue ball. On a thin cut the cue
 ball keeps nearly all its speed, and it can come back off two cushions into the
 object ball before that ball has finished creeping in — the stroke was right,
 and the cue ball spoiled it. Over 500 level-5 layouts at the recommended power
-that happened once, and that ball still dropped; on every level all 500
-potted. Where the cue ball goes is the part of the game this trainer does not
-teach.
+that happened once, and it knocked the ball 20 cm wide of the pocket. Every
+other layout on every level potted, 500 out of 500. Where the cue ball goes is
+the part of the game this trainer does not teach.
 
 Once the object ball has dropped or stopped, the rest of the shot plays at four
 times the speed: off a thin cut the cue ball can run on for three seconds and
@@ -185,15 +185,28 @@ horizontal share of the same friction is throw, and it is declined: at a
 half-ball hit that is about 1.7° of deflection, which would break the
 ghost-ball line-of-centres model this trainer teaches and scores against.
 
-Sliding friction, restitution, ball-to-ball friction and the cushion figures
-are published typical values rather than measurements of a specific table. The
-rolling resistance is not, and the next section says what it is instead.
+Sliding friction, restitution and ball-to-ball friction are published typical
+values rather than measurements of a specific table. The two cushion
+coefficients are fitted to published measurements, as below. The rolling
+resistance is neither, and the next section says what it is instead.
 
-Cushions *do* couple top and bottom spin, because that is what makes a rail
-behave like a rail: the nose sits above the ball's centre, so the impulse also
-torques the ball. A rolling ball hit square comes off at 0.65 of its speed and
-settles at 0.50 once it has skidded out of its now-backwards roll — both
-published figures, from one coefficient.
+Cushions follow Han (2005), as the pooltool simulator implements it. The rail
+touches the ball 0.27R above its centre (the WPA's nominal height), so the push
+runs through the centre at a 15.7° tilt, back and down into the cloth, and
+friction at the rail's nose is what turns the ball. Its restitution (0.74) and
+friction (0.23) are fitted to Alciatore's measurements on typical cloth: a
+rolling ball hit square comes off at 0.71 of its speed and settles at 0.48 once
+it has skidded out of its now-backwards roll (measured: 0.72 and 0.52); a stun
+ball comes off at 0.63 and settles at 0.51 (0.58 and 0.54); and a slow rolling
+ball leaves the rail within 6° of his measured angles from 10° to 80°.
+
+The model it replaced pushed above the centre instead, and got the rolling
+ball about right but sent a stun ball off at 0.31 and a ball with draw at 0.13.
+Restitution here is constant in speed: published measurements disagree on
+which way it moves, and none of them is a pool table. The cushion still puts no
+sidespin on a ball. And one known miss: measured, a ball with draw comes off a
+rail faster than a stun ball, and here it comes off slower, because this model
+has no table friction during the impact. Nothing in the trainer draws yet.
 
 Cloth speed is a setting (`C`), so you can match your own table rather than
 accept a guess. The three presets are 0.0156, 0.022 and 0.0308, which is a

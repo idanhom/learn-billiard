@@ -63,6 +63,11 @@ values that go stale silently:
   "about 7 times as far" ever needs it dragged off that range, the collision
   model has a structural error rather than a calibration one. That is exactly
   how an inverted spin-transfer sign was caught: it needed 0.045.
+- `CUSHION_RESTITUTION` / `CUSHION_FRICTION` are a fitted pair: the best
+  match to Alciatore's measured square rebounds (HSV B.15) and rebound angles
+  (TP B.11). Refit them together if either moves, against the same data;
+  `tests/physics/world.test.ts` holds the angles and
+  `tests/physics/collision.test.ts` the rebound speeds.
 - `POWER_CURVE_EXPONENT` follows the cloth AND the contact model — the object
   ball's backspin changes the speed a pot asks for. It is whatever puts a
   typical pot (0.6 m to the pocket, 0.5 m of cue-ball travel, normal cloth) near

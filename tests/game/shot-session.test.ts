@@ -382,8 +382,8 @@ describe('the simulation clock', () => {
    * only then: never before contact, when the object ball is also at rest.
    */
   test('plays out faster once the object ball is down, and only then', () => {
-    // The object ball drops 0.92 s in and the cue ball runs on to 4.48 s: three
-    // and a half seconds of watching nothing, spent in under one instead.
+    // The object ball drops 0.92 s in and the cue ball runs on to 4.24 s: over
+    // three seconds of watching nothing, spent in under one instead.
     const { layout } = generateShot(levelById(5), 4243, { preferredSide: 'left' });
     const session = new ShotSession(layout);
     session.aimTo(idealAimAngle(layout));
@@ -405,7 +405,7 @@ describe('the simulation clock', () => {
       if (done) fastFrames++;
     }
     expect(session.evaluate()!.pottedTarget).toBe(true);
-    expect(fastFrames).toBeGreaterThan(50);
+    expect(fastFrames).toBeGreaterThan(40);
   });
 
   test('ignores advance outside the simulating phase', () => {

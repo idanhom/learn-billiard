@@ -219,6 +219,20 @@ describe('cushions', () => {
     }
   });
 
+  /**
+   * A facing is the cushion's face carried on into the mouth, so it faces the
+   * same way as its rail. The four corner jaws on the long rails used to face
+   * the other way, into their own rubber, because their normal was chosen to
+   * point at the table centre — which, for those four, lies on the cushion
+   * side of the jaw's line.
+   */
+  test('every jaw faces into its pocket mouth, the way its rail faces the table', () => {
+    TABLE.jaws.forEach((jaw, i) => {
+      const rail = TABLE.rails[Math.floor(i / 2)]!;
+      expect(dot(jaw.normal, rail.normal), `jaw ${i}`).toBeGreaterThan(0);
+    });
+  });
+
   test('all collidable segments are rails plus jaws', () => {
     expect(TABLE.cushions).toHaveLength(TABLE.rails.length + TABLE.jaws.length);
   });
