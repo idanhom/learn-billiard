@@ -18,6 +18,7 @@ import {
   TERMINAL_ROLL_BOOST,
   TERMINAL_ROLL_SPEED,
 } from '../constants';
+import { pocketWindow } from './pocket-window';
 import { BALL_RADIUS, type Pocket, isInLegalBounds } from './table';
 import {
   type Vec2,
@@ -55,6 +56,7 @@ export interface AimError {
 }
 
 export type ShotBlocker =
+  | 'pocket-closed'
   | 'ghost-off-table'
   | 'cut-too-steep'
   | 'cue-path-blocked'
@@ -76,6 +78,11 @@ export interface ShotLayoutQuery {
 }
 
 export interface ShotAnalysis {
+  /**
+   * Where the object ball is sent: the middle of the pocket's clean band, at
+   * the drop line. The pocket's centre when no line drops clean.
+   */
+  readonly target: Vec2;
   readonly ghostCenter: Vec2;
   /** Unit vector from the cue ball at the ghost ball. */
   readonly aimDirection: Vec2;
@@ -393,13 +400,15 @@ export function isPowerFeasible(
 
 export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
   const { cue, object, pocket, obstacles } = query;
-  const target = pocket.center;
+  const window = pocketWindow(object, pocket);
+  const target = window?.target ?? pocket.center;
   const ghostCenter = ghostBallCenter(object, target);
   const aimDirection = normalize(sub(ghostCenter, cue));
   const cut = cutAngle(cue, object, target);
   const objectToPocket = Math.hypot(target.x - object.x, target.y - object.y);
 
   const blockers: ShotBlocker[] = [];
+  if (!window) blockers.push('pocket-closed');
   if (!isInLegalBounds(ghostCenter)) blockers.push('ghost-off-table');
   if (cut > MAX_CUT_ANGLE) blockers.push('cut-too-steep');
   if (!isPathClear(cue, ghostCenter, obstacles)) blockers.push('cue-path-blocked');
@@ -407,6 +416,7 @@ export function analyseShot(query: ShotLayoutQuery): ShotAnalysis {
   if (!isPowerFeasible(cut, objectToPocket, query.rollingFriction)) blockers.push('underpowered');
 
   return {
+    target,
     ghostCenter,
     aimDirection,
     cutAngle: cut,

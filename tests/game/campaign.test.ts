@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { cutSide } from '../../src/geometry/shot';
-import { pocketById } from '../../src/geometry/table';
 import { Campaign, type ScoredShot } from '../../src/game/campaign';
+import { aimTarget } from '../../src/game/drills';
 import { layoutViolations } from '../../src/game/generator';
 import { LEVELS, examLevel, levelById } from '../../src/game/levels';
 import {
@@ -66,8 +66,8 @@ describe('starting out', () => {
     const subject = new Campaign(createProgressStore(new FakeStorage()), { seed: 7 });
     const sides = new Set<string>();
     for (let i = 0; i < 6; i++) {
-      const { cue, object, targetPocket } = subject.layout;
-      sides.add(cutSide(cue, object, pocketById(targetPocket).center));
+      const { cue, object } = subject.layout;
+      sides.add(cutSide(cue, object, aimTarget(subject.layout)));
       subject.nextShot();
     }
     expect(sides.has('left')).toBe(true);

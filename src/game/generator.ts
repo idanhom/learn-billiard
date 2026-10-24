@@ -12,7 +12,8 @@
  */
 
 import { SLOWEST_CLOTH, clothRollingFriction } from '../constants';
-import { analyseShot, cutAngle, ghostBallCenter } from '../geometry/shot';
+import { aimPoint, pocketWindow } from '../geometry/pocket-window';
+import { analyseShot, ghostBallCenter } from '../geometry/shot';
 import {
   BALL_RADIUS,
   TABLE,
@@ -22,12 +23,13 @@ import {
   pocketById,
   pocketOnPath,
 } from '../geometry/table';
-import { type Vec2, add, angleOf, dist, fromAngle, scale, vec } from '../geometry/vec2';
+import { type Vec2, add, angleOf, dist, fromAngle, scale, sub, vec } from '../geometry/vec2';
 import { type ShotLayout, layoutWithCut } from './drills';
 import type { LevelDefinition } from './levels';
 import { makeRng } from './random';
 
 export type LayoutViolation =
+  | 'pocket-closed'
   | 'cue-off-table'
   | 'object-off-table'
   | 'balls-overlap'
@@ -105,8 +107,10 @@ function propose(
   id: string,
   preferredSide: 'left' | 'right' | undefined,
 ): ShotLayout | undefined {
+  if (level.railAdjacent) return proposeOnRail(level, rng, id, preferredSide);
+
   const pocket = TABLE.pockets[Math.floor(rng() * TABLE.pockets.length)]!;
-  const object = level.railAdjacent ? sampleNearRail(level, rng) : sampleFromPocket(level, pocket, rng);
+  const object = sampleFromPocket(level, pocket, rng);
   if (!object) return undefined;
 
   const side = preferredSide ?? (rng() < 0.5 ? 'left' : 'right');
@@ -115,6 +119,55 @@ function propose(
   const cueDistance = lerp(level.cueDistance[0], level.cueDistance[1], rng());
 
   return layoutWithCut(id, object, pocket.id, cutDegrees, cueDistance);
+}
+
+/**
+ * The rail level, built from the ball outward. From a ball on a cushion most
+ * pockets are the wrong distance away, have no clean line, or need the cue ball
+ * behind the rail. Drawn blind, as the other levels are, about one candidate
+ * in two hundred survived and one shot in seven fell back to the level's
+ * template (one in ten before the pockets had jaws). So the pocket is drawn
+ * only from the ones that work for this ball and this cut, and the cue
+ * distance only from the room there is behind the ghost ball.
+ */
+function proposeOnRail(
+  level: LevelDefinition,
+  rng: () => number,
+  id: string,
+  preferredSide: 'left' | 'right' | undefined,
+): ShotLayout | undefined {
+  const object = sampleNearRail(level, rng);
+  if (!object) return undefined;
+
+  const side = preferredSide ?? (rng() < 0.5 ? 'left' : 'right');
+  const magnitude = lerp(level.cutRange[0], level.cutRange[1], rng());
+  const cutDegrees = side === 'left' ? magnitude : -magnitude;
+
+  const [nearest, farthest] = level.potDistance;
+  const options = TABLE.pockets.flatMap((pocket) => {
+    const distance = dist(object, pocket.center);
+    if (distance < nearest || distance > farthest || !pocketWindow(object, pocket)) return [];
+    const room = cueRoom(object, pocket, cutDegrees);
+    return room >= level.cueDistance[0] ? [{ pocket, room }] : [];
+  });
+  if (options.length === 0) return undefined;
+
+  const { pocket, room } = options[Math.floor(rng() * options.length)]!;
+  const cueDistance = lerp(level.cueDistance[0], Math.min(level.cueDistance[1], room), rng());
+  return layoutWithCut(id, object, pocket.id, cutDegrees, cueDistance);
+}
+
+/** How far back along its line of approach the cue ball can sit and still be on the table. */
+function cueRoom(object: Vec2, pocket: Pocket, cutDegrees: number): number {
+  const ghost = ghostBallCenter(object, aimPoint(object, pocket));
+  const back = sub(layoutWithCut('room', object, pocket.id, cutDegrees, 1).cue, ghost);
+  const bounds = TABLE.bounds;
+  const toEdge = (from: number, step: number, low: number, high: number): number =>
+    step > 0 ? (high - from) / step : step < 0 ? (low - from) / step : Number.POSITIVE_INFINITY;
+  return Math.min(
+    toEdge(ghost.x, back.x, bounds.minX, bounds.maxX),
+    toEdge(ghost.y, back.y, bounds.minY, bounds.maxY),
+  );
 }
 
 /** An object ball somewhere in the fan of positions this pocket can be potted from. */
@@ -165,21 +218,9 @@ export function layoutViolations(
   }
 
   // Being inside the legal-bounds rectangle is not the same as being on the
-  // table: its corners sit inside the corner pockets' capture circles, so a
-  // ball placed there is potted on the first tick.
+  // table: its corners sit out on the corner pockets' shelves, in the jaws.
   if (isInPocketMouth(layout.cue, POCKET_CLEARANCE)) violations.push('cue-in-pocket');
   if (isInPocketMouth(layout.object, POCKET_CLEARANCE)) violations.push('object-in-pocket');
-
-  // Neither ball may be required to roll over a pocket on its way. The cue ball
-  // has no exception — any pocket it crosses swallows it. The object ball is
-  // allowed exactly one: the pocket it is being sent to.
-  const ghost = ghostBallCenter(layout.object, pocket.center);
-  if (pocketOnPath(layout.cue, ghost, { margin: POCKET_CLEARANCE })) {
-    violations.push('cue-path-enters-pocket');
-  }
-  if (pocketOnPath(layout.object, pocket.center, { ignore: pocket.id, margin: POCKET_CLEARANCE })) {
-    violations.push('object-path-enters-pocket');
-  }
 
   const analysis = analyseShot({
     cue: layout.cue,
@@ -192,12 +233,23 @@ export function layoutViolations(
   });
   for (const blocker of analysis.blockers) violations.push(blocker);
 
-  const cutDegrees = (cutAngle(layout.cue, layout.object, pocket.center) * 180) / Math.PI;
+  // Neither ball may be required to roll over a pocket on its way. The cue ball
+  // has no exception: any pocket it crosses swallows it. The object ball is
+  // allowed exactly one: the pocket it is being sent to.
+  const ghost = analysis.ghostCenter;
+  if (pocketOnPath(layout.cue, ghost, { margin: POCKET_CLEARANCE })) {
+    violations.push('cue-path-enters-pocket');
+  }
+  if (pocketOnPath(layout.object, analysis.target, { ignore: pocket.id, margin: POCKET_CLEARANCE })) {
+    violations.push('object-path-enters-pocket');
+  }
+
+  const cutDegrees = (analysis.cutAngle * 180) / Math.PI;
   if (cutDegrees < level.cutRange[0] - 1e-9 || cutDegrees > level.cutRange[1] + 1e-9) {
     violations.push('cut-out-of-range');
   }
 
-  const potDistance = dist(layout.object, pocket.center);
+  const potDistance = analysis.objectToPocket;
   if (potDistance < level.potDistance[0] || potDistance > level.potDistance[1]) {
     violations.push('pot-distance-out-of-range');
   }

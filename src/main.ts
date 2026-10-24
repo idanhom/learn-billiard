@@ -8,7 +8,6 @@
 
 import type { ClothPreset } from './constants';
 import { fullness as fullnessOf } from './geometry/shot';
-import { pocketById } from './geometry/table';
 import { add, angleOf, fromAngle } from './geometry/vec2';
 import { Campaign } from './game/campaign';
 import { attachAimButtons, attachInput, attachTouchPower } from './game/input';
@@ -291,7 +290,7 @@ function frame(now: number): void {
       aimEnd: add(session.cueBall.pos, fromAngle(session.aimAngle, analysis.cueToGhost)),
       ghost: analysis.ghostCenter,
       object: session.objectBall.pos,
-      pocket: pocketById(session.layout.targetPocket).center,
+      pocket: session.target,
     });
   }
 

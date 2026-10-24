@@ -29,6 +29,7 @@ const deg = (d: number) => (d * Math.PI) / 180;
 /** A shot with exactly the geometry the recommendation cares about. */
 function shot(objectToPocket: number, cueToGhost: number, cut = 0): ShotAnalysis {
   return {
+    target: vec(objectToPocket, 0),
     ghostCenter: vec(0, 0),
     aimDirection: vec(1, 0),
     cutAngle: cut,

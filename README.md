@@ -116,8 +116,8 @@ pot lands near 40%:
 | 100% | 4.50 m/s | power |
 
 Measured over 200 generated layouts per level, the stroke each one asks for now
-runs from 32% on a straight-in to 89% on the worst thin cut, with the median
-climbing 38% → 40% → 43% → 50% → 64% as the cut angle opens up. What pushes you
+runs from 32% on a straight-in to 91% on the worst thin cut, with the median
+climbing 38% → 40% → 44% → 50% → 64% as the cut angle opens up. What pushes you
 up the meter is the *cut*, which is worth feeling: a thin cut throws away
 `cos(θ)` of the speed at contact, so a 70° cut has to arrive almost three times
 as fast as a straight-in to send the object ball the same distance.
@@ -158,6 +158,10 @@ how the pocket is tuned; the angle you aimed at depends only on you. So a shot
 "qualifies" when the line you struck along is within the level's tolerance of
 the ideal line — 2° on level 1, tightening to 0.75° by level 5. Pots, scratches
 and wrong-pocket drops are all reported, but they don't drive progression.
+
+The ideal line sends the object ball at the middle of the pocket as the ball
+sees it, which is not always the middle of the pocket; the Pockets section
+below says why.
 
 Three qualifying shots out of the last five take away one layer of guides:
 
@@ -298,6 +302,34 @@ the cue ball doesn't leave along the tangent, so drawing that line would teach
 you something this table then contradicts.
 
 Angles transfer to a real table. Cue ball control does not.
+
+## Pockets
+
+The pockets follow the WPA's equipment specification (section 9). A corner
+mouth is 4.57" between the cushion noses and a side mouth 5.08", inside the
+4.5–4.625" and 5–5.125" it allows. Behind the noses the cushions are cut back
+into the pocket at 142° at a corner and 104° at a side, so both narrow toward
+the hole. Between the mouth and the hole is the shelf, slate the ball still
+rolls on: 1.57" deep at a corner and 0.2" at a side.
+
+A ball drops when its centre crosses the back edge of the shelf. Until then it
+is still on the table: it can meet a facing and rattle back out, or die on the
+shelf and hang in the jaws. A firm stroke rattles where a soft one drops.
+
+That moves the ideal line. From any spot there is a band of lines along which
+the object ball reaches the hole without touching rubber, and the trainer aims
+at the middle of it, the line with the most room either side. Straight in,
+that is the middle of the mouth. Coming into a corner down a rail, the far
+facing closes the band from its far side, so its middle moves toward that
+rail: half a centimetre to a centimetre and a quarter, for a ball 0.8 m out.
+The corner of the table, where the trainer used to aim, can be off the band
+altogether; from a flat enough angle a ball sent there catches the rail it is
+running along before it reaches the mouth.
+
+A ball frozen to a rail and sent along it has one line and no band: straight
+down the rail, with the cue ball meeting the rail and the ball together, the
+way the shot is taught. Level 6 deals those alongside balls a few centimetres
+off the cushion.
 
 ## Development
 

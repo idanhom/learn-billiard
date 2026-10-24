@@ -103,3 +103,18 @@ export function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   const t = projectOntoSegment(p, a, b);
   return Math.hypot(p.x - (a.x + (b.x - a.x) * t), p.y - (a.y + (b.y - a.y) * t));
 }
+
+/** Closest approach between segments ab and cd; zero where they cross. */
+export function distanceBetweenSegments(a: Vec2, b: Vec2, c: Vec2, d: Vec2): number {
+  const ab = sub(b, a);
+  const cd = sub(d, c);
+  const crosses =
+    cross(ab, sub(c, a)) * cross(ab, sub(d, a)) < 0 && cross(cd, sub(a, c)) * cross(cd, sub(b, c)) < 0;
+  if (crosses) return 0;
+  return Math.min(
+    distanceToSegment(a, c, d),
+    distanceToSegment(b, c, d),
+    distanceToSegment(c, a, b),
+    distanceToSegment(d, a, b),
+  );
+}

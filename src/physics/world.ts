@@ -3,11 +3,13 @@
  *
  * Fixed 1/240 s tick. Within a tick, velocities are constant and the solver
  * repeatedly finds the *earliest* impact among ball-ball, ball-cushion and
- * pocket-capture candidates, advances to it, resolves it, and continues on the
- * remaining time. Ordering events by time of impact — rather than resolving
- * whatever a fixed sweep order happens to notice first — is what keeps a fast
- * ball from passing through a cushion nose or clipping a pocket it should have
- * dropped into.
+ * pocket candidates, advances to it, resolves it, and continues on the
+ * remaining time. A ball is potted when its centre crosses a pocket's drop
+ * line, at the back of the shelf, so a ball in the jaws can still meet a
+ * facing first and rattle out. Ordering events by time of impact, rather than
+ * resolving whatever a fixed sweep order happens to notice first, is what keeps
+ * a fast ball from passing through a cushion nose or clipping a pocket it
+ * should have dropped into.
  *
  * Friction is integrated once per tick, after the event loop. At 1/240 s the
  * velocity change inside a tick is under a centimetre per second, well below
@@ -36,8 +38,8 @@ import { IDENTITY, type Quat, spinBy } from '../geometry/quat';
 import { ZERO, type Vec2, add, len, scale, sub, vec } from '../geometry/vec2';
 import {
   ballBallTOI,
-  ballCircleEntryTOI,
   ballSegmentTOI,
+  dropLineTOI,
   resolveBallPair,
   resolveCushion,
   separateOverlap,
@@ -316,7 +318,7 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
     }
 
     for (const pocket of TABLE.pockets) {
-      const time = ballCircleEntryTOI(a.pos, a.vel, pocket.center, pocket.captureRadius, remaining);
+      const time = dropLineTOI(a.pos, a.vel, pocket.drop, remaining);
       if (time === undefined) continue;
       take({
         time,
@@ -334,8 +336,8 @@ function earliestCandidate(balls: Ball[], remaining: number): Candidate | undefi
 }
 
 /**
- * Failsafe for a ball that slipped past the surface edge through a mouth without
- * its centre ever crossing a capture circle. Nothing is ever lost off-table.
+ * Failsafe for a ball that slipped off the slate without its centre ever
+ * crossing a drop line. Nothing is ever lost off-table.
  */
 function captureEscapees(balls: Ball[], at: number, events: SimEvent[]): void {
   for (const ball of balls) {

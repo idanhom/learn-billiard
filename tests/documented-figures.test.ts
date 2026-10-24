@@ -25,10 +25,11 @@ import { LEVELS } from '../src/game/levels';
 import { cueSpeedForPower, recommendedPower } from '../src/game/power';
 import { ShotSession } from '../src/game/shot-session';
 import { analyseShot, fullness } from '../src/geometry/shot';
-import { BALL_RADIUS, PLAY_LENGTH, pocketById } from '../src/geometry/table';
-import { add, len, normalize, scale, sub, vec } from '../src/geometry/vec2';
+import { PLAY_LENGTH } from '../src/geometry/table';
+import { add, len, scale, vec } from '../src/geometry/vec2';
 import { type CushionImpulse, resolveCushion } from '../src/physics/collision';
 import { rollOutSeconds, terminalDrift } from './support/roll-time';
+import { straightShot } from './support/shots';
 
 const linearMeter = (speed: number): number =>
   (speed - MIN_CUE_SPEED) / (MAX_CUE_SPEED - MIN_CUE_SPEED);
@@ -93,31 +94,13 @@ describe('the terminal knee, which is quoted but not published', () => {
 });
 
 describe('the power meter', () => {
-  /**
-   * Straight-in, laid out backwards from a corner pocket so it fits on a
-   * 7-foot table. `potDistance` is object ball to pocket centre, `cueDistance`
-   * cue ball to ghost ball — the two numbers the levels are specified in.
-   */
-  function shot(potDistance: number, cueDistance: number): ReturnType<typeof analyseShot> {
-    const pocket = pocketById('top-right');
-    const toPocket = normalize(vec(2, 1));
-    const object = sub(pocket.center, scale(toPocket, potDistance));
-    const ghost = sub(object, scale(toPocket, 2 * BALL_RADIUS));
-    return analyseShot({
-      cue: sub(ghost, scale(toPocket, cueDistance)),
-      object,
-      pocket,
-      obstacles: [],
-    });
-  }
-
   const strokeFor = (analysis: ReturnType<typeof analyseShot>): number =>
     cueSpeedForPower(recommendedPower(analysis, ROLLING_FRICTION)!);
 
   /** 0.6 m to the pocket, 0.5 m of cue-ball travel — POWER_CURVE_EXPONENT's shot. */
-  const typical = shot(0.6, 0.5);
+  const typical = straightShot(0.6, 0.5);
   /** Level 6's longest: 1.4 m to the pocket, from the far end of its range. */
-  const longest = shot(1.4, 1.5);
+  const longest = straightShot(1.4, 1.5);
 
   test('the layouts are the ones the prose says they are', () => {
     expect(typical.cueToGhost).toBeCloseTo(0.5, 2);
@@ -171,7 +154,7 @@ describe('the power meter', () => {
    * `tests/zz-calibration.test.ts` prints it from: what each level asks of the
    * meter, on normal cloth.
    */
-  test('levels ask 32% to 89% of the meter, the median climbing 38/40/43/50/64%', () => {
+  test('levels ask 32% to 91% of the meter, the median climbing 38/40/44/50/64%', () => {
     const asked = LEVELS.slice(0, 5).map((level) =>
       Array.from({ length: 200 }, (_, seed) => {
         const { layout } = generateShot(level, 50_000 + seed * 7919, {
@@ -181,9 +164,9 @@ describe('the power meter', () => {
       }).sort((a, b) => a - b),
     );
     const median = (sorted: number[]): number => (sorted[99]! + sorted[100]!) / 2;
-    expect(asked.map(median).map((p) => Math.round(p * 100))).toEqual([38, 40, 43, 50, 64]);
+    expect(asked.map(median).map((p) => Math.round(p * 100))).toEqual([38, 40, 44, 50, 64]);
     expect(Math.round(asked[0]![0]! * 100)).toBe(32);
-    expect(Math.round(asked[4]![199]! * 100)).toBe(89);
+    expect(Math.round(asked[4]![199]! * 100)).toBe(91);
   });
 
   /**

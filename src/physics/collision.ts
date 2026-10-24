@@ -49,15 +49,25 @@ export function ballBallTOI(
   return closingCircleTOI(sub(posB, posA), sub(velB, velA), diameter, maxTime);
 }
 
-/** When a ball centre first enters a circle (a pocket's capture area), or undefined. */
-export function ballCircleEntryTOI(
-  pos: Vec2,
-  vel: Vec2,
-  center: Vec2,
-  radius: number,
-  maxTime: number,
-): number | undefined {
-  return closingCircleTOI(sub(center, pos), scale(vel, -1), radius, maxTime);
+/**
+ * When a ball centre first crosses a pocket's drop line into the hole, or
+ * undefined. A centre already past it, within its span, is over the hole now.
+ * Only the span between the facings counts: past either end is rubber, not
+ * hole.
+ */
+export function dropLineTOI(pos: Vec2, vel: Vec2, drop: Segment, maxTime: number): number | undefined {
+  const depth = dot(sub(pos, drop.a), drop.normal);
+  let time = 0;
+  if (depth < 0) {
+    const closing = dot(vel, drop.normal);
+    if (closing <= 0) return undefined;
+    time = -depth / closing;
+    if (time > maxTime) return undefined;
+  }
+  const along = sub(drop.b, drop.a);
+  const at = add(pos, scale(vel, time));
+  const span = dot(sub(at, drop.a), along) / dot(along, along);
+  return span > 0 && span < 1 ? time : undefined;
 }
 
 export interface SegmentHit {

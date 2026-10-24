@@ -19,23 +19,23 @@ import {
   SLOWEST_CLOTH,
   clothRollingFriction,
 } from '../src/constants';
-import { idealAimAngle } from '../src/game/drills';
+import { aimTarget, idealAimAngle } from '../src/game/drills';
 import { generateShot } from '../src/game/generator';
 import { LEVELS } from '../src/game/levels';
 import { cueSpeedForPower, recommendedPower } from '../src/game/power';
 import { ShotSession } from '../src/game/shot-session';
 import {
   POWER_MARGIN,
-  analyseShot,
   cutAngle,
   objectRollFraction,
   objectSpeedAfterCut,
   stoppingDistance,
 } from '../src/geometry/shot';
-import { BALL_RADIUS, PLAY_LENGTH, TABLE, pocketById } from '../src/geometry/table';
-import { len, normalize, scale, sub, vec } from '../src/geometry/vec2';
+import { BALL_RADIUS, PLAY_LENGTH, TABLE } from '../src/geometry/table';
+import { distanceBetweenSegments, distanceToSegment, len, vec } from '../src/geometry/vec2';
 import { type Ball, createBall, simulateToRest, stepWorld } from '../src/physics/world';
 import { rollOutSeconds, terminalDrift } from './support/roll-time';
+import { straightShot } from './support/shots';
 
 const pct = (x: number): string => `${(x * 100).toFixed(1)}%`;
 const linearMeter = (speed: number): number => (speed - MIN_CUE_SPEED) / (MAX_CUE_SPEED - MIN_CUE_SPEED);
@@ -44,15 +44,6 @@ function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
-
-/** Straight-in, laid out backwards from a corner pocket: the documented-figures shot. */
-function straightShot(potDistance: number, cueDistance: number): ReturnType<typeof analyseShot> {
-  const pocket = pocketById('top-right');
-  const toPocket = normalize(vec(2, 1));
-  const object = sub(pocket.center, scale(toPocket, potDistance));
-  const ghost = sub(object, scale(toPocket, 2 * BALL_RADIUS));
-  return analyseShot({ cue: sub(ghost, scale(toPocket, cueDistance)), object, pocket, obstacles: [] });
 }
 
 /** A square hit from a ROLLING cue ball arriving at `arrival`: object travel over cue travel. */
@@ -90,6 +81,52 @@ function fireRecommended(layoutSeed: number, levelIndex: number) {
   for (let i = 0; i < 60 * 40 && session.phase === 'simulating'; i++) session.advance(1 / 60);
   const outcome = session.evaluate()!;
   return { potted: outcome.pottedTarget, duration: outcome.duration, settled: outcome.settled, power };
+}
+
+/**
+ * How close a generated layout comes to a pocket's rubber, in centimetres of
+ * daylight between ball and facing: the closest of all, then the fifth
+ * percentile. Below zero, the generator's mouth zones have let a ball or the
+ * cue ball's route into the jaws.
+ */
+function jawClearance(levelIndex: number): { cuePath: number[]; cueStart: number[]; objectStart: number[] } {
+  const level = LEVELS[levelIndex]!;
+  const out = { cuePath: [] as number[], cueStart: [] as number[], objectStart: [] as number[] };
+  for (let seed = 1; seed <= 200; seed++) {
+    const { layout } = generateShot(level, seed, { preferredSide: seed % 2 ? 'left' : 'right' });
+    const ghost = new ShotSession(layout).analysis.ghostCenter;
+    const nearest = (f: (jaw: (typeof TABLE.jaws)[number]) => number): number =>
+      (Math.min(...TABLE.jaws.map(f)) - BALL_RADIUS) * 100;
+    out.cuePath.push(nearest((jaw) => distanceBetweenSegments(layout.cue, ghost, jaw.a, jaw.b)));
+    out.cueStart.push(nearest((jaw) => distanceToSegment(layout.cue, jaw.a, jaw.b)));
+    out.objectStart.push(nearest((jaw) => distanceToSegment(layout.object, jaw.a, jaw.b)));
+  }
+  return out;
+}
+
+/** Scratches and wrong-pocket pots, perfectly aimed, at the recommended power and at a firm 75%. */
+function scratches(levelIndex: number): string {
+  const level = LEVELS[levelIndex]!;
+  const tally = { recommended: [0, 0, 0], firm: [0, 0, 0] };
+  for (let seed = 1; seed <= 200; seed++) {
+    const { layout } = generateShot(level, seed, { preferredSide: seed % 2 ? 'left' : 'right' });
+    for (const stroke of ['recommended', 'firm'] as const) {
+      const session = new ShotSession(layout);
+      session.aimTo(idealAimAngle(layout));
+      session.beginCharge();
+      session.setPower(stroke === 'firm' ? 0.75 : session.recommendedPower!);
+      session.release();
+      for (let i = 0; i < 60 * 40 && session.phase === 'simulating'; i++) session.advance(1 / 60);
+      const outcome = session.evaluate()!;
+      const row = tally[stroke];
+      if (outcome.pottedTarget) row[0]!++;
+      if (outcome.scratch) row[1]!++;
+      if (outcome.pottedWrong) row[2]!++;
+    }
+  }
+  const [rp, rs, rw] = tally.recommended;
+  const [fp, fs, fw] = tally.firm;
+  return `potted ${rp}/${fp}  scratched ${rs}/${fs}  wrong pocket ${rw}/${fw}`;
 }
 
 test.runIf(import.meta.env.MEASURE)('the coupled calibration list', () => {
@@ -142,11 +179,11 @@ test.runIf(import.meta.env.MEASURE)('the coupled calibration list', () => {
     for (let seed = 0; seed < 1500; seed++) {
       const shot = generateShot(level, seed, { preferredSide: seed % 2 === 0 ? 'left' : 'right' });
       if (shot.fromTemplate) fallbacks++;
-      const { cue, object, targetPocket } = shot.layout;
-      const pocket = pocketById(targetPocket);
-      const cut = cutAngle(cue, object, pocket.center);
+      const { cue, object } = shot.layout;
+      const target = aimTarget(shot.layout);
+      const cut = cutAngle(cue, object, target);
       const reach = stoppingDistance(objectSpeedAfterCut(MAX_CUE_SPEED, cut), slowest, objectRollFraction(cut));
-      const asked = Math.hypot(pocket.center.x - object.x, pocket.center.y - object.y) * POWER_MARGIN;
+      const asked = Math.hypot(target.x - object.x, target.y - object.y) * POWER_MARGIN;
       maxCut = Math.max(maxCut, (cut * 180) / Math.PI);
       tightest = Math.min(tightest, reach / asked);
     }
@@ -167,6 +204,24 @@ test.runIf(import.meta.env.MEASURE)('the coupled calibration list', () => {
         `shot median ${median(durations).toFixed(2)} s  longest ${Math.max(...durations).toFixed(2)} s  ` +
         `cut short ${shots.filter((s) => !s.settled).length}`,
     );
+  }
+
+  out.push('== pockets: daylight to the jaws (cm, closest and 5th percentile), 200 layouts per level');
+  for (let index = 0; index < LEVELS.length; index++) {
+    const clearance = jawClearance(index);
+    const fmt = (v: number[]): string => {
+      const sorted = [...v].sort((a, b) => a - b);
+      return `${sorted[0]!.toFixed(1)}, ${sorted[Math.floor(sorted.length * 0.05)]!.toFixed(1)}`;
+    };
+    out.push(
+      `  L${LEVELS[index]!.id} cue path ${fmt(clearance.cuePath)}  cue ball ${fmt(clearance.cueStart)}  ` +
+        `object ball ${fmt(clearance.objectStart)}`,
+    );
+  }
+
+  out.push('== pockets: perfectly aimed, at the recommended power / at 75%, 200 layouts per level');
+  for (let index = 0; index < LEVELS.length; index++) {
+    out.push(`  L${LEVELS[index]!.id} ${scratches(index)}`);
   }
 
   // Half a millimetre from the rail, so the cloth has no time to change the

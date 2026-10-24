@@ -16,7 +16,9 @@ Rev 2 incorporates external review. Key changes: analytic `ShotGeometry` is the 
 
 - Cushions as line segments **with gaps at the six pocket mouths**, plus short angled jaw-facing segments.
 - Pockets as capture circles centered in the mouths (corner ≈ 5.5 cm, side ≈ 5 cm radius — side jaws make the effective opening; constants tunable in one place).
+  *Revised.* Pockets follow WPA section 9: mouths 4.57" (corner) and 5.08" (side), facings cut at 142° and 104°, shelves 1.57" and 0.2". A ball drops when its centre crosses the drop line at the back of the shelf, so it can meet a facing first and rattle. The circles survive as mouth zones that keep layouts clear of the pockets.
 - Legal ball-center bounds, pocket target points (aim reference on the capture circle).
+  *Revised.* The aim reference is the middle of the band of lines from the object ball that reach the drop line without touching rubber, where that middle crosses the drop line (`src/geometry/pocket-window.ts`). For a ball frozen to a rail and sent along it the band is the rail's own line.
 - Physics, shot generator, and Three.js meshes all consume this module — no duplicated dimensions.
 
 ### ShotGeometry — analytic authority
@@ -64,7 +66,7 @@ Evaluated once, at the shot's single terminal transition:
 
 - **Qualifying shot** (drives progression): |aim error| ≤ level tolerance (L1 ≈ 2.0° tapering to ≈ 0.75° at L5; tunable constants).
 - Pot in target pocket = success stat; wrong-pocket pot = non-target note; scratch (cue potted) = flagged, still scored on aim error; no contact = non-qualifying.
-- **Miss distance** = minimum distance of object-ball center to target capture center observed during simulation ("never contacted" when applicable).
+- **Miss distance** = minimum distance of object-ball center to target capture center observed during simulation ("never contacted" when applicable). *Revised:* to the aim point.
 
 ### Shot lifecycle & input
 

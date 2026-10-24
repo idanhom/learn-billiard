@@ -6,11 +6,10 @@ import {
   TABLE,
   isInLegalBounds,
   isInPocketMouth,
-  pocketById,
   pocketOnPath,
 } from '../../src/geometry/table';
 import { dist } from '../../src/geometry/vec2';
-import { idealAimAngle } from '../../src/game/drills';
+import { aimTarget, idealAimAngle } from '../../src/game/drills';
 import { LEVELS, examLevel, levelById } from '../../src/game/levels';
 import { generateShot, layoutViolations } from '../../src/game/generator';
 import { makeRng } from '../../src/game/random';
@@ -127,8 +126,7 @@ describe('generated layouts', () => {
     for (const level of LEVELS) {
       for (let seed = 100; seed < 140; seed++) {
         const { layout } = generateShot(level, seed);
-        const pocket = pocketById(layout.targetPocket);
-        const cut = toDeg(cutAngle(layout.cue, layout.object, pocket.center));
+        const cut = toDeg(cutAngle(layout.cue, layout.object, aimTarget(layout)));
         expect(cut, `level ${level.id} seed ${seed}`).toBeGreaterThanOrEqual(level.cutRange[0] - 1e-6);
         expect(cut, `level ${level.id} seed ${seed}`).toBeLessThanOrEqual(level.cutRange[1] + 1e-6);
       }
@@ -140,8 +138,8 @@ describe('generated layouts', () => {
     for (let seed = 0; seed < 30; seed++) {
       const left = generateShot(level, seed, { preferredSide: 'left' }).layout;
       const right = generateShot(level, seed, { preferredSide: 'right' }).layout;
-      expect(cutSide(left.cue, left.object, pocketById(left.targetPocket).center)).toBe('left');
-      expect(cutSide(right.cue, right.object, pocketById(right.targetPocket).center)).toBe('right');
+      expect(cutSide(left.cue, left.object, aimTarget(left))).toBe('left');
+      expect(cutSide(right.cue, right.object, aimTarget(right))).toBe('right');
     }
   });
 
@@ -217,7 +215,7 @@ describe('shots must actually be playable', () => {
         const { layout } = generateShot(level, seed, {
           preferredSide: seed % 2 === 0 ? 'left' : 'right',
         });
-        const ghost = ghostBallCenter(layout.object, pocketById(layout.targetPocket).center);
+        const ghost = ghostBallCenter(layout.object, aimTarget(layout));
         const swallowed = pocketOnPath(layout.cue, ghost);
         expect(swallowed?.id, `level ${level.id} seed ${seed} loses the cue ball`).toBeUndefined();
       }
@@ -230,8 +228,7 @@ describe('shots must actually be playable', () => {
         const { layout } = generateShot(level, seed, {
           preferredSide: seed % 2 === 0 ? 'left' : 'right',
         });
-        const target = pocketById(layout.targetPocket);
-        const swallowed = pocketOnPath(layout.object, target.center, { ignore: target.id });
+        const swallowed = pocketOnPath(layout.object, aimTarget(layout), { ignore: layout.targetPocket });
         expect(swallowed?.id, `level ${level.id} seed ${seed} drops in the wrong pocket`).toBeUndefined();
       }
     }
@@ -301,7 +298,7 @@ describe('shots must actually be playable', () => {
         preferredSide: seed % 2 === 0 ? 'left' : 'right',
       });
       expect(layoutViolations(layout, level), `L${levelId}-s${seed}`).toEqual([]);
-      const ghost = ghostBallCenter(layout.object, pocketById(layout.targetPocket).center);
+      const ghost = ghostBallCenter(layout.object, aimTarget(layout));
       expect(pocketOnPath(layout.cue, ghost)).toBeUndefined();
       expect(isInPocketMouth(layout.cue)).toBe(false);
     }

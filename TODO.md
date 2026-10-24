@@ -28,20 +28,23 @@ generation validates against), as the ratio of the feasibility limit to the
 distance the layout actually asks for:
 
 ```
-L1 Straight in         max cut  5.0 deg   tightest headroom 15.05x
-L2 Gentle cuts         max cut 20.0 deg   tightest headroom 12.15x
-L3 Half ball           max cut 40.0 deg   tightest headroom  8.25x
-L4 Steep cuts          max cut 60.0 deg   tightest headroom  4.54x
+L1 Straight in         max cut  5.0 deg   tightest headroom 15.17x
+L2 Gentle cuts         max cut 20.0 deg   tightest headroom 12.30x
+L3 Half ball           max cut 40.0 deg   tightest headroom  8.35x
+L4 Steep cuts          max cut 60.0 deg   tightest headroom  4.61x
 L5 Thin cuts           max cut 80.0 deg   tightest headroom  1.01x   <-- binding
-L6 Distance and rails  max cut 45.0 deg   tightest headroom  5.49x
-L7 Exam                max cut 54.8 deg   tightest headroom  4.44x
+L6 Distance and rails  max cut 45.0 deg   tightest headroom  5.33x
+L7 Exam                max cut 54.8 deg   tightest headroom  4.49x
 ```
 
 (`MEASURE=1 npx vitest run tests/zz-calibration.test.ts --reporter=verbose`
 prints this table, seeded. Re-measured when the fast roll step was removed:
 while it stood it cut full-hit reach by 3x on the near-straight levels and
 the slack to a third or a half of this — 4.97x / 4.13x / 3.15x / 2.57x /
-1.00x / 2.10x / 2.10x. Which row binds never changed.)
+1.00x / 2.10x / 2.10x. Re-measured again when the pockets got jaws and the
+ideal line moved to the middle of each pocket's clean band, which shifted
+every row but the binding one by a few percent. Which row binds never
+changed.)
 
 Everywhere but level 5 the check has 4x to 15x of slack and could not change a
 decision if it tried. Level 5 generates right up against the limit, so the

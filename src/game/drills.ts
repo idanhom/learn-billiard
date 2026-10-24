@@ -5,6 +5,7 @@
  * invariants.
  */
 
+import { aimPoint } from '../geometry/pocket-window';
 import { ghostBallCenter } from '../geometry/shot';
 import { type PocketId, pocketById } from '../geometry/table';
 import {
@@ -31,8 +32,9 @@ export interface ShotLayout {
 }
 
 /**
- * Place the cue ball so the shot has exactly `cutDegrees` of cut.
- * Positive cuts the object ball to the left, negative to the right.
+ * Place the cue ball so the shot has exactly `cutDegrees` of cut, measured to
+ * the middle of the pocket's clean band. Positive cuts the object ball to the
+ * left, negative to the right.
  */
 export function layoutWithCut(
   id: string,
@@ -41,7 +43,7 @@ export function layoutWithCut(
   cutDegrees: number,
   cueDistance: number,
 ): ShotLayout {
-  const target = pocketById(targetPocket).center;
+  const target = aimPoint(object, pocketById(targetPocket));
   const departure = normalize(sub(target, object));
   const ghost = ghostBallCenter(object, target);
   const approach = rotate(departure, (-cutDegrees * Math.PI) / 180);
@@ -66,10 +68,14 @@ export const CUT_30_DRILL: ShotLayout = layoutWithCut(
 
 export const SLICE_DRILLS: readonly ShotLayout[] = [STRAIGHT_IN_DRILL, CUT_30_DRILL];
 
+/** Where the object ball is aimed: the middle of its pocket's clean band. */
+export function aimTarget(layout: ShotLayout): Vec2 {
+  return aimPoint(layout.object, pocketById(layout.targetPocket));
+}
+
 /** Direction the cue must travel for a perfect hit, as an angle in radians. */
 export function idealAimAngle(layout: ShotLayout): number {
-  const target = pocketById(layout.targetPocket).center;
-  return angleOf(sub(ghostBallCenter(layout.object, target), layout.cue));
+  return angleOf(sub(ghostBallCenter(layout.object, aimTarget(layout)), layout.cue));
 }
 
 /** How far off the object ball's centre the cue starts, in degrees. */

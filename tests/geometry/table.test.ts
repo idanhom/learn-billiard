@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'vitest';
-import { dot, len, sub, vec } from '../../src/geometry/vec2';
+import { add, dist, dot, len, lerp, normalize, scale, sub, vec } from '../../src/geometry/vec2';
 import {
   BALL_MASS,
   BALL_RADIUS,
   POCKET_IDS,
+  type Pocket,
   TABLE,
   capturingPocket,
   isInLegalBounds,
   isInPocketMouth,
+  isOnShelf,
   pocketById,
   pocketOnPath,
 } from '../../src/geometry/table';
@@ -69,10 +71,56 @@ describe('pockets', () => {
     expect(pocketById('bottom-middle').center).toEqual(vec(0, -halfW));
   });
 
-  test('corner pockets have a wider capture circle than side pockets', () => {
-    expect(pocketById('top-right').captureRadius).toBeGreaterThan(
-      pocketById('top-middle').captureRadius,
-    );
+  /**
+   * WPA Recommended Equipment Specifications, section 9: mouths measured nose
+   * to nose, the cut of the facing through the rubber, and the shelf from the
+   * middle of the mouth to the slate's edge.
+   */
+  test('mouths are the WPA widths: corners 4.5-4.625", sides 5-5.125"', () => {
+    const inches = (pocket: Pocket): number => dist(pocket.noses[0], pocket.noses[1]) / 0.0254;
+    for (const pocket of TABLE.pockets) {
+      const [low, high] = pocket.kind === 'corner' ? [4.5, 4.625] : [5, 5.125];
+      expect(inches(pocket), pocket.id).toBeGreaterThanOrEqual(low);
+      expect(inches(pocket), pocket.id).toBeLessThanOrEqual(high);
+    }
+  });
+
+  test('facings are cut at the WPA angles: 142 degrees at a corner, 104 at a side', () => {
+    TABLE.jaws.forEach((jaw, i) => {
+      const rail = TABLE.rails[Math.floor(i / 2)]!;
+      // Back along the cushion's face from the nose, against out along the
+      // facing: the angle the rubber makes at the lip.
+      const back = normalize(sub(jaw.a === rail.a ? rail.b : rail.a, jaw.a));
+      const facing = normalize(sub(jaw.b, jaw.a));
+      const cut = (Math.acos(dot(back, facing)) * 180) / Math.PI;
+      const kind = TABLE.pockets.find((p) => p.noses.some((n) => dist(n, jaw.a) < 1e-12))!.kind;
+      expect(cut, `jaw ${i}`).toBeCloseTo(kind === 'corner' ? 142 : 104, 9);
+    });
+  });
+
+  test('shelves are inside the WPA ranges: corners 1-2.25", sides 0-0.375"', () => {
+    for (const pocket of TABLE.pockets) {
+      const mouth = lerp(pocket.noses[0], pocket.noses[1], 0.5);
+      const shelf = dot(sub(pocket.drop.a, mouth), pocket.drop.normal) / 0.0254;
+      expect(dot(sub(pocket.drop.b, mouth), pocket.drop.normal) / 0.0254).toBeCloseTo(shelf, 9);
+      const [low, high] = pocket.kind === 'corner' ? [1, 2.25] : [0, 0.375];
+      expect(shelf, pocket.id).toBeGreaterThanOrEqual(low);
+      expect(shelf, pocket.id).toBeLessThanOrEqual(high);
+    }
+  });
+
+  test('the drop line runs facing to facing, square to the mouth, its normal into the hole', () => {
+    for (const pocket of TABLE.pockets) {
+      const mouth = sub(pocket.noses[1], pocket.noses[0]);
+      expect(dot(pocket.drop.normal, mouth)).toBeCloseTo(0, 12);
+      expect(dot(pocket.drop.normal, lerp(pocket.noses[0], pocket.noses[1], 0.5))).toBeGreaterThan(0);
+      expect(dot(sub(pocket.drop.b, pocket.drop.a), pocket.drop.normal)).toBeCloseTo(0, 12);
+      const facings = TABLE.jaws.filter((jaw) => pocket.noses.some((n) => dist(n, jaw.a) < 1e-12));
+      expect(facings).toHaveLength(2);
+      for (const end of [pocket.drop.a, pocket.drop.b]) {
+        expect(Math.min(...facings.map((f) => distanceToSegment(end, f.a, f.b)))).toBeLessThan(1e-12);
+      }
+    }
   });
 
   test('every pocket has an inward aim direction pointing at the table interior', () => {
@@ -91,10 +139,20 @@ describe('pockets', () => {
     expect(capturingPocket(besideSide)).toBeUndefined();
   });
 
-  test('a ball centred in a pocket mouth is captured by that pocket', () => {
-    expect(capturingPocket(vec(0, TABLE.bounds.maxY))?.id).toBe('top-middle');
-    const corner = vec(TABLE.playLength / 2 - BALL_RADIUS, TABLE.playWidth / 2 - BALL_RADIUS);
-    expect(capturingPocket(corner)?.id).toBe('top-right');
+  /**
+   * The mouth is not the hole. A ball centred in the side mouth, or hard in the
+   * corner of the legal rectangle, is still on slate; it is captured once its
+   * centre is past the drop line, and not before.
+   */
+  test('a ball in a mouth is not potted until its centre is past the drop line', () => {
+    expect(capturingPocket(vec(0, TABLE.bounds.maxY))).toBeUndefined();
+    const corner = vec(TABLE.bounds.maxX, TABLE.bounds.maxY);
+    expect(capturingPocket(corner)).toBeUndefined();
+    for (const pocket of TABLE.pockets) {
+      const middle = lerp(pocket.drop.a, pocket.drop.b, 0.5);
+      expect(capturingPocket(add(middle, scale(pocket.drop.normal, -1e-6)))).toBeUndefined();
+      expect(capturingPocket(add(middle, scale(pocket.drop.normal, 1e-6)))?.id).toBe(pocket.id);
+    }
   });
 
   test('a ball that has escaped the playing surface is captured by the nearest pocket', () => {
@@ -104,11 +162,12 @@ describe('pockets', () => {
 });
 
 describe('pocket mouths', () => {
-  test('a ball wedged in the legal-bounds corner is already in the pocket', () => {
+  test('a ball wedged in the legal-bounds corner is already in the jaws', () => {
     // The bounds rectangle alone says this is a legal place to put a ball, but
-    // the solver would pot it on the first tick.
+    // it is through the mouth and out on the shelf.
     const corner = vec(TABLE.bounds.maxX, TABLE.bounds.maxY);
     expect(isInLegalBounds(corner)).toBe(true);
+    expect(isOnShelf(corner)).toBe(true);
     expect(isInPocketMouth(corner)).toBe(true);
   });
 
@@ -118,21 +177,31 @@ describe('pocket mouths', () => {
   });
 
   test('a margin widens the mouth, for keeping layouts clear of the edge', () => {
-    // 7.9 cm from the side pocket centre: outside its 5 cm capture circle, but
+    // 7.9 cm from the side pocket centre: outside its 5 cm mouth zone, but
     // close enough that a generator ought to leave it alone.
     const nearSide = vec(0, TABLE.bounds.maxY - 0.05);
     expect(isInPocketMouth(nearSide)).toBe(false);
     expect(isInPocketMouth(nearSide, 0.04)).toBe(true);
   });
 
-  test('agrees with the pocket the solver would actually use', () => {
+  /**
+   * Anywhere a ball's centre could sit on a shelf, clear of both facings, is
+   * inside the mouth zone once the generator's margin of half a ball is added,
+   * so no layout ever starts a ball in the jaws.
+   */
+  test('the mouth zone, with half a ball of margin, covers every place on a shelf', () => {
     for (const pocket of TABLE.pockets) {
-      const justInside = vec(
-        pocket.center.x + pocket.inward.x * (pocket.captureRadius - 1e-4),
-        pocket.center.y + pocket.inward.y * (pocket.captureRadius - 1e-4),
-      );
-      expect(isInPocketMouth(justInside)).toBe(true);
-      expect(capturingPocket(justInside)?.id).toBe(pocket.id);
+      const mouth = lerp(pocket.noses[0], pocket.noses[1], 0.5);
+      for (let depth = 0; depth <= 1; depth += 0.1) {
+        for (let across = 0; across <= 1; across += 0.05) {
+          const left = lerp(pocket.noses[0], pocket.drop.a, depth);
+          const right = lerp(pocket.noses[1], pocket.drop.b, depth);
+          const point = lerp(left, right, across);
+          if (!isOnShelf(point) || dist(point, left) < BALL_RADIUS || dist(point, right) < BALL_RADIUS) continue;
+          expect(isInPocketMouth(point, BALL_RADIUS / 2), `${pocket.id} ${JSON.stringify(point)}`).toBe(true);
+        }
+      }
+      expect(dist(mouth, pocket.center)).toBeLessThan(pocket.mouthRadius + BALL_RADIUS / 2);
     }
   });
 });
@@ -205,7 +274,7 @@ describe('cushions', () => {
     for (const pocket of TABLE.pockets) {
       for (const rail of TABLE.rails) {
         expect(distanceToSegment(pocket.center, rail.a, rail.b)).toBeGreaterThan(
-          pocket.captureRadius,
+          pocket.mouthRadius,
         );
       }
     }

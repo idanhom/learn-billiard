@@ -32,7 +32,7 @@ import {
   createBall,
   stepWorld,
 } from '../physics/world';
-import { type ShotLayout, startingAimAngle } from './drills';
+import { type ShotLayout, aimTarget, startingAimAngle } from './drills';
 import { cueSpeedForPower, recommendedPower as recommendedPowerFor } from './power';
 
 export type ShotPhase = 'aiming' | 'charging' | 'simulating' | 'settled' | 'evaluated';
@@ -108,9 +108,11 @@ export class ShotSession {
   #outcome: ShotOutcome | undefined;
   #settled = false;
   #cloth: ClothPreset;
+  readonly #target: Vec2;
 
   constructor(layout: ShotLayout, options: ShotSessionOptions = {}) {
     this.layout = layout;
+    this.#target = aimTarget(layout);
     this.toleranceDegrees = options.toleranceDegrees ?? 2;
     this.#cloth = options.cloth ?? DEFAULT_CLOTH;
     this.#aimAngle = startingAimAngle(layout, options.aimSeed ?? 0);
@@ -206,8 +208,9 @@ export class ShotSession {
     );
   }
 
-  get targetPocketCenter(): Vec2 {
-    return pocketById(this.layout.targetPocket).center;
+  /** Where the object ball is aimed: the middle of its pocket's clean band. */
+  get target(): Vec2 {
+    return this.#target;
   }
 
   /** The teaching geometry for this layout: ghost ball, cut angle, reachability. */
@@ -225,7 +228,7 @@ export class ShotSession {
     return aimError(
       this.layout.cue,
       this.layout.object,
-      this.targetPocketCenter,
+      this.#target,
       fromAngle(this.#aimAngle),
     );
   }
@@ -319,7 +322,7 @@ export class ShotSession {
     if (this.#phase !== 'settled') return undefined;
     this.#phase = 'evaluated';
 
-    const target = this.targetPocketCenter;
+    const target = this.#target;
     const error = aimError(this.layout.cue, this.layout.object, target, fromAngle(this.#aimAngle));
     const objectPocket = this.objectBall.potted ? this.objectBall.pocket : undefined;
 
@@ -349,7 +352,7 @@ export class ShotSession {
   }
 
   #recordMissDistance(): void {
-    const d = dist(this.objectBall.pos, this.targetPocketCenter);
+    const d = dist(this.objectBall.pos, this.#target);
     if (d < this.#minDistanceToTarget) this.#minDistanceToTarget = d;
   }
 }

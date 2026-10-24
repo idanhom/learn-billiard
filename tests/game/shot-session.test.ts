@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 import { MAX_CUE_SPEED, MIN_CUE_SPEED } from '../../src/constants';
-import { idealAimDirection } from '../../src/geometry/shot';
 import { pocketById } from '../../src/geometry/table';
 import { angleOf, fromAngle, len, signedAngleBetween, sub, vec } from '../../src/geometry/vec2';
 import { FAST_FORWARD, ShotSession } from '../../src/game/shot-session';
@@ -19,9 +18,7 @@ import { LEVELS, levelById } from '../../src/game/levels';
 const deg = (d: number) => (d * Math.PI) / 180;
 
 function idealAngle(layout = STRAIGHT_IN_DRILL): number {
-  return angleOf(
-    idealAimDirection(layout.cue, layout.object, pocketById(layout.targetPocket).center),
-  );
+  return idealAimAngle(layout);
 }
 
 /** Play a whole shot at the given aim and power, and return the outcome. */
@@ -297,7 +294,7 @@ describe('the outcome contract', () => {
 
   test('reports how close the object ball came to the pocket', () => {
     const missed = play(STRAIGHT_IN_DRILL, deg(1.5), 0.5, 0.5);
-    const capture = pocketById(STRAIGHT_IN_DRILL.targetPocket).captureRadius;
+    const capture = pocketById(STRAIGHT_IN_DRILL.targetPocket).mouthRadius;
     expect(missed!.pottedTarget).toBe(false);
     expect(missed!.missDistance).toBeGreaterThan(capture);
     expect(missed!.missDistance).toBeLessThan(0.5);
@@ -311,7 +308,7 @@ describe('the outcome contract', () => {
 
   test('a potted shot has a miss distance inside the pocket', () => {
     const potted = play(STRAIGHT_IN_DRILL, 0, 0.5, 2);
-    const capture = pocketById(STRAIGHT_IN_DRILL.targetPocket).captureRadius;
+    const capture = pocketById(STRAIGHT_IN_DRILL.targetPocket).mouthRadius;
     // The solver freezes a potted ball at the instant its centre crosses the
     // capture circle, so this lands exactly on the radius and which side of it
     // the last bit lands is pure floating point.
@@ -351,17 +348,19 @@ describe('the outcome contract', () => {
   });
 
   test('a pot in the wrong pocket is noted and does not count as the target pot', () => {
-    const layout = { id: 'wrong-pocket', cue: vec(-0.4, 0.1), object: vec(0.1, 0.33), targetPocket: 'top-right' } as const;
-    let found: ReturnType<ShotSession['evaluate']>;
-    // A firm stroke, not the usual half-meter one: the object ball has to still
-    // be moving when it arrives somewhere it was never aimed.
-    for (let d = -40; d <= 40 && !found; d += 0.5) {
-      const outcome = play(layout, deg(d), 0.8, 2);
-      if (outcome?.objectPocket && outcome.objectPocket !== layout.targetPocket) found = outcome;
-    }
-    expect(found, 'no aim in the sweep found another pocket').toBeDefined();
-    expect(found!.pottedWrong).toBe(true);
-    expect(found!.pottedTarget).toBe(false);
+    // Laid out straight in to the side pocket, while the brief names the corner.
+    const straight = layoutWithCut('wrong-pocket', vec(0.1, 0.2), 'top-middle', 0, 0.4);
+    const layout = { ...straight, targetPocket: 'top-right' } as const;
+    const session = new ShotSession(layout, { toleranceDegrees: 2 });
+    session.aimTo(idealAimAngle(straight));
+    session.beginCharge();
+    session.setPower(0.5);
+    session.release();
+    runToSettled(session);
+    const outcome = session.evaluate()!;
+    expect(outcome.objectPocket).toBe('top-middle');
+    expect(outcome.pottedWrong).toBe(true);
+    expect(outcome.pottedTarget).toBe(false);
   });
 });
 

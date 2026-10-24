@@ -11,10 +11,11 @@ import {
 } from '../../src/constants';
 import { angleBetween, spinBy } from '../../src/geometry/quat';
 import { rollPhaseDistance, stoppingDistance } from '../../src/geometry/shot';
-import { BALL_RADIUS, TABLE, isInLegalBounds, pocketById } from '../../src/geometry/table';
+import { BALL_RADIUS, TABLE, isOnShelf, pocketById } from '../../src/geometry/table';
 import { type Vec2, add, dist, fromAngle, len, scale, sub, vec } from '../../src/geometry/vec2';
 import { resolveCushion } from '../../src/physics/collision';
 import { lcg } from '../support/random';
+import { isOnTable } from '../support/table';
 import {
   TICK,
   type Ball,
@@ -253,7 +254,7 @@ describe('cushions', () => {
     const fighting = createBall(0, vec(0.4, 0.4), vec(0, 1.2), vec(0, -1.2));
     const result = simulateToRest([fighting], { maxDuration: 30 });
     expect(result.settled).toBe(true);
-    expect(result.balls[0]!.potted || isInLegalBounds(result.balls[0]!.pos, -2e-3)).toBe(true);
+    expect(result.balls[0]!.potted || isOnTable(result.balls[0]!.pos, 2e-3)).toBe(true);
     expectFinite(result.balls[0]!.pos);
     expectFinite(result.balls[0]!.vel);
   });
@@ -268,7 +269,7 @@ describe('cushions', () => {
 
   test('keep the ball on the table', () => {
     const result = simulateToRest([createBall(0, vec(0, 0), vec(2.5, 1.2))]);
-    expect(result.balls[0]!.potted || isInLegalBounds(result.balls[0]!.pos, -1e-3)).toBe(true);
+    expect(result.balls[0]!.potted || isOnTable(result.balls[0]!.pos, 1e-3)).toBe(true);
   });
 
   test('a ball fired the length of the table at full speed never leaves it', () => {
@@ -281,7 +282,7 @@ describe('cushions', () => {
       const vel = fromAngle(random() * Math.PI * 2, MAX_CUE_SPEED);
       const result = simulateToRest([createBall(0, pos, vel)], { maxDuration: 40 });
       const ball = result.balls[0]!;
-      const contained = ball.potted || isInLegalBounds(ball.pos, -2e-3);
+      const contained = ball.potted || isOnTable(ball.pos, 2e-3);
       expect(contained, `escaped from ${JSON.stringify(pos)} at ${JSON.stringify(vel)}`).toBe(true);
       expect(Number.isFinite(ball.pos.x) && Number.isFinite(ball.pos.y)).toBe(true);
     }
@@ -346,10 +347,26 @@ describe('pockets', () => {
     expect(result.events.some((e) => e.type === 'pocket')).toBe(true);
   });
 
-  test('do not take a ball rolling past the mouth along the rail', () => {
-    const start = vec(-0.5, TABLE.bounds.maxY);
-    const result = simulateToRest([createBall(0, start, vec(0.35, 0))]);
-    expect(result.balls[0]!.potted).toBe(false);
+  /**
+   * Frozen to the long rail and rolled along it: past the side pocket, whose
+   * drop line its centre never reaches (it runs a radius in front of the
+   * mouth, and the drop line is half a centimetre behind it), then on down
+   * the rail into the corner without touching rubber. The capture circle that
+   * stood at the side pocket before took it there: 2.9 cm from that pocket's
+   * centre, inside 5.
+   */
+  test('take a ball rolled down the rail in the corner, not the side pocket it passes', () => {
+    const result = simulateToRest([rollingBall(0, vec(-0.5, TABLE.bounds.maxY), vec(1, 0))]);
+    expect(result.balls[0]!.pocket).toBe('top-right');
+    expect(result.events.filter((e) => e.type === 'cushion')).toEqual([]);
+  });
+
+  test('leave a ball that dies on the shelf hanging in the jaws', () => {
+    const result = simulateToRest([rollingBall(0, vec(-0.5, TABLE.bounds.maxY), vec(0.8, 0))]);
+    const ball = result.balls[0]!;
+    expect(ball.potted).toBe(false);
+    expect(ball.pos.x).toBeGreaterThan(0.9);
+    expect(isOnShelf(ball.pos)).toBe(true);
   });
 
   test('a potted ball stops taking part in the simulation', () => {
@@ -777,7 +794,7 @@ describe('the event loop under stress', () => {
       balls = stepWorld(balls).balls;
       expect(overlaps(balls), `tick ${tick}`).toEqual([]);
       for (const ball of balls) {
-        expect(ball.potted || isInLegalBounds(ball.pos, -SLACK), `ball ${ball.id} tick ${tick}`).toBe(true);
+        expect(ball.potted || isOnTable(ball.pos, SLACK), `ball ${ball.id} tick ${tick}`).toBe(true);
       }
     }
     expect(allAtRest(balls)).toBe(true);

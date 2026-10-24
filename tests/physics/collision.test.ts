@@ -4,8 +4,8 @@ import { BALL_RADIUS } from '../../src/geometry/table';
 import { type Vec2, add, angleOf, dot, len, lenSq, normalize, scale, vec } from '../../src/geometry/vec2';
 import {
   ballBallTOI,
-  ballCircleEntryTOI,
   ballSegmentTOI,
+  dropLineTOI,
   resolveBallPair,
   resolveCushion,
 } from '../../src/physics/collision';
@@ -67,18 +67,26 @@ describe('ball-segment time of impact', () => {
   });
 });
 
-describe('pocket entry time', () => {
-  test('finds when the ball centre crosses into the capture circle', () => {
-    const t = ballCircleEntryTOI(vec(0, 0), vec(1, 0), vec(1, 0), 0.05, 10);
-    expect(t).toBeCloseTo(0.95, 9);
+describe('drop line time', () => {
+  // A drop line across x = 1, from y = -0.05 to 0.05, with the hole beyond it.
+  const drop = { a: vec(1, -0.05), b: vec(1, 0.05), normal: vec(1, 0) };
+
+  test('finds when the ball centre crosses into the hole', () => {
+    expect(dropLineTOI(vec(0, 0), vec(2, 0), drop, 10)).toBeCloseTo(0.5, 12);
   });
 
-  test('reports zero when the centre is already inside', () => {
-    expect(ballCircleEntryTOI(vec(0, 0), vec(1, 0), vec(0.01, 0), 0.05, 10)).toBe(0);
+  test('reports zero for a centre already over the hole', () => {
+    expect(dropLineTOI(vec(1.01, 0), vec(-1, 0), drop, 10)).toBe(0);
   });
 
-  test('is undefined when the ball passes the pocket by', () => {
-    expect(ballCircleEntryTOI(vec(0, 0), vec(1, 0), vec(1, 0.5), 0.05, 10)).toBeUndefined();
+  test('is undefined for a ball moving away, or crossing past either end', () => {
+    expect(dropLineTOI(vec(0, 0), vec(-1, 0), drop, 10)).toBeUndefined();
+    expect(dropLineTOI(vec(0, 0.2), vec(1, 0), drop, 10)).toBeUndefined();
+    expect(dropLineTOI(vec(0, 0), vec(1, 0.2), drop, 10)).toBeUndefined();
+  });
+
+  test('is undefined when the crossing is beyond the time budget', () => {
+    expect(dropLineTOI(vec(0, 0), vec(1, 0), drop, 0.5)).toBeUndefined();
   });
 });
 

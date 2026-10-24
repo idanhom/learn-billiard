@@ -9,6 +9,7 @@ import {
   SLIDING_FRICTION,
   clothRollingFriction,
 } from '../../src/constants';
+import { aimPoint } from '../../src/geometry/pocket-window';
 import { BALL_RADIUS, TABLE, pocketById } from '../../src/geometry/table';
 import {
   aimError,
@@ -426,16 +427,25 @@ describe('analyseShot', () => {
 
   test('a clear shot at a pocket is reachable and carries its geometry', () => {
     const object = vec(0.6, 0.2);
-    const toPocket = normalize(sub(pocket.center, object));
+    const target = aimPoint(object, pocket);
+    const toPocket = normalize(sub(target, object));
     const cue = sub(object, scale(toPocket, 0.5));
     const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
     expect(analysis.reachable).toBe(true);
     expect(analysis.blockers).toEqual([]);
+    expect(analysis.target).toEqual(target);
     expect(toDeg(analysis.cutAngle)).toBeCloseTo(0, 6);
-    expect(analysis.objectToPocket).toBeCloseTo(
-      Math.hypot(pocket.center.x - object.x, pocket.center.y - object.y),
-      9,
-    );
+    expect(analysis.objectToPocket).toBeCloseTo(Math.hypot(target.x - object.x, target.y - object.y), 9);
+  });
+
+  test('a shot with no clean line into the pocket is closed', () => {
+    // Frozen to the top rail, sent along it at the side pocket: the ball's
+    // centre runs a radius in front of the mouth and never reaches the hole.
+    const object = vec(-0.4, TABLE.bounds.maxY);
+    const side = pocketById('top-middle');
+    const analysis = analyseShot({ cue: vec(-0.8, 0.3), object, pocket: side, obstacles: [] });
+    expect(analysis.blockers).toContain('pocket-closed');
+    expect(analysis.target).toEqual(side.center);
   });
 
   test('a ghost ball off the playing surface makes the shot unreachable', () => {
@@ -454,8 +464,8 @@ describe('analyseShot', () => {
 
   test('a cut steeper than the physical limit is rejected', () => {
     const object = vec(0.59, 0.44);
-    const departure = normalize(sub(pocket.center, object));
-    const ghost = ghostBallCenter(object, pocket.center);
+    const departure = normalize(sub(aimPoint(object, pocket), object));
+    const ghost = ghostBallCenter(object, aimPoint(object, pocket));
     // Approach the ghost 87 degrees off the object's departure line.
     const cue = add(ghost, scale(rotate(departure, deg(-93)), 0.3));
     const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
@@ -484,8 +494,8 @@ describe('analyseShot', () => {
 
   test('a thin cut the length of the table is flagged as underpowered', () => {
     const object = vec(-0.85, 0.4);
-    const departure = normalize(sub(pocket.center, object));
-    const ghost = ghostBallCenter(object, pocket.center);
+    const departure = normalize(sub(aimPoint(object, pocket), object));
+    const ghost = ghostBallCenter(object, aimPoint(object, pocket));
     // 84 degrees: inside the steepness limit, but too thin to carry that far.
     const cue = add(ghost, scale(rotate(departure, deg(-96)), 0.3));
     const analysis = analyseShot({ cue, object, pocket, obstacles: [] });
