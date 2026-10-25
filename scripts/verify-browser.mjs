@@ -1691,6 +1691,213 @@ const unfit = (p, selector, min) =>
   );
 
 /**
+ * Layout faults on the page as it stands: panels that sit on one another (a
+ * sheet, the At the table panel or a summary card may cover others, a notice
+ * the panels along the top, but nothing covers the toolbar), panels off the
+ * screen, a panel other than the toolbar that scrolls sideways, and anything
+ * that spills out of its panel. Rectangles throughout, since a row that spills
+ * out of the left of its panel leaves `scrollWidth` as it was.
+ */
+const layoutFaults = (p) =>
+  p.evaluate(() => {
+    const OVERLAYS = ['hud-milestone', 'table-panel', 'hud-levels', 'hud-history', 'hud-help'];
+    const shown = (el) => Boolean(el) && getComputedStyle(el).display !== 'none' && el.getClientRects().length > 0;
+    const box = (el) => el.getBoundingClientRect();
+    const panels = [...document.querySelectorAll('#hud > .panel'), document.getElementById('table-panel')].filter(shown);
+    const faults = [];
+    panels.forEach((a, i) =>
+      panels.slice(i + 1).forEach((b) => {
+        const ids = [a.id, b.id];
+        if (!ids.includes('hud-toolbar') && ids.some((id) => OVERLAYS.includes(id))) return;
+        if (ids.includes('hud-notice') && (ids.includes('hud-status') || ids.includes('hud-shot'))) return;
+        const [ra, rb] = [box(a), box(b)];
+        const w = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+        const h = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+        if (w > 1 && h > 1) faults.push(`${a.id} on ${b.id} ${Math.round(w)}x${Math.round(h)}`);
+      }),
+    );
+    for (const el of panels) {
+      const r = box(el);
+      const style = getComputedStyle(el);
+      if (r.left < -1 || r.top < -1 || r.right > window.innerWidth + 1 || r.bottom > window.innerHeight + 1) {
+        faults.push(`${el.id} off the screen`);
+      }
+      // The toolbar scrolls sideways by design, and a dealt sheet's table in its own wrapper.
+      if (el.id === 'hud-toolbar') continue;
+      const [clipX, clipY] = [style.overflowX !== 'visible', style.overflowY !== 'visible'];
+      if (clipX && el.scrollWidth > el.clientWidth + 1 && !el.querySelector('.table-sheet-wrap')) faults.push(`${el.id} scrolls sideways`);
+      const out = [...el.querySelectorAll('*')].find((child) => {
+        if (!shown(child) || child.closest('.table-sheet-wrap')) return false;
+        const c = box(child);
+        if (c.width === 0 && c.height === 0) return false;
+        return (!clipX && (c.left < r.left - 1 || c.right > r.right + 1)) || (!clipY && (c.top < r.top - 1 || c.bottom > r.bottom + 1));
+      });
+      if (out) faults.push(`${out.getAttribute('class') || out.tagName.toLowerCase()} spills out of ${el.id}`);
+    }
+    return faults;
+  });
+
+/** Every level saved at this tier, as a real save would hold it, and the page reloaded onto it. */
+async function seedTier(p, tier) {
+  await p.evaluate((t) => {
+    const levels = Object.fromEntries(
+      Array.from({ length: 23 }, (_, i) => [String(i + 1), { tier: t, completed: false, attempts: 5, qualified: 3, potted: 3 }]),
+    );
+    window.localStorage.setItem('pool-angle-trainer/progress/v1', JSON.stringify({ version: 1, currentLevel: 1, examBest: null, levels }));
+  }, tier);
+  await p.reload({ waitUntil: 'load' });
+  await sleep(900);
+}
+
+/** Play the shot dealt, by the way the level takes one, and wait for it to stop. */
+async function playDealt(p) {
+  await p.evaluate(() => {
+    const s = window.__debug.state();
+    if (s.speed) window.__debug.fireToSpot();
+    else {
+      window.__debug.aimIdeal();
+      window.__debug.fire(0.5);
+    }
+  });
+  await p.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+  await sleep(250);
+}
+
+/**
+ * Every state of the HUD a player meets, walked on one page, with the layout
+ * faults in each: the coaching, every level aiming at tiers 0 and 2 from
+ * behind and overhead, the review and the self-estimate and Details on the
+ * levels that take a shot, the drills, a notice, the sheets and At the table,
+ * and the exam's and the daily set's summary cards.
+ */
+async function walkLayouts(p) {
+  const faults = [];
+  const note = async (state) => {
+    for (const fault of await layoutFaults(p)) faults.push(`${state}: ${fault}`);
+  };
+  const tap = async (selector) => {
+    await p.locator(selector).first().click();
+    await sleep(200);
+  };
+
+  await p.evaluate(() => window.localStorage.clear());
+  await p.reload({ waitUntil: 'load' });
+  await sleep(900);
+  await note('coaching, aim');
+  await p.evaluate(() => window.__debug.aimIdeal());
+  await sleep(150);
+  await note('coaching, strike');
+  await p.evaluate(() => window.__debug.skipCoaching());
+
+  const SHOOT = { 0: [1, 3, 7, 11, 14, 17, 18, 19, 20, 21, 22, 23], 2: [3, 10, 14, 16, 19, 20] };
+  for (const tier of [0, 2]) {
+    await seedTier(p, tier);
+    for (let id = 1; id <= 23; id++) {
+      await p.evaluate((level) => window.__debug.selectLevel(level), id);
+      await sleep(300);
+      const at = `level ${id}, tier ${tier}`;
+      await note(`${at}, aiming`);
+      await p.evaluate(() => window.__debug.setView('overhead'));
+      await sleep(150);
+      await note(`${at}, aiming overhead`);
+      await p.evaluate(() => window.__debug.setView('behind'));
+      if (!SHOOT[tier].includes(id)) continue;
+      await playDealt(p);
+      if ((await p.evaluate(() => window.__debug.state().estimate?.asking)) === true) {
+        await note(`${at}, self-estimate`);
+        await p.evaluate(() => window.__debug.estimate(null));
+        await sleep(150);
+      }
+      await note(`${at}, review`);
+      if ((await p.locator('#hud-report [data-more]').count()) > 0 && (await p.locator('#hud-report [data-more]').isVisible())) {
+        await tap('#hud-report [data-more]');
+        await note(`${at}, review with details`);
+        await tap('#hud-report [data-more]');
+      }
+    }
+  }
+
+  // The drills: level 9's flash and placing, and level 12's prediction.
+  await p.evaluate(() => window.__debug.selectLevel(9));
+  await sleep(300);
+  await note('level 9, flash showing');
+  await sleep(1700);
+  await note('level 9, flash asking');
+  await p.evaluate(() => window.__debug.callDrill('half'));
+  await sleep(150);
+  await note('level 9, flash answered');
+  await p.evaluate(() => window.__debug.next());
+  await sleep(300);
+  await note('level 9, placing asking');
+  await p.evaluate(() => {
+    const ghost = window.__debug.ghost();
+    window.__debug.placeDrill(ghost.x, ghost.y);
+  });
+  await sleep(150);
+  await note('level 9, placing answered');
+  await p.evaluate(() => window.__debug.selectLevel(12));
+  await sleep(300);
+  await note('level 12, asking');
+  await p.evaluate(() => {
+    const ghost = window.__debug.ghost();
+    window.__debug.predictDeparture(ghost.x + 0.3, ghost.y);
+  });
+  await p.waitForFunction(() => window.__debug.state().departure?.stage === 'answered', null, { timeout: 30000 });
+  await sleep(200);
+  await note('level 12, answered');
+
+  // A notice in a review, the sheets, and At the table at its tallest.
+  await p.evaluate(() => window.__debug.selectLevel(1));
+  await sleep(300);
+  await playDealt(p);
+  await p.evaluate(() => window.__debug.toggleAutoNext());
+  await sleep(150);
+  await note('a notice in the review');
+  await p.evaluate(() => window.__debug.toggleAutoNext());
+  for (const sheet of ['levels', 'history', 'help']) {
+    await tap(`.hud-chip[data-action="${sheet}"]`);
+    await note(`the ${sheet} sheet`);
+    await tap(`.hud-chip[data-action="${sheet}"]`);
+  }
+  await tap('.hud-chip[data-action="table"]');
+  for (const tab of ['sheet', 'log', 'cloth', 'limits']) {
+    await tap(`#table-panel [data-tab="${tab}"]`);
+    if (tab === 'sheet') await tap('#table-panel [data-deal]');
+    await note(`At the table, ${tab}`);
+  }
+  await tap('#table-panel [data-close]');
+
+  // The exam and the daily set run to their summary cards. Next mid-shot
+  // plays the rest of a shot out unseen, so a run takes seconds.
+  for (const [level, card] of [
+    [7, 'the exam'],
+    [11, 'the daily set'],
+  ]) {
+    await p.evaluate((id) => window.__debug.selectLevel(id), level);
+    await sleep(300);
+    for (let shot = 0; shot < 12 && !(await p.evaluate(() => window.__debug.state().milestone)); shot++) {
+      await p.evaluate(() => {
+        window.__debug.aimIdeal();
+        window.__debug.fire(0.5);
+        window.__debug.next();
+        if (window.__debug.state().estimate?.asking) window.__debug.estimate(null);
+      });
+      await sleep(150);
+    }
+    await sleep(300);
+    await note(`${card}'s summary card`);
+    if ((await p.locator('#hud-report [data-more]').count()) > 0 && (await p.locator('#hud-report [data-more]').isVisible())) {
+      await tap('#hud-report [data-more]');
+      await note(`${card}'s summary card, with details`);
+      await tap('#hud-report [data-more]');
+    }
+    await p.evaluate(() => window.__debug.continue());
+    await sleep(200);
+  }
+  return faults;
+}
+
+/**
  * The screens where the shot panel grows a row: the overlap picture and the
  * fraction to call at tier 2, the exam, and a position level's tip. Level 3 is
  * seeded at tier 2 through the saved progress, as a real save would hold it.
@@ -2236,6 +2443,32 @@ for (const width of [1280, 900]) {
   await sleep(300);
   const tableClash = await panelClashes(laptop, 'table-panel', ALL_BUT_TOOLBAR);
   check(`touch laptop, ${width} wide: At the table stops above the toolbar`, tableClash.length === 0, tableClash.join());
+  await context.close();
+}
+
+/*
+ * Every state a player meets, on the narrowest phone screen and the shortest:
+ * no panel on another, nothing over the toolbar, nothing out of its panel.
+ * One check for each, naming the first faults found.
+ */
+for (const [name, viewport] of [
+  ['s24-vivaldi', { width: 360, height: 542 }],
+  ['s24-landscape', { width: 780, height: 300 }],
+]) {
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  const walker = await context.newPage();
+  walker.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  walker.on('pageerror', (error) => consoleErrors.push(String(error)));
+  await walker.goto(PAGE_URL, { waitUntil: 'load' });
+  await sleep(900);
+  const faults = await walkLayouts(walker);
+  check(
+    `phone, ${name}: in every state walked, no panel sits on another or spills out of its own`,
+    faults.length === 0,
+    faults.slice(0, 8).join(' | '),
+  );
   await context.close();
 }
 
