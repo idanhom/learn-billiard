@@ -400,10 +400,15 @@ body {
   cursor: ns-resize;
 }
 
+/* Fills from the bottom up, as the finger slides up the track. */
 .hud-strip-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   height: 0;
   border-radius: 8px;
-  background: linear-gradient(180deg, var(--accent), var(--warn));
+  background: linear-gradient(0deg, var(--accent), var(--warn));
 }
 
 .hud-strip-marker {
@@ -411,7 +416,7 @@ body {
   left: -4px;
   right: -4px;
   height: 2px;
-  margin-top: -1px;
+  margin-bottom: -1px;
   border-radius: 1px;
   background: var(--ink);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);

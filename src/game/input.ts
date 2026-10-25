@@ -260,10 +260,21 @@ export interface TouchPowerHandlers {
 }
 
 /**
+ * The power a finger at `clientY` stands for on a strip running from `top` to
+ * `bottom` on screen: none at its bottom, full at its top, and clamped beyond
+ * either end.
+ */
+export function stripPower(clientY: number, top: number, bottom: number): number {
+  const height = bottom - top;
+  if (height <= 0) return 0;
+  return Math.min(1, Math.max(0, (bottom - clientY) / height));
+}
+
+/**
  * Power by touch: a strip down the right edge of the screen, with no power at
- * its top and full power at its bottom. Press it, drag down to the stroke you
- * want, lift to strike. The power follows the finger, so lifting at the target
- * mark plays the marked stroke.
+ * its bottom and full power at its top, like any meter that fills. Press it
+ * low, slide up to the stroke you want, lift to strike. The power follows the
+ * finger, so lifting at the target mark plays the marked stroke.
  *
  * Two ways out without a shot. Slide off the side of the strip and the stroke
  * is called off, exactly like Escape. And a press that never travels
@@ -278,8 +289,7 @@ export function attachTouchPower(strip: HTMLElement, handlers: TouchPowerHandler
 
   const powerAt = (clientY: number): number => {
     const r = strip.getBoundingClientRect();
-    if (r.height <= 0) return 0;
-    return Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    return stripPower(clientY, r.top, r.bottom);
   };
 
   const onDown = (event: PointerEvent): void => {

@@ -374,13 +374,14 @@ export class Hud {
     this.#powerSpeed = power.querySelector('.hud-speed') as HTMLElement;
     this.#powerMarker.style.display = 'none';
 
-    // The same meter, upright, for a thumb: drag down it to charge, lift to
-    // strike. It replaces the bar above wherever the device has touch.
+    // The same meter, upright, for a thumb: it fills from the bottom, so slide
+    // up it to charge and lift to strike. It replaces the bar above wherever
+    // the device has touch.
     const strip = panel(root, 'hud-strip');
     strip.classList.add('interactive');
     strip.innerHTML =
       '<div class="hud-sub hud-strip-speed"></div>' +
-      '<div class="hud-strip-track" aria-label="Power: drag down, lift to strike">' +
+      '<div class="hud-strip-track" aria-label="Power: slide up, lift to strike">' +
       '<div class="hud-strip-fill"></div><div class="hud-strip-marker"></div></div>';
     this.#stripFill = strip.querySelector('.hud-strip-fill') as HTMLElement;
     this.#stripMarker = strip.querySelector('.hud-strip-marker') as HTMLElement;
@@ -424,7 +425,7 @@ export class Hud {
       '<b>F</b> call the fraction &middot; <b>G</b> get down on the line &middot; <b>T</b> at the table &middot; ' +
       '<b>M</b> sound &middot; <b>H</b> hide the panels after a shot</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
-      '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +
+      '<b>&lsaquo; &rsaquo;</b>. <b>Slide up the strip</b> on the right to charge the power, and ' +
       'lift to strike; slide off its side to call the shot off. The buttons along the bottom do ' +
       'everything the keys do, and after a shot <b>Hide</b> clears the table.</div>' +
       // Say plainly what this simulation is not, so nothing learned here comes
@@ -693,7 +694,7 @@ export class Hud {
     this.#renderedMarker = marker;
     for (const [element, side] of [
       [this.#powerMarker, 'left'],
-      [this.#stripMarker, 'top'],
+      [this.#stripMarker, 'bottom'],
     ] as const) {
       element.style.display = marker === '' ? 'none' : '';
       if (marker !== '') element.style[side] = marker;
@@ -1323,7 +1324,7 @@ const COACH_STEPS: Record<Exclude<CoachStep, 'done'>, readonly [number, string]>
   strike: [
     1,
     'That is the line. Now the stroke: <span class="kbd-hint">hold <b>Space</b> and let go</span>' +
-      '<span class="touch-hint">drag down the strip on the right and lift</span> when the meter reaches its ' +
+      '<span class="touch-hint">slide up the strip on the right and lift</span> when the meter reaches its ' +
       'marker.',
   ],
   report: [

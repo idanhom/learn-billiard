@@ -63,9 +63,10 @@ level does too. It does not come back once done.
 | `H` | after a shot, put every panel but the toolbar away to see the table; `H` again brings them back |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
-degree at a time with the `‹` `›` buttons. Power is the strip down the right edge:
-press it, drag down to the stroke you want, and lift to strike. The power
-follows your finger, so lifting at the target mark plays the marked stroke. A
+degree at a time with the `‹` `›` buttons. Power is the strip down the right edge,
+empty at the bottom and full at the top: press it low, slide up to the stroke
+you want, and lift to strike. The power follows your finger, so lifting at the
+target mark plays the marked stroke. A
 tap that does not travel is not a stroke, and sliding off the side of the strip
 calls the shot off.
 

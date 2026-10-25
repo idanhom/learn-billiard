@@ -1660,6 +1660,9 @@ for (const [name, viewport] of [
   ['landscape', { width: 664, height: 390 }],
   ['s24-portrait', { width: 360, height: 660 }],
   ['s24-landscape', { width: 780, height: 300 }],
+  // The same phone in Vivaldi, which keeps a tab strip above the page and a
+  // bar below it: the shortest upright screen the trainer meets.
+  ['s24-vivaldi', { width: 360, height: 542 }],
 ]) {
   const upright = viewport.height > viewport.width;
   const context = await browser.newContext({ viewport, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
@@ -1764,6 +1767,9 @@ for (const [name, viewport] of [
   };
   const track = await phone.locator('.hud-strip-track').boundingBox();
   const midX = track.x + track.width / 2;
+  /** The point on the strip that stands for this share of full power: it fills from the bottom. */
+  const at = (share) => ({ x: midX, y: track.y + track.height * (1 - share) });
+  const low = { x: midX, y: track.y + track.height - 4 };
   const phoneState = () => phone.evaluate(() => window.__debug.state());
   const ready = await phoneState();
 
@@ -1772,7 +1778,7 @@ for (const [name, viewport] of [
   const nudged = ((((await phoneState()).aimAngle - ready.aimAngle) * 180) / Math.PI);
   check(`phone, ${name}: the left aim button nudges a twentieth of a degree`, Math.abs(nudged - 0.05) < 0.002, `${nudged.toFixed(3)} deg`);
 
-  await stroke([{ x: midX, y: track.y + track.height * 0.5 }]);
+  await stroke([at(0.5)]);
   const tapped2 = await phoneState();
   check(
     `phone, ${name}: a tap on the strip is not a stroke`,
@@ -1780,23 +1786,49 @@ for (const [name, viewport] of [
     tapped2.phase,
   );
 
-  await stroke([
-    { x: midX, y: track.y + 4 },
-    { x: midX, y: track.y + track.height * 0.4 },
-    { x: midX - track.width - 80, y: track.y + track.height * 0.4 },
-  ]);
+  await stroke([low, at(0.4), { x: midX - track.width - 80, y: at(0.4).y }]);
   const slid = await phoneState();
   check(`phone, ${name}: sliding off the strip calls the stroke off`, slid.phase === 'aiming', slid.phase);
 
+  // Pressed low, slid up past the stroke and back down to it, and held there
+  // before the lift: the fill grows from the bottom, and the marker stands
+  // where lifting would play the recommended stroke.
   const lift = 0.45;
-  await stroke([
-    { x: midX, y: track.y + 4 },
-    { x: midX, y: track.y + track.height * 0.25 },
-    { x: midX, y: track.y + track.height * lift },
-  ]);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [low] });
+  for (const share of [0.25, 0.7, lift]) {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [at(share)] });
+  }
+  await sleep(150);
+  const held = await phone.evaluate(() => {
+    const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
+    const marker = document.querySelector('.hud-strip-marker');
+    const s = window.__debug.state();
+    return {
+      track: rect('.hud-strip-track'),
+      fill: rect('.hud-strip-fill'),
+      marker: marker.style.display === 'none' ? null : rect('.hud-strip-marker'),
+      power: s.power,
+      recommended: s.guides.powerHint ? s.recommendedPower : null,
+    };
+  });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(150);
   const fired = await phoneState();
   check(
-    `phone, ${name}: dragging down the strip and lifting strikes at the power reached`,
+    `phone, ${name}: while held, the strip fills from its bottom to the finger`,
+    Math.abs(held.fill.bottom - held.track.bottom) <= 1 &&
+      Math.abs(held.fill.height - lift * held.track.height) <= 2 &&
+      Math.abs(held.power - lift) < 0.02,
+    `fill ${held.fill.top.toFixed(0)}-${held.fill.bottom.toFixed(0)} in ${held.track.top.toFixed(0)}-${held.track.bottom.toFixed(0)}, power ${(held.power * 100).toFixed(1)}%`,
+  );
+  const markerAt = held.recommended === null ? null : held.track.bottom - held.recommended * held.track.height;
+  check(
+    `phone, ${name}: the marker stands at the recommended stroke, measured up from the bottom`,
+    markerAt !== null && held.marker !== null && Math.abs((held.marker.top + held.marker.bottom) / 2 - markerAt) <= 1.5,
+    held.marker === null ? 'no marker' : `marker at ${((held.marker.top + held.marker.bottom) / 2).toFixed(1)}, expected ${markerAt?.toFixed(1)}`,
+  );
+  check(
+    `phone, ${name}: sliding up the strip and lifting strikes at the power reached`,
     fired.phase !== 'aiming' && Math.abs(fired.power - lift) < 0.02,
     `${fired.phase} at ${(fired.power * 100).toFixed(1)}%`,
   );
