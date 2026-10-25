@@ -25,7 +25,7 @@ import { headingBetween, headingToRotationY, toWorld } from './coords';
 
 const CLOTH_COLOR = 0x1f6b4a;
 const RAIL_COLOR = 0x2c5f45;
-const FRAME_COLOR = 0x5a3a24;
+export const FRAME_COLOR = 0x5a3a24;
 const CAP_COLOR = 0x6e4529;
 const SIGHT_COLOR = 0xefe8d6;
 const POCKET_COLOR = 0x08110d;

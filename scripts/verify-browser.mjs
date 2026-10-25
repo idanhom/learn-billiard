@@ -201,6 +201,58 @@ check(
 await page.screenshot({ path: `${OUT}camera-stance.png` });
 await page.evaluate(() => window.__debug.setView('behind'));
 
+// The room round the table: there, quieter than the cloth, and cheap. Read
+// from the canvas itself, so the panels over it do not get in the way.
+const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+await sleep(400);
+const behindRoom = await page.evaluate(() => ({
+  top: [0.3, 0.5, 0.7].map((x) => window.__debug.pixel(x, 0.08)),
+  cloth: [[0.4, 0.6], [0.6, 0.6], [0.4, 0.7], [0.6, 0.7]].map(([x, y]) => window.__debug.pixel(x, y)),
+}));
+const clothLuma = Math.max(...behindRoom.cloth.filter(([r, g, b]) => g > r && g > b).map(luma));
+check(
+  'behind: the top of the view is the room, not black, and quieter than the cloth',
+  behindRoom.top.every((p) => luma(p) > 10 && luma(p) < clothLuma),
+  `top ${behindRoom.top.map((p) => luma(p).toFixed(0)).join('/')}, cloth ${clothLuma.toFixed(0)}`,
+);
+await page.screenshot({ path: `${OUT}room-behind.png` });
+
+await page.evaluate(() => window.__debug.setView('overhead'));
+await sleep(400);
+const floorSeen = await page.evaluate(() => [[0.04, 0.5], [0.96, 0.5]].map(([x, y]) => window.__debug.pixel(x, y)));
+check(
+  'overhead: the floor shows outside the frame',
+  floorSeen.every((p) => luma(p) > 10),
+  floorSeen.map((p) => luma(p).toFixed(0)).join('/'),
+);
+await page.screenshot({ path: `${OUT}room-overhead.png` });
+
+await page.evaluate(() => window.__debug.setView('stance'));
+await sleep(400);
+await page.screenshot({ path: `${OUT}room-stance.png` });
+await page.evaluate(() => window.__debug.setView('behind'));
+await sleep(300);
+
+// Timing is printed, not asserted: software rendering is too noisy to hold to a number.
+const roomCost = await page.evaluate(async () => {
+  const frames = () => new Promise((resolve) => setTimeout(resolve, 200));
+  window.__debug.setRoom(false);
+  await frames();
+  const off = { ...window.__debug.renderInfo(), ms: window.__debug.timeRenders(120) };
+  window.__debug.setRoom(true);
+  await frames();
+  const on = { ...window.__debug.renderInfo(), ms: window.__debug.timeRenders(120) };
+  return { off, on, room: window.__debug.state().room };
+});
+check(
+  'the room costs at most 4 draw calls',
+  roomCost.room.visible && roomCost.on.calls > roomCost.off.calls && roomCost.on.calls - roomCost.off.calls <= 4,
+  `${roomCost.off.calls} -> ${roomCost.on.calls} calls, ${roomCost.off.triangles} -> ${roomCost.on.triangles} triangles`,
+);
+console.log(
+  `      frame without the room ${roomCost.off.ms.toFixed(2)} ms, with it ${roomCost.on.ms.toFixed(2)} ms (120 frames); baked in ${roomCost.on.bake.toFixed(1)} ms`,
+);
+
 const canvasPixels = await page.evaluate(() => {
   const canvas = document.getElementById('game');
   return { width: canvas.width, height: canvas.height };
@@ -1465,6 +1517,15 @@ for (const [orientation, viewport] of [
   await phone.goto(PAGE_URL, { waitUntil: 'load' });
   await sleep(900);
   await skipCoaching(phone);
+
+  if (orientation === 'portrait') {
+    const upper = await phone.evaluate(() => [0.25, 0.5, 0.75].map((x) => window.__debug.pixel(x, 0.3)));
+    check(
+      'phone, portrait: the upper half is the room, not black',
+      upper.every((p) => luma(p) > 10),
+      upper.map((p) => luma(p).toFixed(0)).join('/'),
+    );
+  }
 
   const layout = await phone.evaluate(() => {
     const screen = { w: window.innerWidth, h: window.innerHeight };

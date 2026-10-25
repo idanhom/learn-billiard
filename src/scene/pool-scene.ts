@@ -1,5 +1,5 @@
 /**
- * Rendering: table, balls, cue stick, camera rig.
+ * Rendering: table, the room round it, balls, cue stick, camera rig.
  *
  * Knows nothing about rules or progression — it is handed positions and draws
  * them. The device pixel ratio is capped because this runs on a Raspberry Pi
@@ -33,6 +33,7 @@ import { Trails } from './trails';
 import { ZoneMarker } from './zone';
 import { STANCE_BACK, STANCE_EYE_HEIGHT, stanceFraming } from './stance';
 import { FRAME_MARGIN, buildTable } from './table-mesh';
+import { Room, bedGain } from './room';
 
 export type CameraView = 'behind' | 'overhead' | 'stance';
 
@@ -43,6 +44,8 @@ const MAX_PIXEL_RATIO = 1.5;
 const CUE_LENGTH = 1.35;
 const CUE_GAP = 0.02;
 const CUE_MAX_PULLBACK = 0.28;
+/** Cue ball centre to the butt of the cue, drawn back as far as it goes. */
+export const CUE_REACH = CUE_GAP + BALL_RADIUS + CUE_MAX_PULLBACK + CUE_LENGTH;
 
 /** Behind-the-cue framing. The camera backs off on longer shots so the object
  * ball stays in view instead of vanishing over the horizon. */
@@ -56,6 +59,11 @@ const VIEW_HEIGHT_PER_METRE = 0.16;
  * the ease takes the same wall-clock time on a Pi at 30 fps as at 60.
  */
 const VIEW_SMOOTHING_RATE = 15;
+
+/** How far behind the cue ball the behind view stands for a shot reaching `reach` metres ahead. */
+export function behindBack(reach: number): number {
+  return VIEW_MIN_BACK + reach * VIEW_BACK_PER_METRE;
+}
 
 /**
  * Vertical field of view, in degrees, on a screen wider than it is tall. A
@@ -102,6 +110,7 @@ export class PoolScene {
   readonly guides = new Guides();
   readonly trails = new Trails();
   readonly zone = new ZoneMarker();
+  readonly room: Room;
 
   readonly #renderer: WebGLRenderer;
   readonly #camera = new PerspectiveCamera(52, 1, 0.05, 60);
@@ -158,7 +167,13 @@ export class PoolScene {
     fill.position.set(-1.2, 1.6, -1.4);
     this.scene.add(fill);
 
-    this.scene.add(new AmbientLight(0xdfe8ff, 1.35));
+    const ambient = new AmbientLight(0xdfe8ff, 1.35);
+    this.scene.add(ambient);
+
+    // The room is unlit, its light baked against what these give the bed.
+    this.room = new Room(bedGain([key, fill, ambient]));
+    this.scene.add(this.room.group);
+    this.#renderer.setClearColor(this.room.backdrop);
 
     this.#cue = buildCue();
     this.scene.add(this.#cue);
@@ -235,6 +250,42 @@ export class PoolScene {
     this.#placeCue(cuePos, state);
     this.#placeCamera(cuePos, state);
     this.#renderer.render(this.scene, this.#camera);
+  }
+
+  /** What the last frame cost the GPU: draw calls and triangles, the shadow pass included. */
+  get renderInfo(): { readonly calls: number; readonly triangles: number } {
+    const { calls, triangles } = this.#renderer.info.render;
+    return { calls, triangles };
+  }
+
+  /**
+   * The colour at a point of the canvas, `xFrac` across and `yFrac` down, as
+   * 0-255 sRGB. Draws the last frame again first: the drawing buffer is not
+   * kept once a frame is shown.
+   */
+  sample(xFrac: number, yFrac: number): [number, number, number] {
+    this.#renderer.render(this.scene, this.#camera);
+    const gl = this.#renderer.getContext();
+    const x = Math.min(gl.drawingBufferWidth - 1, Math.floor(xFrac * gl.drawingBufferWidth));
+    const y = Math.min(gl.drawingBufferHeight - 1, Math.floor((1 - yFrac) * gl.drawingBufferHeight));
+    const pixel = new Uint8Array(4);
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    return [pixel[0]!, pixel[1]!, pixel[2]!];
+  }
+
+  /**
+   * Draws the last frame `count` times and waits for the GPU: milliseconds per
+   * frame. It waits by reading a pixel back, since Chromium's `finish` returns
+   * without waiting for its GPU process.
+   */
+  timeRenders(count: number): number {
+    const gl = this.#renderer.getContext();
+    const pixel = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    const started = performance.now();
+    for (let i = 0; i < count; i++) this.#renderer.render(this.scene, this.#camera);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    return (performance.now() - started) / count;
   }
 
   dispose(): void {
@@ -388,9 +439,7 @@ export class PoolScene {
     const origin = writeWorld(this.#origin, cuePos, 0);
     const reach = Math.max(0, state.shotLength);
 
-    this.#desiredPosition
-      .copy(origin)
-      .addScaledVector(direction, -(VIEW_MIN_BACK + reach * VIEW_BACK_PER_METRE));
+    this.#desiredPosition.copy(origin).addScaledVector(direction, -behindBack(reach));
     this.#desiredPosition.y += VIEW_MIN_HEIGHT + reach * VIEW_HEIGHT_PER_METRE;
 
     this.#desiredTarget

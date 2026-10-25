@@ -1094,6 +1094,12 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     },
     resetProgress,
     setView: (view: CameraView) => scene.setView(view),
+    setRoom: (visible: boolean) => {
+      scene.room.group.visible = visible;
+    },
+    renderInfo: () => ({ ...scene.renderInfo, bake: scene.room.bakeMilliseconds }),
+    pixel: (x: number, y: number) => scene.sample(x, y),
+    timeRenders: (count: number) => scene.timeRenders(count),
     frameCost: () => ({
       samples: frameCost.samples,
       mean: frameCost.samples === 0 ? 0 : frameCost.total / frameCost.samples,
@@ -1118,6 +1124,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       })),
       view: scene.view,
       fieldOfView: scene.fieldOfView,
+      room: { visible: scene.room.group.visible },
       viewingDistance: settings.viewingDistance,
       routine: routine ? { down: routine.down, reAims: routine.reAims } : null,
       routineLog,
