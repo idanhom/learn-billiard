@@ -46,7 +46,7 @@ export const SLIDING_FRICTION = 0.2;
  * cut would not sail — and 0.022 x 10 is more than `SLIDING_FRICTION`, which no
  * cloth can do: a ball cannot shed speed faster rolling than skidding. It is
  * gone. The cue ball now runs as far as this coefficient says, and the shot
- * fast-forwards once the object ball's fate is settled instead.
+ * plays it out in real time.
  *
  * Whether 0.022 is too far the other way is open: nobody has timed it against a
  * real table. Do that — roll a ball the length of your table so it just dies at

@@ -57,7 +57,7 @@ values that go stale silently:
 - Rolling resistance stays below `SLIDING_FRICTION` at every speed: a ball
   cannot shed speed faster rolling than skidding. A fast step that took ten
   times 0.022 above 1 m/s broke that and was removed; long cue-ball run-outs
-  are the session's fast-forward to handle, not the cloth's.
+  play out in real time, and shortening them is not the cloth's job.
 - The ball-to-ball friction is `contactFriction`, Alciatore's TP A.14 fit to
   Marlow's measurements, and none of its three constants is tuned. At an
   ordinary pot's contact speed it puts the square-hit travel ratio at 7.2x,

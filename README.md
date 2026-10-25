@@ -151,8 +151,7 @@ watch a shot for, not what the shot does — quarter speed replays identical
 physics, collision for collision. The browser verification asserts exactly this:
 the same shot at 0.25x takes several times as long on the clock as at 1x, and
 differs in simulated duration, in outcome and in the final orientation of every
-ball by nothing at all. (Not quite four times: once the object ball has dropped
-or stopped, the rest of a shot fast-forwards at either speed.)
+ball by nothing at all.
 
 The setting is remembered between sessions, stored separately from your
 progress so a bad preference can never cost you a level.

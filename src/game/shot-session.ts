@@ -48,17 +48,6 @@ export const MAX_FRAME_DT = 0.1;
 /** Physics ticks one frame may run, so a slow frame cannot spiral. */
 export const MAX_CATCHUP_TICKS = 30;
 
-/**
- * How much faster a shot plays once the object ball's part in it is over: it
- * has been struck, and it is down or has stopped. Off a thin cut the cue ball
- * keeps nearly all its speed and runs on for seconds and two or three rails
- * after that, which is the part nobody is waiting to see. The ticks are the
- * same ticks, so it is the same shot — only the wall clock changes — and if
- * the cue ball comes back and sets the object ball moving again, the pace
- * drops back to normal with it.
- */
-export const FAST_FORWARD = 4;
-
 /** Ticks between the points of a ball's trail: 60 a second. Every contact adds one as well. */
 const TRAIL_EVERY = 4;
 /** A ball that has moved less than this since its last point adds no new one. */
@@ -252,15 +241,6 @@ export class ShotSession {
     return this.#balls[1]!;
   }
 
-  /** The object ball has been struck, and is now down or stopped. */
-  get objectBallDone(): boolean {
-    const ball = this.objectBall;
-    return (
-      this.#contacted &&
-      (ball.potted || (ball.vel.x === 0 && ball.vel.y === 0 && ball.roll.x === 0 && ball.roll.y === 0))
-    );
-  }
-
   /** Where the object ball is aimed: the middle of its pocket's clean band. */
   get target(): Vec2 {
     return this.#target;
@@ -362,12 +342,15 @@ export class ShotSession {
     return this.#trails;
   }
 
-  /** Run the physics forward by one rendered frame. */
+  /**
+   * Run the physics forward by one rendered frame. At one pace from the stroke
+   * to the last ball stopping: a cue ball that runs on after the pot dies at
+   * its own speed, since how a ball dies is what the speed levels teach.
+   */
   advance(frameSeconds: number): void {
     if (this.#phase !== 'simulating') return;
 
-    const pace = this.objectBallDone ? FAST_FORWARD : 1;
-    this.#accumulator += Math.min(frameSeconds, MAX_FRAME_DT) * pace;
+    this.#accumulator += Math.min(frameSeconds, MAX_FRAME_DT);
     let ticks = 0;
     while (this.#accumulator >= TICK && ticks < MAX_CATCHUP_TICKS) {
       this.#previousBalls = this.#balls.map(cloneBall);
