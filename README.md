@@ -47,6 +47,7 @@ level does too. It does not come back once done.
 |---|---|
 | drag with the left button | aim (hold `Shift` to fine-tune) |
 | `←` / `→` | nudge the aim a twentieth of a degree (hold `Shift` for a whole one) |
+| `↑` / `↓` | move the tip up the ball for follow, or down it for draw (levels 14 to 16) |
 | hold `Space` | charge power, release to strike |
 | `V` | switch between behind the cue, overhead, and down in your stance |
 | `.` | cycle full / half / quarter speed |
@@ -275,6 +276,18 @@ backspin that the cloth has taken it all off at contact, arriving at 1.2 m/s;
 the roll is struck 0.4 of the radius above centre, which rolls from the start.
 As the physics section says, neither rule is exact here or at a table, which
 is the point of saying where the ball goes rather than reciting the rule.
+
+Levels 14 to 16 are about where the cue ball stops, and the only ones where
+the tip moves: `↑` and `↓` (or ▲ ▼ beside the aim buttons on a touch screen)
+take it a tenth of the radius up the ball for follow or down it for draw, as far
+as half the radius either way, past which a real tip miscues. A tip at offset b
+starts the ball spinning at 2.5 (b/R) times its speed, so 0.4 R rolls it from
+the start. Each shot is a straight-in, and counts when it pots the ball and
+leaves the cue ball inside a ring 10 cm across the spot. The stop shot's spot
+is where the cue ball meets the object ball; the follow and draw ladders' spots
+are 20 cm past it or back from it at the first rung and further at each of
+the four, which are the levels' tiers, with the layout leaving room to reach
+them. The guides show the shot throughout; what is tested is the cue ball.
 
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is

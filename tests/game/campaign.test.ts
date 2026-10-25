@@ -787,3 +787,34 @@ describe('a first launch', () => {
     expect(new Campaign(createProgressStore(storage)).isFresh).toBe(false);
   });
 });
+
+describe('the position ladders', () => {
+  test('deal straight-ins with room for the rung\u2019s spot, further at each rung', () => {
+    for (const target of ['follow', 'draw'] as const) {
+      const level = LEVELS.find((l) => l.scoring?.kind === 'position' && l.scoring.target === target)!;
+      const distances: number[] = [];
+      for (const tier of [0, 1, 2, 3] as const) {
+        const subject = resumed(level.id, tier);
+        for (let i = 0; i < 4; i++) {
+          expect(layoutViolations(subject.layout, subject.layoutLevel), `${target} rung ${tier + 1}`).toEqual([]);
+          subject.nextShot();
+        }
+        distances.push(subject.position!.distance);
+        expect(subject.position!.target).toBe(target);
+      }
+      expect(distances).toEqual([...distances].sort((a, b) => a - b));
+      expect(new Set(distances).size).toBe(4);
+    }
+  });
+
+  test('show the shot itself, whatever the rung', () => {
+    const stop = LEVELS.find((l) => l.scoring?.kind === 'position')!;
+    const subject = resumed(stop.id, 3);
+    expect(subject.guides.ghostBall).toBe(true);
+    expect(subject.position).toEqual({ target: 'stop', distance: 0 });
+  });
+
+  test('are not on any other level', () => {
+    expect(campaign().position).toBeUndefined();
+  });
+});

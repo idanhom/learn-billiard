@@ -615,6 +615,41 @@ for (const [levelId, stroke] of [
 await page.evaluate(() => window.__debug.selectLevel(1));
 await sleep(200);
 
+// Position: the stop shot, with the tip moved by the arrows, scored on the spot.
+await page.evaluate(() => window.__debug.selectLevel(14));
+await sleep(200);
+await page.focus('#game');
+await page.keyboard.press('ArrowUp');
+await sleep(100);
+const tipped = await state();
+const shotPanel = await page.textContent('#hud-shot');
+check(
+  'on the stop shot the arrows move the tip, and the panel shows it',
+  tipped.position?.target === 'stop' && tipped.tip === 0.1 && shotPanel.includes('follow: 0.1 R above centre'),
+  `${tipped.tip} ${shotPanel}`,
+);
+check('the status names the rung', (await page.textContent('#hud-status')).includes('Rung 1 of 4'));
+await page.evaluate(() => {
+  window.__debug.changeTip(-4);
+  window.__debug.aimIdeal();
+  window.__debug.fire(0.62);
+});
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const stopShot = await state();
+const stopReport = await page.textContent('#hud-report');
+check(
+  'a stop shot is scored on where the cue ball stopped against the spot',
+  stopShot.tip === -0.3 && stopShot.position?.result !== null && /cm from the spot/.test(stopReport),
+  stopReport,
+);
+await page.screenshot({ path: `${OUT}stop-shot.png` });
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(200);
+await page.focus('#game');
+await page.keyboard.press('ArrowUp');
+await sleep(100);
+check('on an aiming level the tip stays at centre', (await state()).tip === 0);
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {

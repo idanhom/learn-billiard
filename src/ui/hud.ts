@@ -16,6 +16,7 @@ import { FRACTIONS, type FractionName, fractionByName } from '../geometry/fracti
 import type { CutSide } from '../geometry/shot';
 import { ESTIMATES, type Estimate, estimateLabel } from '../game/estimate';
 import type { DepartureResult, Stroke } from '../game/departure';
+import { type PositionResult, type PositionTarget, ZONE_RADIUS } from '../game/position';
 import type { DrillKind, DrillResult } from '../game/perception';
 import type { BandMastery, ExamRun } from '../game/campaign';
 import type { CoachStep } from '../game/coach';
@@ -110,6 +111,14 @@ export interface HudState {
   readonly levelName: string;
   readonly levelDescription: string;
   readonly levels: readonly HudLevelEntry[];
+  /** Where the tip strikes, on the levels where the player moves it. */
+  readonly tip: number | null;
+  /** On a position level: what the shot asks of the cue ball, and how it went. */
+  readonly position: {
+    readonly target: PositionTarget;
+    readonly distance: number;
+    readonly result: PositionResult | null;
+  } | null;
   /** On a level about the cue ball: the prediction, and how it went. */
   readonly departure: {
     readonly stroke: Stroke;
@@ -200,6 +209,7 @@ export interface HudActions {
   onToggleAutoNext(): void;
   onSkipCoaching(): void;
   onToggleContrast(): void;
+  onTip(steps: number): void;
   /** Get down on the line, or stand back up: the commit routine. */
   onGetDown(): void;
   /** The player's read of their own miss, or null to skip it. */
@@ -331,7 +341,13 @@ export class Hud {
     aim.classList.add('interactive');
     aim.innerHTML =
       '<button type="button" class="hud-aim-button" aria-label="Aim a twentieth of a degree left">&lsaquo;</button>' +
-      '<button type="button" class="hud-aim-button" aria-label="Aim a twentieth of a degree right">&rsaquo;</button>';
+      '<button type="button" class="hud-aim-button" aria-label="Aim a twentieth of a degree right">&rsaquo;</button>' +
+      '<button type="button" class="hud-aim-button hud-tip-button" data-tip="1" aria-label="Tip up: follow">&#9650;</button>' +
+      '<button type="button" class="hud-aim-button hud-tip-button" data-tip="-1" aria-label="Tip down: draw">&#9660;</button>';
+    aim.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest('[data-tip]');
+      if (button instanceof HTMLElement) this.#actions.onTip(Number(button.dataset.tip));
+    });
     const [aimLeft, aimRight] = aim.querySelectorAll('button');
     this.touch = {
       power: strip.querySelector('.hud-strip-track') as HTMLElement,
@@ -470,6 +486,7 @@ export class Hud {
   update(state: HudState): void {
     // A perception drill takes no shot, so the controls for one go with it.
     this.#root.classList.toggle('drilling', state.drill !== null || state.departure !== null);
+    this.#root.classList.toggle('tipping', state.tip !== null);
     writeToggle(this.#soundToggle, state.sound);
     writeToggle(this.#autoNextToggle, state.autoNext);
     writeToggle(this.#contrastToggle, state.highContrast);
@@ -517,6 +534,7 @@ export class Hud {
               state.routineLog,
               state.estimate,
               state.autoNextIn,
+              state.position?.result ?? null,
             );
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
@@ -649,7 +667,9 @@ export class Hud {
       ? `Exam &mdash; shot ${Math.min(state.exam.shotsTaken + 1, state.exam.total)} of ${state.exam.total}`
       : state.tierComplete
         ? 'Level complete'
-        : state.drill || state.departure
+        : state.position
+          ? `Rung ${state.tier + 1} of 4`
+          : state.drill || state.departure
           ? `Tier ${state.tier}`
           : `Tier ${state.tier} &mdash; ${TIER_NAMES[state.tier] ?? ''}`;
 
@@ -662,8 +682,10 @@ export class Hud {
       : state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
       : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize} to advance` +
-        (state.drill || state.departure ? '' : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
-    const tally = state.drill || state.departure
+        (state.drill || state.departure || state.position ? '' : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
+    const tally = state.position
+      ? `${state.qualified}/${state.attempts} in the ring &middot; ${state.potted} potted`
+      : state.drill || state.departure
       ? `${state.qualified}/${state.attempts} read right`
       : `${state.qualified}/${state.attempts} on aim &middot; ${state.potted} potted`;
 
@@ -679,6 +701,15 @@ export class Hud {
   }
 
   #renderShot(state: HudState): void {
+    if (state.position) {
+      this.#writeShot(
+        '<div class="hud-label">This shot</div><div class="hud-big">straight in</div>' +
+          `<div class="hud-sub">${positionAsk(state.position.target, state.position.distance)}</div>` +
+          (state.tip === null ? '' : tipPicture(state.tip)) +
+          diamondLine(state.diamonds),
+      );
+      return;
+    }
     if (state.departure) {
       this.#writeShot(
         '<div class="hud-label">This shot</div><div class="hud-big">played for you</div>' +
@@ -868,8 +899,9 @@ function renderReport(
   routine: HudState['routineLog'],
   estimate: HudState['estimate'],
   autoNextIn: number | null,
+  position: PositionResult | null,
 ): string {
-  const verdict = verdictFor(outcome, exam !== undefined);
+  const verdict = position ? positionVerdict(position) : verdictFor(outcome, exam !== undefined);
 
   const used = outcome.pocketUsed;
   const aim = !outcome.contacted
@@ -1021,6 +1053,44 @@ function masteryStrip(bands: readonly BandMastery[]): string {
     })
     .join('');
   return `<div class="hud-label hud-mastery-label">Mastery, unguided</div><div class="hud-mastery">${cells}</div>`;
+}
+
+/** What a position shot asks of the cue ball. */
+function positionAsk(target: PositionTarget, distance: number): string {
+  if (target === 'stop') return 'stop the cue ball where it meets the object ball';
+  const cm = Math.round(distance * 100);
+  return target === 'follow' ? `follow through ${cm} cm to the ring` : `draw back ${cm} cm to the ring`;
+}
+
+/** The cue ball from behind, with the tip on it; and in words. */
+function tipPicture(tip: number): string {
+  const said =
+    tip === 0
+      ? 'centre ball'
+      : tip > 0
+        ? `follow: ${tip.toFixed(1)} R above centre`
+        : `draw: ${(-tip).toFixed(1)} R below centre`;
+  return (
+    '<div class="hud-tip">' +
+    `<svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true"><circle class="hud-tip-ball" cx="14" cy="14" r="12"/>` +
+    `<circle class="hud-tip-dot" cx="14" cy="${(14 - tip * 24).toFixed(1)}" r="3"/></svg>` +
+    `<span>Tip: ${said} <kbd class="kbd-hint">&uarr; &darr;</kbd></span></div>`
+  );
+}
+
+/** A position shot's verdict: the ring, and why not when not. */
+function positionVerdict(result: PositionResult): { readonly text: string; readonly good: boolean; readonly why: string } {
+  const cm = (metres: number): string => `${Math.round(Math.abs(metres) * 100)} cm`;
+  if (result.scratch) return { text: 'Scratch', good: false, why: 'The cue ball went in after it.' };
+  if (!result.potted) return { text: 'Missed the pot', good: false, why: `The cue ball stopped ${cm(result.off)} from the spot.` };
+  if (result.correct) {
+    return { text: 'In the ring', good: true, why: `The cue ball stopped ${cm(result.off)} from the spot, inside ${cm(ZONE_RADIUS)}.` };
+  }
+  const parts = [
+    ...(Math.abs(result.long) >= 0.03 ? [result.long > 0 ? `long by ${cm(result.long)}` : `short by ${cm(result.long)}`] : []),
+    ...(result.wide >= 0.03 ? [`wide by ${cm(result.wide)}`] : []),
+  ];
+  return { text: 'Outside the ring', good: false, why: `The cue ball stopped ${cm(result.off)} from the spot: ${parts.join(', ')}.` };
 }
 
 /** One step of the first-launch coaching, with the way out of it. */

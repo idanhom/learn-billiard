@@ -771,6 +771,30 @@ body {
   }
 }
 
+.hud-tip {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.hud-tip-ball {
+  fill: #f5f3ec;
+  stroke: rgba(0, 0, 0, 0.4);
+}
+
+.hud-tip-dot {
+  fill: var(--bad);
+}
+
+/* The tip moves only on the position levels. */
+:not(.tipping) > #hud-aim .hud-tip-button {
+  display: none;
+}
+
 /* A perception drill takes no shot: no meter, no strip, no aim buttons. */
 .drilling #hud-power,
 .drilling #hud-strip,
@@ -809,7 +833,7 @@ body {
 .hud-level-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   margin: 4px 0 8px;
 }
 
@@ -818,7 +842,7 @@ body {
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 4px 7px;
+  padding: 2px 7px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;

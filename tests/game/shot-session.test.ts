@@ -4,7 +4,7 @@ import { pocketById } from '../../src/geometry/table';
 import { angleOf, fromAngle, len, signedAngleBetween, sub, vec } from '../../src/geometry/vec2';
 import { FAST_FORWARD, ShotSession } from '../../src/game/shot-session';
 import { TICK } from '../../src/physics/world';
-import { cueSpeedForPower } from '../../src/game/power';
+import { cueSpeedForPower, powerForCueSpeed } from '../../src/game/power';
 import {
   CUT_30_DRILL,
   START_AIM_OFFSET_DEGREES,
@@ -611,5 +611,40 @@ describe('the post-shot diagram and the replay', () => {
 
   test('has no trail before the stroke', () => {
     expect(new ShotSession(CUT_30_DRILL).trails).toEqual([]);
+  });
+});
+
+describe('the tip', () => {
+  /** Straight in from half a metre at `speed`, struck `tip` of the radius off centre: where the cue ball ends, along the line from contact. */
+  function after(tip: number, speed: number): number {
+    const layout = layoutWithCut('tip', vec(0.35, 0.15), 'top-right', 0, 0.5);
+    const session = new ShotSession(layout);
+    session.aimTo(idealAimAngle(layout));
+    session.setTip(tip);
+    session.beginCharge();
+    session.setPower(powerForCueSpeed(speed));
+    session.release();
+    runToSettled(session);
+    const ghost = session.analysis.ghostCenter;
+    const line = sub(ghost, layout.cue);
+    const length = len(line);
+    return ((session.cueBall.pos.x - ghost.x) * line.x + (session.cueBall.pos.y - ghost.y) * line.y) / length;
+  }
+
+  test('above centre follows the object ball, below centre draws back, and a little below at pace stops dead', () => {
+    expect(after(0.4, 1.5)).toBeGreaterThan(0.25);
+    expect(after(-0.4, 2.5)).toBeLessThan(-0.25);
+    expect(Math.abs(after(-0.3, 2.5))).toBeLessThan(0.05);
+  });
+
+  test('is held to the miscue limit, and fixed once the cue is away', () => {
+    const session = new ShotSession(STRAIGHT_IN_DRILL);
+    session.setTip(0.9);
+    expect(session.tip).toBe(0.5);
+    session.beginCharge();
+    session.setPower(0.4);
+    session.release();
+    expect(session.setTip(0)).toBe(false);
+    expect(session.tip).toBe(0.5);
   });
 });

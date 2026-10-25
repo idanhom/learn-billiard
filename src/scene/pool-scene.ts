@@ -30,6 +30,7 @@ import { CUE_BALL_NUMBER, ballTexture, companionBallNumber } from './ball-textur
 import { fromWorld, headingToRotationY, writeHeading, writeWorld, writeWorldQuat } from './coords';
 import { Guides } from './guides';
 import { Trails } from './trails';
+import { ZoneMarker } from './zone';
 import { STANCE_BACK, STANCE_EYE_HEIGHT, stanceFraming } from './stance';
 import { FRAME_MARGIN, buildTable } from './table-mesh';
 
@@ -100,6 +101,7 @@ export class PoolScene {
   readonly scene = new Scene();
   readonly guides = new Guides();
   readonly trails = new Trails();
+  readonly zone = new ZoneMarker();
 
   readonly #renderer: WebGLRenderer;
   readonly #camera = new PerspectiveCamera(52, 1, 0.05, 60);
@@ -135,6 +137,7 @@ export class PoolScene {
     this.scene.add(buildTable());
     this.scene.add(this.guides.group);
     this.scene.add(this.trails.group);
+    this.scene.add(this.zone.group);
 
     // One shadow-casting key light, one cheap fill from the far side so the
     // top corners of the table do not fall away into the dark, and ambient to

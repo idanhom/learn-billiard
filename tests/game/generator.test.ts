@@ -46,8 +46,8 @@ describe('the seeded random source', () => {
 });
 
 describe('the curriculum', () => {
-  test('runs the fraction levels, distance and rails, the exam, review, perception, weak angles, the daily set and the cue-ball rules', () => {
-    expect(LEVELS).toHaveLength(13);
+  test('runs the fraction levels, distance and rails, the exam, review, perception, weak angles, the daily set, the cue-ball rules and position', () => {
+    expect(LEVELS).toHaveLength(16);
     expect(LEVELS.slice(0, 5).map((l) => l.fraction)).toEqual(['full', 'three-quarter', 'half', 'quarter', 'eighth']);
     expect(LEVELS[6]!.exam).toBe(true);
     expect(examLevel().id).toBe(7);
@@ -57,6 +57,11 @@ describe('the curriculum', () => {
     expect(LEVELS[10]!.daily).toBe(true);
     expect(LEVELS[11]!.scoring).toMatchObject({ kind: 'departure', stroke: 'stun' });
     expect(LEVELS[12]!.scoring).toMatchObject({ kind: 'departure', stroke: 'roll' });
+    expect(LEVELS.slice(13).map((level) => level.scoring)).toEqual([
+      { kind: 'position', target: 'stop' },
+      { kind: 'position', target: 'follow' },
+      { kind: 'position', target: 'draw' },
+    ]);
     expect(LEVELS.filter((l) => l.exam)).toHaveLength(1);
   });
 

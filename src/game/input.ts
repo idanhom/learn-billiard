@@ -39,6 +39,8 @@ export interface InputHandlers {
   onReplay(): void;
   /** Enter: on to the next shot, once this one is done. Space does the same then, through `onChargeStart`. */
   onAdvance(): void;
+  /** Up and down arrows: move the tip up the ball for follow, or down it for draw, a step at a time. */
+  onTip(steps: number): void;
 }
 
 /**
@@ -127,6 +129,14 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
         if (event.repeat || charging) return;
         charging = true;
         handlers.onChargeStart();
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        handlers.onTip(1);
+        return;
+      case 'ArrowDown':
+        event.preventDefault();
+        handlers.onTip(-1);
         return;
       case 'ArrowLeft':
         event.preventDefault();

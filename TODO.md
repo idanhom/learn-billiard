@@ -33,6 +33,9 @@ L10 Weak angles        max cut 69.9 deg   tightest headroom  1.69x
 L11 Daily set          max cut 67.2 deg   tightest headroom  2.10x
 L12 The 90° rule       max cut 59.9 deg   tightest headroom  3.64x
 L13 The 30° rule       max cut 51.9 deg   tightest headroom  5.48x
+L14 Stop shot          max cut  2.0 deg   tightest headroom 14.70x
+L15 Follow ladder      max cut  2.0 deg   tightest headroom  9.33x
+L16 Draw ladder        max cut  2.0 deg   tightest headroom 18.51x
 ```
 
 (`MEASURE=1 npx vitest run tests/zz-calibration.test.ts --reporter=verbose`

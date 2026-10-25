@@ -6,7 +6,7 @@
  * renderer interpolates between the last two physics states.
  */
 
-import { type ClothPreset, clothRollingFriction } from './constants';
+import { type ClothPreset, MAX_TIP_OFFSET, clothRollingFriction } from './constants';
 import { formatDiamonds } from './geometry/diamonds';
 import { FRACTIONS, type FractionName } from './geometry/fractions';
 import { firstTouch, fullness as fullnessOf } from './geometry/shot';
@@ -21,6 +21,7 @@ import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session
 import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
 import { DepartureDrill, departureOf, strikeFor } from './game/departure';
 import { PerceptionDrill } from './game/perception';
+import { type PositionResult, ZONE_RADIUS, scorePosition, zoneCentre } from './game/position';
 import { potWindow } from './game/pot-window';
 import { COACH_AIM_TOLERANCE, Coach } from './game/coach';
 import { MASTERED_AT, MASTERY_STANDARD, MASTERY_WINDOW } from './game/mastery';
@@ -80,6 +81,7 @@ const hud = new Hud(hudRoot, {
   onReplay: () => startReplay(),
   onToggleAutoNext: () => toggleAutoNext(),
   onSkipCoaching: () => skipCoaching(),
+  onTip: (steps) => changeTip(steps),
   onToggleContrast: () => toggleContrast(),
   returnFocus: () => canvas.focus(),
   onOpenTable: () => tablePanel.toggle(),
@@ -121,6 +123,16 @@ let heard = 0;
 let departure: DepartureDrill | undefined;
 /** The view to go back to after a cue-ball result was shown from overhead. */
 let viewBeforeResult: CameraView | undefined;
+/**
+ * Where the tip strikes, up the ball as a fraction of its radius: the
+ * player's on the position levels, kept from shot to shot there, and centre
+ * everywhere else, where the aim is what is scored.
+ */
+let tip = 0;
+let tipLevel = campaign.level.id;
+const TIP_STEP = 0.1;
+/** On a position level, where the cue ball stopped against the spot. */
+let positionResult: PositionResult | undefined;
 /**
  * The shot just played, being shown again from overhead at a quarter speed:
  * its own session, how much of it has sounded, and the view to go back to.
@@ -209,12 +221,20 @@ const DRILL_ANSWER: GuideVisibility = {
   overlap: false,
 };
 
+/** A position shot as the HUD shows it: what it asks, and how it went. */
+function positionState(): HudState['position'] {
+  const position = campaign.position;
+  if (!position) return null;
+  return { ...position, result: positionResult ?? null };
+}
+
 /** A cue-ball prediction as the HUD shows it. */
 function departureState(): HudState['departure'] {
   if (!departure) return null;
-  const scoring = campaign.level.scoring!;
+  const scoring = campaign.level.scoring;
   const stage = departure.result ? 'answered' : departure.predicted ? 'playing' : 'asking';
-  return { stroke: departure.stroke, stage, result: departure.result ?? null, allowance: scoring.allowance };
+  const allowance = scoring?.kind === 'departure' ? scoring.allowance : 0;
+  return { stroke: departure.stroke, stage, result: departure.result ?? null, allowance };
 }
 
 /** The drill as the HUD shows it: which kind, how far along, and how it went. */
@@ -299,6 +319,12 @@ function startShot(): void {
   placedGhost = undefined;
   heard = 0;
   departure = newDeparture();
+  positionResult = undefined;
+  if (campaign.level.id !== tipLevel) {
+    tip = 0;
+    tipLevel = campaign.level.id;
+  }
+  if (tipAllowed()) session.setTip(tip);
   if (viewBeforeResult) {
     scene.setView(viewBeforeResult);
     viewBeforeResult = undefined;
@@ -313,6 +339,21 @@ function newDrill(): PerceptionDrill | undefined {
   const analysis = session.analysis;
   const window = potWindow(session.layout, settings.cloth, analysis);
   return new PerceptionDrill(kind, session.layout.object, analysis, window, campaign.pocketAllowance, clock());
+}
+
+function tipAllowed(): boolean {
+  return campaign.level.scoring?.kind === 'position';
+}
+
+/** Up and down: the tip a step up the ball for follow, or down it for draw. */
+function changeTip(steps: number): void {
+  if (!tipAllowed()) {
+    announce('Centre ball here: the tip moves on the stop, follow and draw levels.');
+    return;
+  }
+  if (session.phase !== 'aiming') return;
+  tip = Math.round(Math.min(MAX_TIP_OFFSET, Math.max(-MAX_TIP_OFFSET, tip + steps * TIP_STEP)) * 10) / 10;
+  session.setTip(tip);
 }
 
 /** On a level about the cue ball, a prediction to make for the layout in play. */
@@ -468,9 +509,17 @@ function recordOutcome(outcome: ShotOutcome): void {
   if (departure) return recordDeparture(outcome, departure);
   evaluations++;
   const level = campaign.level;
+  // On a position level the shot is scored on the pot and where the cue ball stopped.
+  const position = campaign.position;
+  if (position) {
+    const { cue } = session.layout;
+    const ghost = session.analysis.ghostCenter;
+    const spot = zoneCentre(position.target, position.distance, cue, ghost);
+    positionResult = scorePosition(position.target, session.cueBall.pos, spot, cue, ghost, outcome.pottedTarget, outcome.scratch);
+  }
   // Once the ghost ball has gone, the player says how they hit it before the
   // report says. Judged on the tier the shot was played at.
-  if ((level.exam || level.daily || campaign.tier >= 2) && outcome.pocketUsed !== null) {
+  if (!position && (level.exam || level.daily || campaign.tier >= 2) && outcome.pocketUsed !== null) {
     const actual = estimateOf(signedShare(outcome.pocketUsed, outcome.aimError.side));
     estimate = { asking: true, said: null, actual, straight: outcome.cutSide === 'straight' };
   }
@@ -478,7 +527,9 @@ function recordOutcome(outcome: ShotOutcome): void {
   if (coach.active && coach.scored()) coachingDone();
   // A shot played without the ghost ball counts toward mastery of its band.
   const event = campaign.record(
-    campaign.guides.ghostBall
+    positionResult
+      ? { ...outcome, qualifying: positionResult.correct }
+      : campaign.guides.ghostBall
       ? outcome
       : {
           ...outcome,
@@ -613,6 +664,7 @@ attachInput(canvas, {
   onGetDown: toggleDown,
   onToggleSound: toggleSound,
   onReplay: startReplay,
+  onTip: changeTip,
   onAdvance: () => {
     if (readyForNext()) nextShot();
   },
@@ -713,6 +765,13 @@ function frame(now: number): void {
   }
   const shown = replay?.session ?? session;
   if (autoNextIn() === 0) nextShot();
+  // The spot a position shot asks for, from the deal to the report.
+  const position = campaign.position;
+  if (position) {
+    scene.zone.show(zoneCentre(position.target, position.distance, session.layout.cue, session.analysis.ghostCenter), ZONE_RADIUS);
+  } else {
+    scene.zone.hide();
+  }
   if (coach.step === 'aim' && Math.abs(signedAngleBetween(fromAngle(session.aimAngle), session.analysis.aimDirection)) < COACH_AIM_TOLERANCE) {
     coach.aimed();
   }
@@ -828,6 +887,8 @@ function frame(now: number): void {
     estimate,
     drill: drillState(),
     departure: departureState(),
+    tip: tipAllowed() ? tip : null,
+    position: positionState(),
     outcome: session.outcome,
     history: history.entries,
     tendencies: history.tendencies,
@@ -871,6 +932,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     callDrill: (fraction: FractionName) => callDrill(fraction),
     placeDrill: (x: number, y: number) => placeDrill({ x, y }),
     predictDeparture: (x: number, y: number) => predictDeparture({ x, y }),
+    changeTip,
     ghost: () => session.analysis.ghostCenter,
     continue: continueOn,
     selectLevel,
@@ -916,6 +978,8 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       estimate,
       drill: drillState(),
       departure: departureState(),
+      tip: session.tip,
+      position: positionState(),
       replaying: replay !== undefined,
       coach: coach.active ? coach.step : null,
       highContrast: settings.highContrast,

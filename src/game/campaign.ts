@@ -53,6 +53,7 @@ import {
   recordInBand,
 } from './mastery';
 import type { DrillKind } from './perception';
+import { type PositionTarget, RUNGS, rungDistances } from './position';
 import { makeRng, pickWeighted } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
@@ -239,6 +240,13 @@ export class Campaign {
   /** On how many of the last seven days there was practice, today included. */
   get daysPractised(): number {
     return daysPractised(this.#state.practiceDays, this.#today());
+  }
+
+  /** On a position level: what the layout in play asks the cue ball to do, and how far. */
+  get position(): { readonly target: PositionTarget; readonly distance: number } | undefined {
+    const scoring = this.#source.scoring;
+    if (scoring?.kind !== 'position') return undefined;
+    return { target: scoring.target, distance: scoring.distance ?? 0 };
   }
 
   /** How often each fraction level's shots miss, as the review weighs them: what a drill sheet leans on. */
@@ -554,6 +562,12 @@ export class Campaign {
       return pickWeighted(fractions, fractions.map((level) => this.#missRate(level)), rng());
     }
     if (this.#level.perception) return fractions[Math.floor(rng() * fractions.length)]!;
+    const scoring = this.#level.scoring;
+    if (scoring?.kind === 'position') {
+      // The tier is the rung: the spot further each time, and the layout with room for it.
+      const distance = RUNGS[scoring.target][this.#tiers.tier]!;
+      return { ...this.#level, ...rungDistances(scoring.target, distance), scoring: { ...scoring, distance } };
+    }
     if (this.#level.weak) {
       const bands = MASTERY_BANDS.map((_, i) => i);
       const index = pickWeighted(bands, bands.map((i) => this.#weakness(i)), rng());
