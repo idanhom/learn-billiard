@@ -13,6 +13,7 @@
 
 import { FINAL_TIER, type Tier } from './tiers';
 import { LEVELS, examLevel } from './levels';
+import { STATIONS } from './assessment';
 import { DAILY_SHOTS, DAYS_KEPT, type FirstRun, NO_LINE } from './daily';
 import { type BandRecord, MASTERY_BANDS, MASTERY_WINDOW, bandKey } from './mastery';
 
@@ -52,6 +53,10 @@ export interface ProgressState {
    * another level, does not start the day's first run over.
    */
   readonly dailyRun: DailyRun | null;
+  /** Best assessment score so far, or null before one has been finished. */
+  readonly assessmentBest: number | null;
+  /** The first finished assessment each day: its score. Latest first. */
+  readonly assessmentFirstRuns: readonly FirstRun<number>[];
 }
 
 export interface DailyRun {
@@ -95,6 +100,8 @@ export function emptyProgress(): ProgressState {
     dailyFirstRuns: [],
     examFirstRuns: [],
     dailyRun: null,
+    assessmentBest: null,
+    assessmentFirstRuns: [],
   };
 }
 
@@ -135,6 +142,8 @@ export function validateProgress(raw: unknown): ProgressState | undefined {
   let dailyFirstRuns: FirstRun<number>[] = [];
   let examFirstRuns: FirstRun<number>[] = [];
   let dailyRun: DailyRun | null = null;
+  let assessmentBest: number | null = null;
+  let assessmentFirstRuns: FirstRun<number>[] = [];
   if (raw.version !== 1) {
     if (!isRecord(raw.bands)) return undefined;
     for (const [key, value] of Object.entries(raw.bands)) {
@@ -161,6 +170,12 @@ export function validateProgress(raw: unknown): ProgressState | undefined {
       }
       dailyRun = { date: run.date, errors: run.errors as number[] };
     }
+    const best = raw.assessmentBest;
+    if (best !== null && !(isCount(best) && best <= STATIONS.length)) return undefined;
+    assessmentBest = best as number | null;
+    const assessments = validateFirstRuns(raw.assessmentFirstRuns, (score) => isCount(score) && score <= STATIONS.length);
+    if (!assessments) return undefined;
+    assessmentFirstRuns = assessments;
   }
 
   return {
@@ -173,6 +188,8 @@ export function validateProgress(raw: unknown): ProgressState | undefined {
     dailyFirstRuns,
     examFirstRuns,
     dailyRun,
+    assessmentBest,
+    assessmentFirstRuns,
   };
 }
 

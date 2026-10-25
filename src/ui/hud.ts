@@ -54,6 +54,17 @@ export type Milestone =
       readonly firstToday: number;
     }
   | {
+      readonly kind: 'assessment-finished';
+      readonly points: number;
+      readonly of: number;
+      readonly parts: readonly { readonly part: string; readonly points: number; readonly of: number }[];
+      readonly rating: string;
+      readonly personalBest: boolean;
+      readonly best: number;
+      readonly first: boolean;
+      readonly firstToday: number;
+    }
+  | {
       readonly kind: 'daily-finished';
       readonly median: number;
       readonly first: boolean;
@@ -136,6 +147,14 @@ export interface HudState {
     readonly stage: 'asking' | 'playing' | 'answered';
     readonly result: DepartureResult | null;
     readonly allowance: number;
+  } | null;
+  /** The assessment in play: which station, of how many, and the points so far. */
+  readonly assessment: {
+    readonly station: number;
+    readonly of: number;
+    readonly label: string;
+    readonly points: number;
+    readonly best: number | null;
   } | null;
   /** The daily set's run in play, on its level. */
   readonly daily: { readonly shot: number; readonly total: number; readonly firstToday: number | null } | null;
@@ -549,7 +568,7 @@ export class Hud {
           ? estimatePrompt(state.estimate.straight)
           : renderReport(
               state.outcome,
-              state.exam,
+              state.exam !== undefined || state.assessment !== null,
               state.practice,
               state.milestone !== undefined,
               state.routineLog,
@@ -683,7 +702,9 @@ export class Hud {
   }
 
   #renderStatus(state: HudState): void {
-    const heading = state.daily
+    const heading = state.assessment
+      ? `Assessment: station ${state.assessment.station} of ${state.assessment.of}`
+      : state.daily
       ? `Daily set: shot ${state.daily.shot} of ${state.daily.total}`
       : state.pattern
       ? `Tier ${state.tier}: ball ${state.pattern.ball} of ${state.pattern.of}`
@@ -701,7 +722,10 @@ export class Hud {
 
     // The drills show no guide at any tier, and a flash drill is judged on
     // the fraction rather than the pocket.
-    const line = state.daily
+    const line = state.assessment
+      ? `${escape(state.assessment.label)} &middot; ${state.assessment.points} so far` +
+        (state.assessment.best === null ? '' : ` &middot; best ${state.assessment.best}/${state.assessment.of}`)
+      : state.daily
       ? state.daily.firstToday === null
         ? 'Your first run today: it counts'
         : `Practice: today&rsquo;s first run stands at ${ofThePocket(state.daily.firstToday)}`
@@ -911,6 +935,17 @@ function renderMilestone(milestone: Milestone): string {
         (milestone.potted === null ? 'read right' : `on aim &middot; ${milestone.potted} potted`) +
         '</div>' +
         (milestone.nextLevelName === null ? '' : `<div class="hud-sub">Next: ${escape(milestone.nextLevelName)}</div>`)
+      : milestone.kind === 'assessment-finished'
+        ? '<div class="hud-label">Assessment</div>' +
+          `<div class="hud-big">${milestone.points} of ${milestone.of}: ${escape(milestone.rating)}</div>` +
+          `<div class="hud-sub">${milestone.parts.map((p) => `${escape(p.part)} ${p.points}/${p.of}`).join(' &middot; ')}</div>` +
+          (milestone.personalBest
+            ? '<div class="hud-sub">A personal best.</div>'
+            : `<div class="hud-sub">Your best is ${milestone.best} of ${milestone.of}.</div>`) +
+          (milestone.first
+            ? '<div class="hud-sub">Your first run today.</div>'
+            : `<div class="hud-sub">Today&rsquo;s first run: ${milestone.firstToday} of ${milestone.of}.</div>`) +
+          `<div class="hud-sub">Next: a fresh run of ${milestone.of}</div>`
       : milestone.kind === 'daily-finished'
         ? '<div class="hud-label">Daily set</div>' +
           `<div class="hud-big">Median: ${ofThePocket(milestone.median)}</div>` +
@@ -941,7 +976,8 @@ function renderMilestone(milestone: Milestone): string {
 
 function renderReport(
   outcome: ShotOutcome,
-  exam: ExamRun | undefined,
+  /** Scored on the pot, as the exam and the assessment's cuts are. */
+  potsCount: boolean,
   practice: boolean,
   held: boolean,
   routine: HudState['routineLog'],
@@ -954,7 +990,7 @@ function renderReport(
     ? positionVerdict(position.result, position.zone)
     : pattern
       ? patternVerdict(pattern, outcome)
-      : verdictFor(outcome, exam !== undefined);
+      : verdictFor(outcome, potsCount);
 
   const used = outcome.pocketUsed;
   const aim = !outcome.contacted

@@ -729,6 +729,46 @@ await page.screenshot({ path: `${OUT}pattern.png` });
 await page.evaluate(() => window.__debug.selectLevel(1));
 await sleep(200);
 
+// The assessment: twelve stations straight through, then a card on the score.
+await page.evaluate(() => window.__debug.selectLevel(21));
+await sleep(300);
+check('the assessment opens on its first station', (await page.textContent('#hud-status')).includes('station 1 of 12'));
+for (let station = 0; station < 12; station++) {
+  await page.evaluate(() => {
+    const s = window.__debug.state();
+    if (s.scoring === 'speed') window.__debug.fireToSpot();
+    else {
+      window.__debug.aimIdeal();
+      window.__debug.fire(s.recommendedPower ?? 0.5);
+    }
+  });
+  await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+  if (station < 11) await page.evaluate(() => window.__debug.next());
+  await sleep(50);
+}
+const assessed = await state();
+check(
+  'twelve stations close the run on a card, part by part',
+  assessed.milestone?.kind === 'assessment-finished' && assessed.milestone.of === 12 && assessed.milestone.parts.length === 4,
+  JSON.stringify(assessed.milestone),
+);
+const lastReport = await page.textContent('#hud-report');
+check(
+  'the last station is reported as the zone shot it was, though the next run is already dealt',
+  /zone|Missed the pot|Scratch/.test(lastReport) && !lastReport.startsWith('Potted'),
+  lastReport,
+);
+await page.screenshot({ path: `${OUT}assessment.png` });
+
+// Loaded straight into a level about the cue ball, the first shot is that kind too.
+await page.evaluate(() => window.__debug.selectLevel(12));
+await sleep(200);
+await page.reload({ waitUntil: 'load' });
+await sleep(900);
+check('reloaded on the 90\u00b0 rule, the first shot asks where the cue ball goes', (await state()).departure?.stage === 'asking');
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(200);
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {

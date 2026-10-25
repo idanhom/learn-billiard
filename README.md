@@ -315,6 +315,17 @@ before left the cue ball, and kept only if, with every ball on the table from
 the start, those strokes still run it the same way. Building one takes a
 fraction of a second of simulation when it is dealt.
 
+Level 21 is the assessment, the exam made general: twelve stations played
+straight through with no guides, one point each. Four cuts, from three-quarter
+ball to an eighth, score on the pot. Two stop shots, a follow of 40 cm and a
+draw of 35 cm, two speed-control rings at 85 cm and 1.2 m, and two position
+zones score on their own levels' tasks. The card at the end gives the score
+part by part, a rating (starting out below 4, developing from 4, solid from 7,
+strong from 10), your best, and your first finished run of the day. It
+follows the shape of the Billiard University and PAT exams, standard drills
+scored together, but it is not calibrated against either, and the ratings are
+this trainer's own. `N` deals the same station until it is played.
+
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is
 part of the skill, and a level that only ever deals one kind never tests it.

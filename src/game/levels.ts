@@ -16,7 +16,8 @@
  * without playing them, level 10 deals the angles mastered least, level 11 is
  * the daily set, levels 12 and 13 are about where the cue ball goes, 14 to 16
  * about where it stops, 17 and 18 about its speed with no object ball, 19 about
- * playing it to a zone for the next shot, and 20 runs short patterns.
+ * playing it to a zone for the next shot, 20 runs short patterns, and 21 is the
+ * assessment, the exam made general.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
@@ -60,6 +61,8 @@ export interface LevelDefinition {
   readonly weak?: boolean;
   /** The daily set: the same ten shots for everyone on a day, dealt from levels 1 to 6. */
   readonly daily?: boolean;
+  /** The assessment: a fixed battery of stations from the other levels, scored together. */
+  readonly assessment?: boolean;
   /**
    * What a shot is scored on, when it is not the aim. `departure`: the shot is
    * aimed and struck for the player, stunned or rolling, and they are scored
@@ -397,6 +400,21 @@ export const LEVELS: readonly LevelDefinition[] = [
     examShots: 0,
     scoring: { kind: 'pattern' },
     template: layoutWithCut('level-20-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 21,
+    name: 'Assessment',
+    description: 'Twelve stations, no guides: cuts, stop, follow, draw, speed and position, scored together.',
+    cutRange: [0, bandAround('eighth')[1]],
+    pocketAllowance: 1,
+    cueDistance: [0.35, 1],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    assessment: true,
+    template: layoutWithCut('level-21-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
   },
 ];
 

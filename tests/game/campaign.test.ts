@@ -447,6 +447,8 @@ function resumed(
       dailyFirstRuns: [],
       examFirstRuns: [],
       dailyRun: null,
+      assessmentBest: null,
+      assessmentFirstRuns: [],
     }),
   );
   return new Campaign(createProgressStore(storage), { seed: 4000 });
@@ -884,5 +886,72 @@ describe('the patterns level', () => {
 
   test('runs three balls at the last tiers', () => {
     expect(resumed(level.id, 2).pattern).toEqual({ ball: 1, of: 3 });
+  });
+});
+
+describe('the assessment', () => {
+  const level = LEVELS.find((l) => l.assessment)!;
+
+  test('deals its twelve stations in turn, each as its own level would, with no guides', () => {
+    const subject = campaign();
+    subject.selectLevel(level.id);
+    const kinds: (string | undefined)[] = [];
+    for (let i = 0; i < 12; i++) {
+      expect(subject.assessment!.station).toBe(i + 1);
+      expect(Object.values(subject.guides).some(Boolean)).toBe(false);
+      const scoring = subject.shotScoring;
+      kinds.push(scoring?.kind);
+      if (scoring?.kind === 'speed') expect(speedViolations(subject.layout, scoring.target)).toEqual([]);
+      else expect(layoutViolations(subject.layout, subject.layoutLevel), `station ${i + 1}`).toEqual([]);
+      subject.record(i % 3 === 0 ? miss : hit);
+      subject.nextShot();
+    }
+    expect(kinds).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'position',
+      'position',
+      'position',
+      'position',
+      'speed',
+      'speed',
+      'zone',
+      'zone',
+    ]);
+  });
+
+  test('cannot be passed over: Next deals the same station until it is played', () => {
+    const subject = campaign();
+    subject.selectLevel(level.id);
+    const first = subject.layout.id;
+    subject.nextShot();
+    expect(subject.layout.id).toBe(first);
+    expect(subject.assessment!.station).toBe(1);
+  });
+
+  test('scores the run together, part by part, keeping the best and the day’s first', () => {
+    const storage = new FakeStorage();
+    const subject = new Campaign(createProgressStore(storage), { seed: 4000, today: () => '2026-10-25' });
+    subject.selectLevel(level.id);
+    let result;
+    for (let i = 0; i < 12; i++) {
+      // The cuts score on the pot; the rest on the level's task.
+      result = subject.record(i < 4 ? { qualifying: false, pottedTarget: true } : { qualifying: i < 8, pottedTarget: false }).assessmentFinished;
+      subject.nextShot();
+    }
+    expect(result).toMatchObject({ points: 8, of: 12, rating: 'solid', personalBest: true, first: true, firstToday: 8 });
+    expect(result!.parts).toEqual([
+      { part: 'Aim', points: 4, of: 4 },
+      { part: 'Cue ball', points: 4, of: 4 },
+      { part: 'Speed', points: 0, of: 2 },
+      { part: 'Position', points: 0, of: 2 },
+    ]);
+    for (let i = 0; i < 12; i++) {
+      result = subject.record(hit).assessmentFinished;
+      subject.nextShot();
+    }
+    expect(result).toMatchObject({ points: 12, personalBest: true, first: false, firstToday: 8, best: 12 });
   });
 });

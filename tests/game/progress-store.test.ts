@@ -43,6 +43,8 @@ function populated(): ProgressState {
     dailyFirstRuns: [{ date: '2026-10-25', score: 0.42 }],
     examFirstRuns: [{ date: '2026-10-23', score: 6 }],
     dailyRun: { date: '2026-10-25', errors: [0.2, 10, 0.4] },
+    assessmentBest: 8,
+    assessmentFirstRuns: [{ date: '2026-10-24', score: 7 }],
   };
 }
 
@@ -59,7 +61,16 @@ describe('empty progress', () => {
 
 describe('a save from before mastery by band', () => {
   test('loads, as it was, with no band played and no day or first run kept', () => {
-    const { bands: _b, practiceDays: _p, dailyFirstRuns: _d, examFirstRuns: _e, dailyRun: _r, ...old } = populated();
+    const {
+      bands: _b,
+      practiceDays: _p,
+      dailyFirstRuns: _d,
+      examFirstRuns: _e,
+      dailyRun: _r,
+      assessmentBest: _ab,
+      assessmentFirstRuns: _af,
+      ...old
+    } = populated();
     const loaded = validateProgress({ ...old, version: 1 });
     expect(loaded).toEqual({
       ...populated(),
@@ -68,6 +79,8 @@ describe('a save from before mastery by band', () => {
       dailyFirstRuns: [],
       examFirstRuns: [],
       dailyRun: null,
+      assessmentBest: null,
+      assessmentFirstRuns: [],
     });
   });
 
@@ -97,6 +110,12 @@ describe('days and first runs', () => {
     expect(validateProgress({ ...populated(), dailyRun: { date: '2026-10-25', errors: Array(10).fill(0.1) } })).toBeUndefined();
     expect(validateProgress({ ...populated(), dailyRun: { date: '2026-10-25', errors: [-0.1] } })).toBeUndefined();
     expect(validateProgress({ ...populated(), dailyRun: { date: 'today', errors: [] } })).toBeUndefined();
+  });
+
+  test('hold an assessment best and first runs no higher than its stations', () => {
+    expect(validateProgress({ ...populated(), assessmentBest: 13 })).toBeUndefined();
+    expect(validateProgress({ ...populated(), assessmentBest: null })).toBeDefined();
+    expect(validateProgress({ ...populated(), assessmentFirstRuns: [{ date: '2026-10-25', score: 13 }] })).toBeUndefined();
   });
 
   test('hold scores that could have happened', () => {

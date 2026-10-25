@@ -152,8 +152,15 @@ const REPLAY_SPEED = 0.25;
 let reportShownAt: number | null = null;
 const AUTO_NEXT_SECONDS = 3;
 let session = newSession();
+/**
+ * What the shot in play is scored on, as it was dealt. The campaign deals
+ * what comes next as soon as a run or a level ends, behind the summary card,
+ * and the shot just played is still reported as the kind it was.
+ */
+let dealt = dealtAs();
 routine = routineActive() ? new Routine(clock()) : undefined;
 drill = newDrill();
+departure = newDeparture();
 /** The session in play is a retry: practice, which the campaign will not count. */
 let practice = campaign.retrying;
 /**
@@ -230,19 +237,19 @@ const DRILL_ANSWER: GuideVisibility = {
 function aimLineLength(): number {
   const spot = session.layout.spot;
   if (!spot) return session.analysis.cueToGhost;
-  return campaign.speed?.target === 'lag' ? 1 : dist(session.layout.cue, spot);
+  return dealt.speed?.target === 'lag' ? 1 : dist(session.layout.cue, spot);
 }
 
 /** A speed drill as the HUD shows it. */
 function speedState(): HudState['speed'] {
-  const speed = campaign.speed;
+  const speed = dealt.speed;
   if (!speed) return null;
   return { ...speed, result: speedResult ?? null };
 }
 
 /** A position shot as the HUD shows it: what it asks, and how it went. */
 function positionState(): HudState['position'] {
-  const position = campaign.position;
+  const position = dealt.position;
   if (!position) return null;
   return { ...position, result: positionResult ?? null };
 }
@@ -250,7 +257,7 @@ function positionState(): HudState['position'] {
 /** A cue-ball prediction as the HUD shows it. */
 function departureState(): HudState['departure'] {
   if (!departure) return null;
-  const scoring = campaign.level.scoring;
+  const scoring = dealt.scoring;
   const stage = departure.result ? 'answered' : departure.predicted ? 'playing' : 'asking';
   const allowance = scoring?.kind === 'departure' ? scoring.allowance : 0;
   return { stroke: departure.stroke, stage, result: departure.result ?? null, allowance };
@@ -276,8 +283,9 @@ function clock(): number {
  */
 function routineActive(): boolean {
   // The levels about the cue ball use their tiers as rungs, not for taking guides away.
-  if (campaign.level.scoring) return false;
-  return campaign.level.exam || campaign.level.daily === true || campaign.tier === FINAL_TIER;
+  if (dealt.scoring) return false;
+  const level = campaign.level;
+  return level.exam || level.daily === true || level.assessment === true || campaign.tier === FINAL_TIER;
 }
 
 /** Every aim change goes through here, so the routine can hold it to the committed line. */
@@ -316,6 +324,10 @@ function toggleDown(): void {
   }
 }
 
+function dealtAs(): { readonly position: Campaign['position']; readonly speed: Campaign['speed']; readonly scoring: Campaign['shotScoring'] } {
+  return { position: campaign.position, speed: campaign.speed, scoring: campaign.shotScoring };
+}
+
 function newSession(): ShotSession {
   return new ShotSession(campaign.layout, {
     pocketAllowance: campaign.pocketAllowance,
@@ -329,6 +341,7 @@ function startShot(): void {
   reportShownAt = null;
   coach.dealt();
   session = newSession();
+  dealt = dealtAs();
   practice = campaign.retrying;
   milestone = undefined;
   objectBallNumber = ballNumberFor(session.layout.id);
@@ -365,7 +378,7 @@ function newDrill(): PerceptionDrill | undefined {
 }
 
 function tipAllowed(): boolean {
-  const kind = campaign.level.scoring?.kind;
+  const kind = dealt.scoring?.kind;
   return kind === 'position' || kind === 'zone' || kind === 'pattern';
 }
 
@@ -389,7 +402,7 @@ function changeTip(steps: number): void {
 
 /** On a level about the cue ball, a prediction to make for the layout in play. */
 function newDeparture(): DepartureDrill | undefined {
-  const scoring = campaign.level.scoring;
+  const scoring = dealt.scoring;
   if (scoring?.kind !== 'departure') return undefined;
   return new DepartureDrill(scoring.stroke, session.analysis.ghostCenter, scoring.allowance);
 }
@@ -548,12 +561,12 @@ function recordSpeed(speed: NonNullable<Campaign['speed']>): void {
 
 function recordOutcome(outcome: ShotOutcome): void {
   if (departure) return recordDeparture(outcome, departure);
-  const speed = campaign.speed;
+  const speed = dealt.speed;
   if (speed) return recordSpeed(speed);
   evaluations++;
   const level = campaign.level;
   // On a position level the shot is scored on the pot and where the cue ball stopped.
-  const position = campaign.position;
+  const position = dealt.position;
   if (position) {
     const { cue } = session.layout;
     const ghost = session.analysis.ghostCenter;
@@ -564,7 +577,7 @@ function recordOutcome(outcome: ShotOutcome): void {
   }
   // Once the ghost ball has gone, the player says how they hit it before the
   // report says. Judged on the tier the shot was played at.
-  if (!level.scoring && (level.exam || level.daily || campaign.tier >= 2) && outcome.pocketUsed !== null) {
+  if (!dealt.scoring && (level.exam || level.daily || campaign.tier >= 2) && outcome.pocketUsed !== null) {
     const actual = estimateOf(signedShare(outcome.pocketUsed, outcome.aimError.side));
     estimate = { asking: true, said: null, actual, straight: outcome.cutSide === 'straight' };
   }
@@ -604,6 +617,8 @@ function handleEvent(event: CampaignEvent, level: LevelDefinition): void {
     milestone = { kind: 'exam-finished', ...event.examFinished, best: campaign.examBest };
   } else if (event.dailyFinished) {
     milestone = { kind: 'daily-finished', ...event.dailyFinished };
+  } else if (event.assessmentFinished) {
+    milestone = { kind: 'assessment-finished', ...event.assessmentFinished };
   } else if (event.levelCompleted) {
     const stats = campaign.levelStats(level.id);
     milestone = {
@@ -812,7 +827,7 @@ function frame(now: number): void {
   const shown = replay?.session ?? session;
   if (autoNextIn() === 0) nextShot();
   // The spot a position shot or a speed drill asks for, from the deal to the report.
-  const position = campaign.position;
+  const position = dealt.position;
   if (position) {
     const { centre, radius } = positionSpot(position);
     scene.zone.show(centre, radius);
@@ -923,6 +938,7 @@ function frame(now: number): void {
     exam: campaign.exam,
     examBest: campaign.examBest,
     daily: campaign.daily ?? null,
+    assessment: campaign.assessment ?? null,
     daysPractised: campaign.daysPractised,
     practice,
     milestone,
@@ -1052,6 +1068,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       pattern: campaign.pattern ?? null,
       patternNews: patternNews ?? null,
       replaying: replay !== undefined,
+      scoring: dealt.scoring?.kind ?? null,
       coach: coach.active ? coach.step : null,
       highContrast: settings.highContrast,
       reducedMotion: scene.reducedMotion,
@@ -1076,6 +1093,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       exam: campaign.exam ?? null,
       examBest: campaign.examBest,
       daily: campaign.daily ?? null,
+      assessment: campaign.assessment ?? null,
       daysPractised: campaign.daysPractised,
       notice: notice?.text ?? null,
       evaluations,

@@ -58,6 +58,7 @@ import { type PositionAsk, RUNGS, rungDistances } from './position';
 import { SPEED_RUNGS, type SpeedTarget, speedLayout } from './speed';
 import { zoneLayout } from './zones';
 import { PATTERN_SIZES, type Pattern, dealPattern, patternLayout } from './patterns';
+import { STATIONS, pointsByPart, ratingFor } from './assessment';
 import { makeRng, pickWeighted } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
@@ -126,6 +127,20 @@ export interface CampaignEvent {
   readonly dailyFinished?: DailyResult;
   /** On a pattern: how many of its balls are down, of how many, and whether the run is over. */
   readonly pattern?: { readonly down: number; readonly of: number; readonly over: boolean };
+  readonly assessmentFinished?: AssessmentResult;
+}
+
+export interface AssessmentResult {
+  readonly points: number;
+  readonly of: number;
+  /** Part by part, in the order the parts come. */
+  readonly parts: readonly { readonly part: string; readonly points: number; readonly of: number }[];
+  readonly rating: string;
+  readonly personalBest: boolean;
+  readonly best: number;
+  /** This was the day's first finished run; and that run's score, which stands. */
+  readonly first: boolean;
+  readonly firstToday: number;
 }
 
 export interface CampaignOptions {
@@ -175,6 +190,8 @@ export class Campaign {
   /** Layouts moved on through since the level in play was entered, so its perception drills start on a flash. */
   #turnOnLevel = 0;
   #exam: ExamRun | undefined;
+  /** The assessment being run: its seed, and the point each station so far earned. */
+  #assessment: { readonly seed: number; readonly points: readonly boolean[] } | undefined;
   /** A pattern being run: which ball is next, and where the cue ball is. */
   #run: { readonly pattern: Pattern; readonly seed: number; readonly index: number; readonly cue: Vec2 } | undefined;
 
@@ -240,6 +257,7 @@ export class Campaign {
    * whatever the tier: the aim is not what it tests.
    */
   get guides(): GuideVisibility {
+    if (this.#level.assessment) return NO_GUIDES;
     if (this.#level.scoring?.kind === 'speed') return CUE_ALONE;
     if (this.#level.scoring) return SHOT_SHOWN;
     return this.#level.exam || this.#level.perception || this.#level.daily ? NO_GUIDES : this.#tiers.guides;
@@ -369,8 +387,9 @@ export class Campaign {
     this.#state = { ...this.#state, currentLevel: id };
     this.#shotCounter++;
     this.#turnOnLevel = 0;
-    // A run is a sitting: leaving the level ends it.
+    // A run is a sitting: leaving the level ends it, and so with the assessment.
     this.#run = undefined;
+    this.#assessment = undefined;
     this.#deal();
     this.#persist();
     return true;
@@ -391,6 +410,9 @@ export class Campaign {
 
     if (this.#level.daily) {
       return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordDaily(shot), ...news };
+    }
+    if (this.#level.assessment) {
+      return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordAssessment(shot), ...news };
     }
 
     if (this.#level.scoring?.kind === 'pattern' && this.#run) {
@@ -594,25 +616,140 @@ export class Campaign {
 
   #generate(): ShotLayout {
     if (this.#level.daily) return this.#dailyLayout();
-    const scoring = this.#level.scoring;
-    if (scoring?.kind === 'pattern') return this.#patternShot();
-    if (scoring?.kind === 'zone') {
-      this.#source = this.#level;
-      return zoneLayout(this.#level, this.#baseSeed + this.#shotCounter * 7919);
-    }
-    if (scoring?.kind === 'speed') {
-      // The tier is the rung for speed control; the lag is the same every time.
-      const distance = scoring.target === 'distance' ? SPEED_RUNGS[this.#tiers.tier]! : 0;
-      this.#source = { ...this.#level, scoring: { ...scoring, distance } };
-      const seed = this.#baseSeed + this.#shotCounter * 7919;
-      return speedLayout(scoring.target, distance, seed, `L${this.#level.id}-s${seed}`);
-    }
+    if (this.#level.assessment) return this.#assessmentLayout();
+    if (this.#level.scoring?.kind === 'pattern') return this.#patternShot();
     // Alternate the cut side rather than leaving it to chance, so a run of
     // shots cannot all fall the same way.
     const side = this.#shotCounter % 2 === 0 ? 'left' : 'right';
     const seed = this.#baseSeed + this.#shotCounter * 7919;
+    // On a level about the cue ball, the tier is the rung.
+    const dealt = this.#dealFor(this.#level, this.#tiers.tier, seed, side);
+    if (dealt) {
+      this.#source = dealt.source;
+      return dealt.layout;
+    }
     this.#source = this.#sourceFor(seed);
     return generateShot(this.#source, seed, { preferredSide: side }).layout;
+  }
+
+  /**
+   * A layout for a level about the cue ball at `rung`, and the level as it
+   * dealt it; undefined for a level about the aim, which `#sourceFor` deals.
+   */
+  #dealFor(
+    level: LevelDefinition,
+    rung: number,
+    seed: number,
+    side: 'left' | 'right',
+  ): { readonly layout: ShotLayout; readonly source: LevelDefinition } | undefined {
+    const scoring = level.scoring;
+    switch (scoring?.kind) {
+      case 'zone':
+        return { layout: zoneLayout(level, seed), source: level };
+      case 'speed': {
+        // The rung for speed control; the lag is the same every time.
+        const distance = scoring.target === 'distance' ? SPEED_RUNGS[rung]! : 0;
+        return {
+          layout: speedLayout(scoring.target, distance, seed, `L${level.id}-s${seed}`),
+          source: { ...level, scoring: { ...scoring, distance } },
+        };
+      }
+      case 'position': {
+        // The spot further at each rung, and the layout with room for it.
+        const distance = RUNGS[scoring.target][rung]!;
+        const source = { ...level, ...rungDistances(scoring.target, distance), scoring: { ...scoring, distance } };
+        return { layout: generateShot(source, seed, { preferredSide: side }).layout, source };
+      }
+      default:
+        return undefined;
+    }
+  }
+
+  /** The assessment's run in play, or a fresh one. */
+  #assessmentRun(): { readonly seed: number; readonly points: readonly boolean[] } {
+    this.#assessment ??= { seed: this.#baseSeed + this.#shotCounter * 7919, points: [] };
+    return this.#assessment;
+  }
+
+  /**
+   * The assessment's next station, dealt as its own level deals it. The same
+   * again until it is played, so Next cannot pass over one.
+   */
+  #assessmentLayout(): ShotLayout {
+    const run = this.#assessmentRun();
+    const index = run.points.length;
+    const station = STATIONS[index]!;
+    const level = levelById(station.level);
+    const seed = (run.seed + index * 104_729) >>> 0;
+    const side = index % 2 === 0 ? 'left' : 'right';
+    const dealt = this.#dealFor(level, station.rung, seed, side);
+    if (dealt) {
+      this.#source = dealt.source;
+      return dealt.layout;
+    }
+    this.#source = level;
+    return generateShot(level, seed, { preferredSide: side }).layout;
+  }
+
+  /** One station scored: the pot for a cut, the level's task for the rest. The last closes the run. */
+  #recordAssessment(shot: ScoredShot): { assessmentFinished?: AssessmentResult } {
+    const run = this.#assessmentRun();
+    const station = STATIONS[run.points.length]!;
+    const points = [...run.points, station.points === 'pot' ? shot.pottedTarget : shot.qualifying];
+    if (points.length < STATIONS.length) {
+      this.#assessment = { ...run, points };
+      this.#persist();
+      return {};
+    }
+
+    const total = points.filter(Boolean).length;
+    const previousBest = this.#state.assessmentBest;
+    const personalBest = previousBest === null || total > previousBest;
+    if (personalBest) this.#state = { ...this.#state, assessmentBest: total };
+    const today = this.#today();
+    const standing = firstRunOn(this.#state.assessmentFirstRuns, today);
+    if (!standing) {
+      this.#state = {
+        ...this.#state,
+        assessmentFirstRuns: addFirstRun(this.#state.assessmentFirstRuns, { date: today, score: total }),
+      };
+    }
+    this.#assessment = undefined;
+    this.#shotCounter++;
+    this.#deal();
+    this.#persist();
+    return {
+      assessmentFinished: {
+        points: total,
+        of: STATIONS.length,
+        parts: pointsByPart(points),
+        rating: ratingFor(total),
+        personalBest,
+        best: this.#state.assessmentBest ?? total,
+        first: !standing,
+        firstToday: standing?.score ?? total,
+      },
+    };
+  }
+
+  /** The assessment as it stands: which station is next, and the points so far. */
+  get assessment():
+    | { readonly station: number; readonly of: number; readonly label: string; readonly points: number; readonly best: number | null }
+    | undefined {
+    if (!this.#level.assessment) return undefined;
+    const run = this.#assessmentRun();
+    return {
+      station: run.points.length + 1,
+      of: STATIONS.length,
+      label: STATIONS[run.points.length]!.label,
+      points: run.points.filter(Boolean).length,
+      best: this.#state.assessmentBest,
+    };
+  }
+
+  /** What the shot in play is scored on, where it is not the aim: the level's, or the assessment station's. */
+  get shotScoring(): LevelDefinition['scoring'] {
+    return this.#source.scoring;
   }
 
   /**
@@ -642,12 +779,6 @@ export class Campaign {
       return pickWeighted(fractions, fractions.map((level) => this.#missRate(level)), rng());
     }
     if (this.#level.perception) return fractions[Math.floor(rng() * fractions.length)]!;
-    const scoring = this.#level.scoring;
-    if (scoring?.kind === 'position') {
-      // The tier is the rung: the spot further each time, and the layout with room for it.
-      const distance = RUNGS[scoring.target][this.#tiers.tier]!;
-      return { ...this.#level, ...rungDistances(scoring.target, distance), scoring: { ...scoring, distance } };
-    }
     if (this.#level.weak) {
       const bands = MASTERY_BANDS.map((_, i) => i);
       const index = pickWeighted(bands, bands.map((i) => this.#weakness(i)), rng());
