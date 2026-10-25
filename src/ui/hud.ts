@@ -314,6 +314,10 @@ export class Hud {
    * session, so anyone who opens them once keeps getting them.
    */
   #reportOpen = false;
+  /** The shot is over and its review is up: the time Hide is offered. */
+  #reviewing = false;
+  /** Every panel but the toolbar put away, to look at the table. Ends with the review. */
+  #bare = false;
   /** The sheet a small screen has open, if any. Ignored where there is room. */
   #openSheet: Sheet | undefined;
   #helpOpen = false;
@@ -418,11 +422,11 @@ export class Hud {
       '<b>V</b> camera: behind, overhead, stance &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
       '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>9</b>, <b>0</b> level &middot; ' +
       '<b>F</b> call the fraction &middot; <b>G</b> get down on the line &middot; <b>T</b> at the table &middot; ' +
-      '<b>M</b> sound</div>' +
+      '<b>M</b> sound &middot; <b>H</b> hide the panels after a shot</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
       '<b>&lsaquo; &rsaquo;</b>. <b>Drag down the strip</b> on the right to charge the power, and ' +
       'lift to strike; slide off its side to call the shot off. The buttons along the bottom do ' +
-      'everything the keys do.</div>' +
+      'everything the keys do, and after a shot <b>Hide</b> clears the table.</div>' +
       // Say plainly what this simulation is not, so nothing learned here comes
       // as a surprise on a real table.
       '<div class="hud-keys hud-eye">The stance view is true to scale with your eyes ' +
@@ -511,6 +515,8 @@ export class Hud {
         return this.#actions.onToggleView();
       case 'down':
         return this.#actions.onGetDown();
+      case 'hide':
+        return this.toggleBare();
       case 'speed':
         return this.#actions.onCycleSpeed();
       case 'cloth':
@@ -535,7 +541,24 @@ export class Hud {
     this.#renderedToolbar = '';
   }
 
+  /**
+   * H, or the Hide chip: put every panel but the toolbar away, to see the
+   * trails and the needed line on a small screen, or bring them back. Only in
+   * the review; the next shot starts with them all up.
+   */
+  toggleBare(): void {
+    if (!this.#reviewing) return;
+    this.#bare = !this.#bare;
+    this.#root.classList.toggle('bare', this.#bare);
+    this.#renderedToolbar = '';
+  }
+
   update(state: HudState): void {
+    this.#reviewing = state.phase === 'settled' || state.phase === 'evaluated';
+    if (!this.#reviewing && this.#bare) {
+      this.#bare = false;
+      this.#root.classList.remove('bare');
+    }
     // A perception drill takes no shot, so the controls for one go with it.
     this.#root.classList.toggle('drilling', state.drill !== null || state.departure !== null);
     this.#root.classList.toggle('tipping', state.tip !== null);
@@ -704,6 +727,9 @@ export class Hud {
       chip('next', 'Next', { key: 'N' }) +
       chip('view', VIEW_LABELS[state.view] ?? 'Behind', { key: 'V' }) +
       (state.routine ? chip('down', state.routine.down ? 'Stand up' : 'Get down', { key: 'G' }) : '') +
+      (this.#reviewing
+        ? chip('hide', this.#bare ? 'Show' : 'Hide', { key: 'H', label: this.#bare ? 'Show the panels' : 'Hide the panels' })
+        : '') +
       chip('speed', speedLabel(state.timeScale), { key: '.' }) +
       chip('cloth', `${escape(state.clothLabel)} cloth`, { key: 'C' }) +
       chip('levels', 'Levels', { compactOnly: true, pressed: this.#openSheet === 'levels' }) +

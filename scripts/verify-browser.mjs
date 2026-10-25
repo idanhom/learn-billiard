@@ -290,9 +290,37 @@ check(
   JSON.stringify(desktopReport),
 );
 
+/** The HUD's panels that are up, by id. */
+const panelsUp = (p) =>
+  p.evaluate(() =>
+    [...document.querySelectorAll('#hud > .panel')].filter((el) => getComputedStyle(el).display !== 'none').map((el) => el.id),
+  );
+await page.keyboard.press('KeyH');
+await sleep(100);
+const hiddenUp = await panelsUp(page);
+await page.keyboard.press('KeyH');
+await sleep(100);
+const shownUp = await panelsUp(page);
+check(
+  'H in the review puts every panel but the toolbar away, and H again brings them back',
+  hiddenUp.join() === 'hud-toolbar' && shownUp.includes('hud-report') && shownUp.includes('hud-status'),
+  `hidden: ${hiddenUp.join()}; shown: ${shownUp.join()}`,
+);
+
 await page.evaluate(() => window.__debug.retry());
 const retried = await state();
 check('a retry starts off the ideal line too', offIdeal(retried) >= 3, `${offIdeal(retried).toFixed(2)} deg off`);
+const aimingUp = await panelsUp(page);
+await page.keyboard.press('KeyH');
+await sleep(100);
+const aimingAfterH = await panelsUp(page);
+check(
+  'H while aiming changes nothing, and there is no Hide chip to press',
+  aimingAfterH.join() === aimingUp.join() &&
+    aimingUp.includes('hud-status') &&
+    (await page.locator('.hud-chip[data-action="hide"]').count()) === 0,
+  aimingAfterH.join(),
+);
 
 // Only the first look at a layout counts. A retry has seen where the first
 // shot went, so it is practice: flagged, played, and counted for nothing.
@@ -1784,8 +1812,14 @@ for (const [name, viewport] of [
     review.report && !review.overMiddle && (upright ? review.height < 0.22 : review.right <= 1 / 3),
     `${(review.height * 100).toFixed(0)}% of the height, right edge at ${(review.right * 100).toFixed(0)}% of the width`,
   );
-  const reviewChipsOff = await offScreen(['retry', 'next', 'view', 'levels', 'history', 'help']);
-  check(`phone, ${name}: in the review every action chip is on screen`, reviewChipsOff.length === 0, reviewChipsOff.join());
+  // Hide comes in for the review, after View. At 360 px it pushes ? along
+  // the row, which scrolls, and with the longer Overhead label Shots too.
+  const reviewChipsOff = await offScreen(['retry', 'next', 'view', 'hide', 'levels']);
+  check(
+    `phone, ${name}: in the review the chips from Retry to Levels, Hide among them, are on screen`,
+    reviewChipsOff.length === 0,
+    `${reviewChipsOff.join()}; scrolled off: ${(await offScreen(['history', 'help'])).join() || 'none'}`,
+  );
 
   await phone.screenshot({ path: `${OUT}phone-${name}.png` });
   await phone.evaluate(() => window.__debug.setView('overhead'));
@@ -1805,6 +1839,42 @@ for (const [name, viewport] of [
     `phone, ${name}: Details opens the report's details and a second tap folds them`,
     folded && unfolded && refolded,
     JSON.stringify({ folded, unfolded, refolded }),
+  );
+
+  // Hide, to see the trails and the needed line with nothing over them.
+  const hide = phone.locator('.hud-chip[data-action="hide"]');
+  await hide.tap();
+  await sleep(150);
+  const bare = await panelsUp(phone);
+  check(`phone, ${name}: Hide leaves only the toolbar up`, bare.join() === 'hud-toolbar', bare.join());
+  await phone.screenshot({ path: `${OUT}phone-${name}-hidden.png` });
+  await phone.locator('.hud-chip[data-action="levels"]').tap();
+  await sleep(150);
+  const sheetWhileBare = await phone.locator('#hud-levels').isVisible();
+  await phone.locator('.hud-chip[data-action="levels"]').tap();
+  await sleep(150);
+  check(`phone, ${name}: with the panels hidden, Levels still opens its sheet`, sheetWhileBare);
+  const showLabel = (await hide.textContent()).trim();
+  await hide.tap();
+  await sleep(150);
+  check(
+    `phone, ${name}: Show brings the report back`,
+    showLabel.startsWith('Show') && (await phone.locator('#hud-report').isVisible()),
+    showLabel,
+  );
+  await hide.tap();
+  await sleep(150);
+  await phone.locator('.hud-chip[data-action="next"]').tap();
+  await sleep(300);
+  const dealt = await phone.evaluate(() => ({
+    bare: document.getElementById('hud').classList.contains('bare'),
+    phase: window.__debug.state().phase,
+  }));
+  check(
+    `phone, ${name}: Next ends it, and the next shot starts with its controls`,
+    !dealt.bare && dealt.phase === 'aiming' && (await phone.locator('#hud-strip').isVisible()) &&
+      (await phone.locator('#hud-status').isVisible()) && (await hide.count()) === 0,
+    JSON.stringify(dealt),
   );
   await context.close();
 }

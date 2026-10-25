@@ -37,6 +37,8 @@ export interface InputHandlers {
   onToggleSound(): void;
   /** P: the shot just played, again, from overhead and slowed down. */
   onReplay(): void;
+  /** H: after a shot, put the panels away to see the table, or bring them back. */
+  onToggleHide(): void;
   /** Enter: on to the next shot, once this one is done. Space does the same then, through `onChargeStart`. */
   onAdvance(): void;
   /** Up and down arrows: move the tip up the ball for follow, or down it for draw, a step at a time. */
@@ -182,6 +184,10 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
       case 'KeyP':
         if (event.repeat) return;
         handlers.onReplay();
+        return;
+      case 'KeyH':
+        if (event.repeat) return;
+        handlers.onToggleHide();
         return;
       case 'Enter':
       case 'NumpadEnter':

@@ -60,6 +60,7 @@ level does too. It does not come back once done.
 | `T` | at the table: what to take to a real one, and what this can't teach |
 | `M` | sound on or off |
 | `P` | replay the shot just played, from overhead at a quarter speed; `Esc` stops it |
+| `H` | after a shot, put every panel but the toolbar away to see the table; `H` again brings them back |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
 degree at a time with the `‹` `›` buttons. Power is the strip down the right edge:
@@ -100,8 +101,10 @@ a small screen, a phone either way up, the panels shrink, and the level list
 and the recent shots fold away behind toolbar buttons of their own, so the
 table keeps most of the screen. After a shot the power strip and the aim
 buttons go, and the report keeps to the verdict and the aim, low down upright
-and beside the table sideways; **Details** opens the rest. `?` opens the
-controls and the notes on what the physics leaves out.
+and beside the table sideways; **Details** opens the rest. **Hide** (`H`)
+clears every panel but the toolbar off the table until the next shot, or
+until **Show**. `?` opens the controls and the notes on what the physics
+leaves out.
 
 At the table (`T`) gathers what carries the trainer over to a real table.
 **Drill sheet** deals ten shots to set up at a real table, from the fractions

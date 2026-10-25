@@ -823,6 +823,7 @@ attachInput(canvas, {
   onGetDown: toggleDown,
   onToggleSound: toggleSound,
   onReplay: startReplay,
+  onToggleHide: () => hud.toggleBare(),
   onTip: changeTip,
   onAdvance: () => {
     if (readyForNext()) nextShot();

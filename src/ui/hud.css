@@ -277,6 +277,14 @@ body {
   margin-top: 6px;
 }
 
+/*
+ * Put away to look at the table after a shot: everything but the toolbar, and
+ * whatever it is asked to open from there.
+ */
+#hud.bare > .panel:not(#hud-toolbar, #hud-help.open, #hud-levels.open, #hud-history.open) {
+  display: none;
+}
+
 /* Help is asked for, not furniture. */
 #hud-help:not(.open) {
   display: none;
