@@ -52,8 +52,8 @@ level does too. It does not come back once done.
 | `V` | switch between behind the cue, overhead, and down in your stance |
 | `.` | cycle full / half / quarter speed |
 | `C` | cycle fast / normal / slow cloth |
-| `R` | retry the same layout |
-| `N` | next shot; `Space` or `Enter` too, once a shot is scored |
+| `R` | retry the same layout. While the balls still roll, the rest of the shot plays out at once and is scored as it would have been |
+| `N` | next shot, mid-shot the same way; `Space` or `Enter` too, once a shot is scored |
 | `1`–`9`, `0` | jump to a level (`0` is level 10) |
 | `F` | call the fraction the shot needs |
 | `G` | get down on the line, or stand back up (last tier and exam) |

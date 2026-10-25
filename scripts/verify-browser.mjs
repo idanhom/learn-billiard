@@ -1035,6 +1035,50 @@ await sleep(900);
 check('the speed setting survives a reload', (await state()).timeScale === 0.25);
 await page.evaluate(() => window.__debug.setSpeed(1));
 
+// Retry and Next while the balls still roll: the rest of the shot plays out
+// at once, scored as it would have been, and the next shot is dealt at once.
+await page.evaluate(() => window.__debug.selectLevel(5));
+await sleep(300);
+const cutShort = await page.evaluate(async () => {
+  const d = window.__debug;
+  const read = () => {
+    const s = d.state();
+    return { evaluations: s.evaluations, history: s.historyLength, shot: s.shotId, phase: s.phase, practice: s.practice };
+  };
+  const strikeHard = async () => {
+    d.aimIdeal();
+    d.fire(0.9);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return d.state().phase;
+  };
+  const before = read();
+  const rolling = await strikeHard();
+  d.next();
+  const afterNext = read();
+  const rollingAgain = await strikeHard();
+  d.retry();
+  const afterRetry = read();
+  return { before, rolling, afterNext, rollingAgain, afterRetry };
+});
+check(
+  'Next while the balls still roll scores the shot once and deals the next at once',
+  cutShort.rolling === 'simulating' &&
+    cutShort.afterNext.evaluations === cutShort.before.evaluations + 1 &&
+    cutShort.afterNext.history === cutShort.before.history + 1 &&
+    cutShort.afterNext.shot !== cutShort.before.shot &&
+    cutShort.afterNext.phase === 'aiming',
+  JSON.stringify({ before: cutShort.before, rolling: cutShort.rolling, afterNext: cutShort.afterNext }),
+);
+check(
+  'so does Retry, dealing the same layout again as practice',
+  cutShort.rollingAgain === 'simulating' &&
+    cutShort.afterRetry.evaluations === cutShort.afterNext.evaluations + 1 &&
+    cutShort.afterRetry.shot === cutShort.afterNext.shot &&
+    cutShort.afterRetry.phase === 'aiming' &&
+    cutShort.afterRetry.practice === true,
+  JSON.stringify({ rollingAgain: cutShort.rollingAgain, afterRetry: cutShort.afterRetry }),
+);
+
 // Cloth speed, driven through the real key rather than a debug setter, so the
 // input wiring is covered too.
 await page.evaluate(() => window.__debug.selectLevel(1));

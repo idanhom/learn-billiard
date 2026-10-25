@@ -544,15 +544,31 @@ function continueOn(): void {
   canvas.focus();
 }
 
+/**
+ * Retry or Next while the balls still roll: the rest of the shot plays out at
+ * once, unseen and unheard, and is scored as watching it would have scored it,
+ * so moving on early never changes what a shot counts for. True when there was
+ * a shot to finish.
+ */
+function finishShotNow(): boolean {
+  if (session.phase !== 'simulating') return false;
+  session.finish();
+  heard = session.events.length;
+  const outcome = session.evaluate();
+  if (outcome) recordOutcome(outcome);
+  return true;
+}
+
 function retry(): void {
-  if (session.phase === 'simulating') return;
+  // A shot that ends a level or a run shows its card, rather than being moved past unseen.
+  if (finishShotNow() && milestone) return;
   if (milestone) return continueOn();
   campaign.retryShot();
   startShot();
 }
 
 function nextShot(): void {
-  if (session.phase === 'simulating') return;
+  if (finishShotNow() && milestone) return;
   if (milestone) return continueOn();
   campaign.nextShot();
   startShot();

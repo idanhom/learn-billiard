@@ -388,6 +388,15 @@ export class ShotSession {
   }
 
   /**
+   * Play the rest of the shot out at once, unseen: what Retry or Next do to a
+   * shot still rolling. The same ticks as watching it, so it ends where it
+   * would have, with the same contacts, trails and outcome.
+   */
+  finish(): void {
+    while (this.#phase === 'simulating') this.advance(MAX_FRAME_DT);
+  }
+
+  /**
    * Score the shot. Legal only from `settled`, and only once: a second call
    * returns undefined and leaves the recorded outcome alone.
    */

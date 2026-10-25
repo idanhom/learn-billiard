@@ -529,6 +529,34 @@ describe('the simulation clock', () => {
     expect(session.elapsed - pottedAt!).toBeGreaterThan(2);
   });
 
+  /** What Retry and Next do to a shot still rolling. */
+  test('a shot finished early ends exactly where watching it would have', () => {
+    const layout = layoutWithCut('run-on', vec(0.75, 0.3), 'top-right', 78, 0.35);
+    const played = (framesWatched: number): ShotSession => {
+      const session = new ShotSession(layout);
+      session.aimTo(idealAimAngle(layout));
+      session.beginCharge();
+      session.setPower(session.recommendedPower!);
+      session.release();
+      for (let i = 0; i < framesWatched && session.phase === 'simulating'; i++) session.advance(1 / 60);
+      session.finish();
+      return session;
+    };
+    const watched = played(60 * 30);
+    const watchedOutcome = watched.evaluate();
+    expect(watchedOutcome!.pottedTarget).toBe(true);
+    // Straight after the stroke, a third of a second in, and after the pot at 1.18 s.
+    for (const frames of [0, 20, 90]) {
+      const early = played(frames);
+      expect(early.phase, `${frames} frames`).toBe('settled');
+      expect(early.elapsed, `${frames} frames`).toBe(watched.elapsed);
+      expect(early.balls, `${frames} frames`).toEqual(watched.balls);
+      expect(early.trails, `${frames} frames`).toEqual(watched.trails);
+      expect(early.events, `${frames} frames`).toEqual(watched.events);
+      expect(early.evaluate(), `${frames} frames`).toEqual(watchedOutcome);
+    }
+  });
+
   test('ignores advance outside the simulating phase', () => {
     const session = new ShotSession(STRAIGHT_IN_DRILL);
     session.advance(1);
