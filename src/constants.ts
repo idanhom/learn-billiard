@@ -184,6 +184,14 @@ export const NORMAL_TRANSFER = (1 + BALL_RESTITUTION) / 2;
 export const MAX_CUE_SPEED = 4.5;
 
 /**
+ * The furthest from centre a tip can strike, up or down, as a fraction of the
+ * ball's radius: past about half the radius a tip miscues. A tip at offset b
+ * starts the ball with a spin whose surface speed is 2.5 (b/R) times its own,
+ * so 0.4 R rolls it from the start and below centre draws.
+ */
+export const MAX_TIP_OFFSET = 0.5;
+
+/**
  * Softest stroke that still counts as a stroke — a touch shot, which carries
  * the cue ball only 14 cm on normal cloth. Deliberately below the speed any
  * pot in this curriculum asks for, so the bottom of the meter is somewhere you

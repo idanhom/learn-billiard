@@ -265,6 +265,17 @@ first finished run of each day beside your best, and the levels panel counts
 the days in the last seven with any practice, rather than a streak that one
 missed day would break.
 
+Levels 12 and 13 are about where the cue ball goes, centre ball: the 90° rule,
+stunned, and the 30° rule, rolling. The shot is aimed and struck for you, and
+you say beforehand where the cue ball will go by clicking on its path from the
+ghost ball. You are scored on the angle between that and where it went, within
+6°: stunned, the way it left; rolling, the way it ran once the cloth had
+straightened its curve. The stun is struck below centre with just enough
+backspin that the cloth has taken it all off at contact, arriving at 1.2 m/s;
+the roll is struck 0.4 of the radius above centre, which rolls from the start.
+As the physics section says, neither rule is exact here or at a table, which
+is the point of saying where the ball goes rather than reciting the rule.
+
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is
 part of the skill, and a level that only ever deals one kind never tests it.

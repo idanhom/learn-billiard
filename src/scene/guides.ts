@@ -47,7 +47,12 @@ export interface GuideState {
   readonly pocket: Vec2;
   /** A place drill's answer: where the player put the ghost ball. */
   readonly placed?: Vec2 | undefined;
+  /** Where the player said the cue ball would go, from the ghost ball. */
+  readonly predicted?: { readonly from: Vec2; readonly direction: Vec2 } | undefined;
 }
+
+/** How far the predicted line is drawn from the ghost ball. */
+const PREDICTED_LENGTH = 0.6;
 
 export class Guides {
   readonly group = new Group();
@@ -57,13 +62,14 @@ export class Guides {
   readonly #ghost = wireBall(GHOST_COLOR);
   readonly #placed = wireBall(PLACED_COLOR);
   readonly #placedPath = flatLine(PLACED_COLOR, 0.7);
+  readonly #predicted = flatLine(PLACED_COLOR, 0.85);
   #thickness = 1;
 
   constructor() {
     this.group.name = 'guides';
     this.#ghost.name = 'ghost-ball';
     this.#placed.name = 'placed-ghost-ball';
-    this.group.add(this.#aimLine, this.#objectPath, this.#ghost, this.#placed, this.#placedPath);
+    this.group.add(this.#aimLine, this.#objectPath, this.#ghost, this.#placed, this.#placedPath, this.#predicted);
   }
 
   /** Draw the guides for high contrast, or as they normally are. */
@@ -74,6 +80,7 @@ export class Guides {
     paint(this.#ghost, palette.ghost);
     paint(this.#placed, palette.placed);
     paint(this.#placedPath, palette.placed);
+    paint(this.#predicted, palette.placed);
     this.#thickness = palette.thickness;
   }
 
@@ -97,6 +104,13 @@ export class Guides {
       this.#placed.position.copy(toWorld(placed, BALL_RADIUS));
       const away = scale(normalize(sub(state.object, placed)), dist(state.object, state.pocket));
       placeLine(this.#placedPath, state.object, add(state.object, away), 0.004, this.#thickness);
+    }
+
+    const predicted = state.predicted;
+    this.#predicted.visible = predicted !== undefined;
+    if (predicted) {
+      const end = add(predicted.from, scale(predicted.direction, PREDICTED_LENGTH));
+      placeLine(this.#predicted, predicted.from, end, 0.004, this.#thickness);
     }
   }
 

@@ -13,12 +13,13 @@
  * scored on pots, because at some point the question stops being "is your aim
  * good" and starts being "can you make the ball". Level 8 is a mixed review of
  * the five fractions, leaning on the ones missed most, level 9 reads shots
- * without playing them, level 10 deals the angles mastered least, and level 11
- * is the daily set.
+ * without playing them, level 10 deals the angles mastered least, level 11 is
+ * the daily set, and levels 12 and 13 are about where the cue ball goes.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
 import { type ShotLayout, layoutWithCut } from './drills';
+import type { Stroke } from './departure';
 
 export interface LevelDefinition {
   readonly id: number;
@@ -55,6 +56,12 @@ export interface LevelDefinition {
   readonly weak?: boolean;
   /** The daily set: the same ten shots for everyone on a day, dealt from levels 1 to 6. */
   readonly daily?: boolean;
+  /**
+   * What a shot is scored on, when it is not the aim. `departure`: the shot is
+   * aimed and struck for the player, stunned or rolling, and they are scored
+   * on where they said the cue ball would go, within `allowance` degrees.
+   */
+  readonly scoring?: { readonly kind: 'departure'; readonly stroke: Stroke; readonly allowance: number };
   /** Fallback used when generation cannot satisfy the brief. */
   readonly template: ShotLayout;
 }
@@ -241,6 +248,36 @@ export const LEVELS: readonly LevelDefinition[] = [
     examShots: 0,
     daily: true,
     template: layoutWithCut('level-11-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 12,
+    name: 'The 90\u00b0 rule',
+    description: 'Stunned, the cue ball leaves near square to the object ball. Say where it goes.',
+    cutRange: [20, 60],
+    pocketAllowance: 1,
+    cueDistance: [0.3, 0.8],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    scoring: { kind: 'departure', stroke: 'stun', allowance: 6 },
+    template: layoutWithCut('level-12-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.5),
+  },
+  {
+    id: 13,
+    name: 'The 30\u00b0 rule',
+    description: 'Rolling, the cue ball ends up about 30\u00b0 off its line. Say where it goes.',
+    cutRange: [12, 52],
+    pocketAllowance: 1,
+    cueDistance: [0.35, 0.8],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    scoring: { kind: 'departure', stroke: 'roll', allowance: 6 },
+    template: layoutWithCut('level-13-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.5),
   },
 ];
 

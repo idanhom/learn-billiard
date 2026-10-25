@@ -15,6 +15,7 @@
 import { FRACTIONS, type FractionName, fractionByName } from '../geometry/fractions';
 import type { CutSide } from '../geometry/shot';
 import { ESTIMATES, type Estimate, estimateLabel } from '../game/estimate';
+import type { DepartureResult, Stroke } from '../game/departure';
 import type { DrillKind, DrillResult } from '../game/perception';
 import type { BandMastery, ExamRun } from '../game/campaign';
 import type { CoachStep } from '../game/coach';
@@ -109,6 +110,13 @@ export interface HudState {
   readonly levelName: string;
   readonly levelDescription: string;
   readonly levels: readonly HudLevelEntry[];
+  /** On a level about the cue ball: the prediction, and how it went. */
+  readonly departure: {
+    readonly stroke: Stroke;
+    readonly stage: 'asking' | 'playing' | 'answered';
+    readonly result: DepartureResult | null;
+    readonly allowance: number;
+  } | null;
   /** The daily set's run in play, on its level. */
   readonly daily: { readonly shot: number; readonly total: number; readonly firstToday: number | null } | null;
   /** On how many of the last seven days there was practice. */
@@ -461,7 +469,7 @@ export class Hud {
 
   update(state: HudState): void {
     // A perception drill takes no shot, so the controls for one go with it.
-    this.#root.classList.toggle('drilling', state.drill !== null);
+    this.#root.classList.toggle('drilling', state.drill !== null || state.departure !== null);
     writeToggle(this.#soundToggle, state.sound);
     writeToggle(this.#autoNextToggle, state.autoNext);
     writeToggle(this.#contrastToggle, state.highContrast);
@@ -476,7 +484,17 @@ export class Hud {
     this.#renderMilestone(state);
     this.#renderCoach(state);
 
-    if (state.drill) {
+    if (state.departure && !state.replaying) {
+      const html = renderDeparture(state.levelName, state.departure, state.autoNextIn);
+      if (html !== this.#renderedReport) {
+        this.#renderedReport = html;
+        this.#report.innerHTML = html;
+      }
+      if (!this.#reportShown) {
+        this.#reportShown = true;
+        this.#report.style.display = '';
+      }
+    } else if (state.drill) {
       const html = renderDrill(state.drill, state.pocketAllowance, state.autoNextIn);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
@@ -631,7 +649,7 @@ export class Hud {
       ? `Exam &mdash; shot ${Math.min(state.exam.shotsTaken + 1, state.exam.total)} of ${state.exam.total}`
       : state.tierComplete
         ? 'Level complete'
-        : state.drill
+        : state.drill || state.departure
           ? `Tier ${state.tier}`
           : `Tier ${state.tier} &mdash; ${TIER_NAMES[state.tier] ?? ''}`;
 
@@ -644,8 +662,8 @@ export class Hud {
       : state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
       : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize} to advance` +
-        (state.drill ? '' : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
-    const tally = state.drill
+        (state.drill || state.departure ? '' : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
+    const tally = state.drill || state.departure
       ? `${state.qualified}/${state.attempts} read right`
       : `${state.qualified}/${state.attempts} on aim &middot; ${state.potted} potted`;
 
@@ -661,6 +679,14 @@ export class Hud {
   }
 
   #renderShot(state: HudState): void {
+    if (state.departure) {
+      this.#writeShot(
+        '<div class="hud-label">This shot</div><div class="hud-big">played for you</div>' +
+          `<div class="hud-sub">${state.departure.stroke === 'stun' ? 'stunned' : 'rolling'}: say where the cue ball goes</div>` +
+          diamondLine(state.diamonds),
+      );
+      return;
+    }
     if (!state.guides.readout) {
       // Say which guide is left, so a panel without numbers is not mistaken
       // for a tier without help.
@@ -1056,6 +1082,40 @@ function writeToggle(button: HTMLElement, on: boolean): void {
   if (button.textContent === text) return;
   button.textContent = text;
   button.setAttribute('aria-pressed', String(on));
+}
+
+/** A level about the cue ball: the question, then where it went against what was said. */
+function renderDeparture(
+  levelName: string,
+  departure: NonNullable<HudState['departure']>,
+  autoNextIn: number | null,
+): string {
+  const label = `<div class="hud-label">${escape(levelName)}</div>`;
+  if (departure.stage === 'asking') {
+    const stroke =
+      departure.stroke === 'stun'
+        ? 'stunned, so it meets the object ball with no roll'
+        : 'struck above centre, so it meets the object ball rolling';
+    return (
+      label +
+      '<div class="hud-sub">Where does the cue ball go after contact? <span class="kbd-hint">Click</span>' +
+      '<span class="touch-hint">Tap</span> on its path from the ghost ball, and the shot is played for you: ' +
+      `${stroke}.</div>`
+    );
+  }
+  if (departure.stage === 'playing' || !departure.result) return label + '<div class="hud-sub">Watch the cue ball.</div>';
+  const { error, ruleAngle, correct } = departure.result;
+  const went =
+    departure.stroke === 'stun'
+      ? `it left ${ruleAngle.toFixed(0)}&deg; from the object ball&rsquo;s line`
+      : `it ended ${ruleAngle.toFixed(0)}&deg; off its own line`;
+  return (
+    `<div class="hud-verdict ${correct ? 'good' : 'bad'}">${correct ? 'Right' : 'Not quite'}</div>` +
+    `<div class="hud-sub">Off by ${error.toFixed(1)}&deg;, ${departure.allowance}&deg; allowed: ${went}</div>` +
+    '<div class="hud-sub hud-note"><b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another &middot; ' +
+    '<button type="button" class="hud-call" data-replay>Replay</button><kbd class="kbd-hint"> P</kbd></div>' +
+    autoNextLine(autoNextIn)
+  );
 }
 
 /** Before the report: how did you hit it? */

@@ -133,6 +133,16 @@ const NO_GUIDES: GuideVisibility = {
   overlap: false,
 };
 
+/** The shot the game plays itself: its line, the ghost ball, and the object ball's path. */
+const SHOT_SHOWN: GuideVisibility = {
+  aimLine: true,
+  ghostBall: true,
+  objectPath: true,
+  readout: false,
+  powerHint: false,
+  overlap: false,
+};
+
 export class Campaign {
   readonly #store: ProgressStore;
   readonly #baseSeed: number;
@@ -208,8 +218,13 @@ export class Campaign {
     return this.#tiers.tier;
   }
 
-  /** The exam is exempt from tiers, and it, the daily set and the perception drills show no guide. */
+  /**
+   * The exam is exempt from tiers, and it, the daily set and the perception
+   * drills show no guide. A level about the cue ball shows the shot it plays,
+   * whatever the tier: the aim is not what it tests.
+   */
   get guides(): GuideVisibility {
+    if (this.#level.scoring) return SHOT_SHOWN;
     return this.#level.exam || this.#level.perception || this.#level.daily ? NO_GUIDES : this.#tiers.guides;
   }
 

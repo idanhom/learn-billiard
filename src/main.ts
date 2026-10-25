@@ -6,19 +6,20 @@
  * renderer interpolates between the last two physics states.
  */
 
-import type { ClothPreset } from './constants';
+import { type ClothPreset, clothRollingFriction } from './constants';
 import { formatDiamonds } from './geometry/diamonds';
 import { FRACTIONS, type FractionName } from './geometry/fractions';
 import { firstTouch, fullness as fullnessOf } from './geometry/shot';
 import { type Vec2, add, angleOf, fromAngle, signedAngleBetween } from './geometry/vec2';
 import { Campaign, type CampaignEvent } from './game/campaign';
 import { attachAimButtons, attachInput, attachTouchPower } from './game/input';
-import { speedBand } from './game/power';
+import { powerForCueSpeed, speedBand } from './game/power';
 import { browserStorage, createProgressStore } from './game/progress-store';
 import { createSettingsStore, nextCloth, nextTimeScale, stepViewingDistance } from './game/settings-store';
 import { ShotHistory, signedShare } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
 import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
+import { DepartureDrill, departureOf, strikeFor } from './game/departure';
 import { PerceptionDrill } from './game/perception';
 import { potWindow } from './game/pot-window';
 import { COACH_AIM_TOLERANCE, Coach } from './game/coach';
@@ -116,6 +117,10 @@ let drill: PerceptionDrill | undefined;
 let placedGhost: Vec2 | undefined;
 /** How many of the session's events have been sounded. */
 let heard = 0;
+/** On a level about the cue ball: the prediction for the layout in play. */
+let departure: DepartureDrill | undefined;
+/** The view to go back to after a cue-ball result was shown from overhead. */
+let viewBeforeResult: CameraView | undefined;
 /**
  * The shot just played, being shown again from overhead at a quarter speed:
  * its own session, how much of it has sounded, and the view to go back to.
@@ -204,6 +209,14 @@ const DRILL_ANSWER: GuideVisibility = {
   overlap: false,
 };
 
+/** A cue-ball prediction as the HUD shows it. */
+function departureState(): HudState['departure'] {
+  if (!departure) return null;
+  const scoring = campaign.level.scoring!;
+  const stage = departure.result ? 'answered' : departure.predicted ? 'playing' : 'asking';
+  return { stroke: departure.stroke, stage, result: departure.result ?? null, allowance: scoring.allowance };
+}
+
 /** The drill as the HUD shows it: which kind, how far along, and how it went. */
 function drillState(): HudState['drill'] {
   if (!drill) return null;
@@ -236,6 +249,10 @@ function nudgeAim(delta: number): void {
 function mayCharge(): boolean {
   if (drill) {
     announce('No shots here: read the angle.');
+    return false;
+  }
+  if (departure) {
+    announce('This shot is struck for you: click where the cue ball goes.');
     return false;
   }
   const why = routine?.holdUp(clock());
@@ -281,6 +298,11 @@ function startShot(): void {
   drill = newDrill();
   placedGhost = undefined;
   heard = 0;
+  departure = newDeparture();
+  if (viewBeforeResult) {
+    scene.setView(viewBeforeResult);
+    viewBeforeResult = undefined;
+  }
   if (routine) scene.setView('behind');
 }
 
@@ -291,6 +313,47 @@ function newDrill(): PerceptionDrill | undefined {
   const analysis = session.analysis;
   const window = potWindow(session.layout, settings.cloth, analysis);
   return new PerceptionDrill(kind, session.layout.object, analysis, window, campaign.pocketAllowance, clock());
+}
+
+/** On a level about the cue ball, a prediction to make for the layout in play. */
+function newDeparture(): DepartureDrill | undefined {
+  const scoring = campaign.level.scoring;
+  if (scoring?.kind !== 'departure') return undefined;
+  return new DepartureDrill(scoring.stroke, session.analysis.ghostCenter, scoring.allowance);
+}
+
+/**
+ * The player says the cue ball goes through `point`, and the shot is played
+ * for them: on the ideal line, struck as the level's stroke has it.
+ */
+function predictDeparture(point: Vec2): void {
+  if (!departure || session.phase !== 'aiming' || !departure.predict(point)) return;
+  const { speed, tip } = strikeFor(departure.stroke, session.analysis.cueToGhost, clothRollingFriction(settings.cloth));
+  session.aimTo(angleOf(session.analysis.aimDirection));
+  session.setTip(tip);
+  session.beginCharge();
+  session.setPower(powerForCueSpeed(speed));
+  if (session.release()) released();
+}
+
+/** Where the cue ball went, against the prediction: scored like a shot, but never on the aim. */
+function recordDeparture(outcome: ShotOutcome, prediction: DepartureDrill): void {
+  evaluations++;
+  reportShownAt = clock();
+  const after = session.afterContact;
+  const actual = after ? departureOf(after, prediction.stroke, settings.cloth) : undefined;
+  if (actual && after) {
+    // The rule's own angle: off the object ball's line when stunned, off its own line when rolling.
+    const against = prediction.stroke === 'stun' ? after[1]!.vel : session.analysis.aimDirection;
+    prediction.score(actual, (Math.abs(signedAngleBetween(actual, against)) * 180) / Math.PI);
+  }
+  const level = campaign.level;
+  handleEvent(campaign.record({ qualifying: prediction.result?.correct ?? false, pottedTarget: outcome.pottedTarget }), level);
+  // The answer is the two lines from the ghost ball, which read from above.
+  if (scene.view !== 'overhead') {
+    viewBeforeResult = scene.view;
+    scene.setView('overhead');
+  }
 }
 
 /** A flash drill's call, once the balls have gone. */
@@ -402,6 +465,7 @@ function selectLevel(id: number): void {
 }
 
 function recordOutcome(outcome: ShotOutcome): void {
+  if (departure) return recordDeparture(outcome, departure);
   evaluations++;
   const level = campaign.level;
   // Once the ghost ball has gone, the player says how they hit it before the
@@ -601,6 +665,11 @@ attachAimButtons(hud.touch.aimLeft, hud.touch.aimRight, nudgeAim);
 
 // A place drill's ghost ball goes where the table is clicked.
 canvas.addEventListener('click', (event) => {
+  if (departure && !departure.predicted) {
+    const point = scene.pickTable(event.clientX, event.clientY);
+    if (point) predictDeparture(point);
+    return;
+  }
   if (drill?.kind !== 'place' || drill.result) return;
   const point = scene.pickTable(event.clientX, event.clientY);
   if (point) placeDrill(point);
@@ -664,17 +733,24 @@ function frame(now: number): void {
   // A drill shows no guide until it is answered, and then the answer: the true
   // ghost ball, the lines to it and on to the pocket, and where the player put
   // theirs with the line it would have sent the object ball on.
+  // A shot played for the player stays drawn from the deal to the report,
+  // with the line they said the cue ball would take once they have said it.
   const answered = drill?.result !== undefined;
-  scene.guides.setVisible(drill ? answered : aiming);
-  if (drill ? answered : aiming) {
+  const guided = drill ? answered : aiming || (departure !== undefined && !replay);
+  scene.guides.setVisible(guided);
+  if (guided) {
     scene.guides.update({
       visibility: drill ? DRILL_ANSWER : campaign.guides,
-      cue: session.cueBall.pos,
-      aimEnd: drill ? analysis.ghostCenter : add(session.cueBall.pos, fromAngle(session.aimAngle, analysis.cueToGhost)),
+      cue: session.layout.cue,
+      aimEnd:
+        drill || departure
+          ? analysis.ghostCenter
+          : add(session.cueBall.pos, fromAngle(session.aimAngle, analysis.cueToGhost)),
       ghost: analysis.ghostCenter,
-      object: session.objectBall.pos,
+      object: session.layout.object,
       pocket: session.target,
       placed: placedGhost,
+      predicted: departure?.predicted ? { from: analysis.ghostCenter, direction: departure.predicted } : undefined,
     });
   }
 
@@ -684,7 +760,7 @@ function frame(now: number): void {
     alpha: shown.alpha,
     aimAngle: session.aimAngle,
     power: session.power,
-    showCue: aiming && !drill,
+    showCue: aiming && !drill && !departure,
     hideBalls: drill?.hidden(clock()) ?? false,
     objectBallNumber,
     shotLength: analysis.cueToGhost + analysis.objectToPocket,
@@ -751,6 +827,7 @@ function frame(now: number): void {
     routineLog,
     estimate,
     drill: drillState(),
+    departure: departureState(),
     outcome: session.outcome,
     history: history.entries,
     tendencies: history.tendencies,
@@ -793,6 +870,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     toggleSound,
     callDrill: (fraction: FractionName) => callDrill(fraction),
     placeDrill: (x: number, y: number) => placeDrill({ x, y }),
+    predictDeparture: (x: number, y: number) => predictDeparture({ x, y }),
     ghost: () => session.analysis.ghostCenter,
     continue: continueOn,
     selectLevel,
@@ -837,6 +915,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       routineLog,
       estimate,
       drill: drillState(),
+      departure: departureState(),
       replaying: replay !== undefined,
       coach: coach.active ? coach.step : null,
       highContrast: settings.highContrast,

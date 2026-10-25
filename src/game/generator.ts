@@ -25,6 +25,7 @@ import {
 } from '../geometry/table';
 import { type Vec2, add, angleOf, dist, fromAngle, normalize, rotate, scale, sub, vec } from '../geometry/vec2';
 import { type ShotLayout, layoutWithCut } from './drills';
+import { DEPARTURE_ROOM, ruleDirection } from './departure';
 import type { LevelDefinition } from './levels';
 import { makeRng } from './random';
 
@@ -45,7 +46,8 @@ export type LayoutViolation =
   | 'cue-in-pocket'
   | 'object-in-pocket'
   | 'cue-path-enters-pocket'
-  | 'object-path-enters-pocket';
+  | 'object-path-enters-pocket'
+  | 'no-room-for-cue-ball';
 
 export interface GenerateOptions {
   readonly preferredSide?: 'left' | 'right';
@@ -271,6 +273,16 @@ export function layoutViolations(
 
   if (level.railAdjacent && railClearance(layout.object) > level.railBand) {
     violations.push('not-rail-adjacent');
+  }
+
+  // A level about where the cue ball goes leaves it room to go there: clear
+  // table along the rule's line, and no pocket on it.
+  if (level.scoring?.kind === 'departure') {
+    const along = ruleDirection(level.scoring.stroke, layout.cue, ghost, layout.object);
+    const end = add(ghost, scale(along, DEPARTURE_ROOM));
+    if (!isInLegalBounds(end) || pocketOnPath(ghost, end, { margin: POCKET_CLEARANCE })) {
+      violations.push('no-room-for-cue-ball');
+    }
   }
 
   return violations;

@@ -570,6 +570,51 @@ await sleep(900);
 const upgraded = await state();
 check('a version 1 save loads as it was, with no band played', upgraded.levelId === 3 && upgraded.examBest === 6 && upgraded.notice === null && upgraded.bands.every((band) => band.shots === 0), JSON.stringify({ level: upgraded.levelId, best: upgraded.examBest, notice: upgraded.notice }));
 
+// The cue-ball rules: say where the cue ball goes, and the shot is played.
+for (const [levelId, stroke] of [
+  [12, 'stun'],
+  [13, 'roll'],
+]) {
+  await page.evaluate((id) => window.__debug.selectLevel(id), levelId);
+  await sleep(200);
+  const asking = await state();
+  check(`level ${levelId} asks where the cue ball goes`, asking.departure?.stage === 'asking' && asking.departure.stroke === stroke, JSON.stringify(asking.departure));
+  // Say the rule: square to the line of centres when stunned, thirty degrees off the cue ball's line when rolling.
+  await page.evaluate((rolling) => {
+    const s = window.__debug.state();
+    const ghost = window.__debug.ghost();
+    const object = s.balls[1].pos;
+    const centres = { x: object.x - ghost.x, y: object.y - ghost.y };
+    const length = Math.hypot(centres.x, centres.y);
+    const u = { x: centres.x / length, y: centres.y / length };
+    const aim = { x: ghost.x - s.balls[0].pos.x, y: ghost.y - s.balls[0].pos.y };
+    const side = Math.sign(aim.x * u.y - aim.y * u.x) || 1;
+    let direction = { x: side * u.y, y: -side * u.x };
+    if (rolling) {
+      const aimLength = Math.hypot(aim.x, aim.y);
+      const a = { x: aim.x / aimLength, y: aim.y / aimLength };
+      const turn = (-side * 30 * Math.PI) / 180;
+      direction = { x: a.x * Math.cos(turn) - a.y * Math.sin(turn), y: a.x * Math.sin(turn) + a.y * Math.cos(turn) };
+    }
+    window.__debug.predictDeparture(ghost.x + direction.x * 0.4, ghost.y + direction.y * 0.4);
+  }, stroke === 'roll');
+  await page.waitForFunction(() => window.__debug.state().departure?.stage === 'answered', null, { timeout: 30000 });
+  const answered = await state();
+  const report = await page.textContent('#hud-report');
+  check(
+    `level ${levelId}: the shot is played, and the prediction scored near the rule`,
+    answered.departure.result.error < 12 && report.includes(stroke === 'stun' ? 'object ball' : 'its own line'),
+    `${answered.departure.result.error.toFixed(1)} deg; ${report}`,
+  );
+  check(`level ${levelId}: the answer is shown from overhead`, answered.view === 'overhead', answered.view);
+  await page.screenshot({ path: `${OUT}rule-${stroke}.png` });
+  await page.evaluate(() => window.__debug.next());
+  await sleep(150);
+  check(`level ${levelId}: and the next shot is back in the view it was in`, (await state()).view === 'behind');
+}
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(200);
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {

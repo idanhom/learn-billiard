@@ -9,7 +9,7 @@
  * key during the roll-out cannot restrike or re-aim.
  */
 
-import { type ClothPreset, DEFAULT_CLOTH, clothRollingFriction } from '../constants';
+import { type ClothPreset, DEFAULT_CLOTH, MAX_TIP_OFFSET, clothRollingFriction } from '../constants';
 import { type FractionName, nearestFraction } from '../geometry/fractions';
 import {
   type AimError,
@@ -22,7 +22,7 @@ import {
   objectDeparture,
 } from '../geometry/shot';
 import { type PocketId, isOnShelf, nearestPocket, pocketById } from '../geometry/table';
-import { type Vec2, dist, fromAngle, signedAngleBetween, vec } from '../geometry/vec2';
+import { type Vec2, dist, fromAngle, scale, signedAngleBetween } from '../geometry/vec2';
 import {
   MAX_SHOT_DURATION,
   REST_DWELL_TICKS,
@@ -156,6 +156,10 @@ export class ShotSession {
   #call: FractionName | null = null;
   /** Where each ball has been since the stroke: the post-shot diagram. */
   #trails: Vec2[][] = [];
+  /** Where the tip strikes, up the ball from centre as a fraction of its radius. */
+  #tip = 0;
+  /** The balls just after the cue ball first met the object ball. */
+  #afterContact: Ball[] | undefined;
 
   constructor(layout: ShotLayout, options: ShotSessionOptions = {}) {
     this.layout = layout;
@@ -322,13 +326,34 @@ export class ShotSession {
 
   release(): boolean {
     if (this.#phase !== 'charging') return false;
-    // A cue strike is a pure slide: speed, and no roll of its own.
+    // A centre-ball strike is a pure slide: speed, and no roll of its own. Off
+    // centre the tip adds spin, 2.5 (b/R) times the speed: follow above,
+    // draw below.
     this.cueBall.vel = fromAngle(this.#aimAngle, this.cueSpeed);
-    this.cueBall.roll = vec(0, 0);
+    this.cueBall.roll = scale(this.cueBall.vel, 2.5 * this.#tip);
     this.#phase = 'simulating';
     this.#recordMissDistance();
     this.#trails = this.#balls.map((ball) => [ball.pos]);
     return true;
+  }
+
+  /**
+   * Strike `offset` of the radius above centre, or below it when negative,
+   * for follow or draw; held to the miscue limit. Only while lining up.
+   */
+  setTip(offset: number): boolean {
+    if (this.#phase !== 'aiming' && this.#phase !== 'charging') return false;
+    this.#tip = Math.min(MAX_TIP_OFFSET, Math.max(-MAX_TIP_OFFSET, offset));
+    return true;
+  }
+
+  get tip(): number {
+    return this.#tip;
+  }
+
+  /** The balls just after the cue ball first met the object ball, once it has. */
+  get afterContact(): readonly Ball[] | undefined {
+    return this.#afterContact;
   }
 
   /** Each ball's path since the stroke, a point every sixtieth of a second and at every contact. */
@@ -354,6 +379,7 @@ export class ShotSession {
           ((event.a === CUE_BALL_ID && event.b === OBJECT_BALL_ID) ||
             (event.a === OBJECT_BALL_ID && event.b === CUE_BALL_ID))
         ) {
+          if (!this.#contacted) this.#afterContact = this.#balls.map(cloneBall);
           this.#contacted = true;
         }
       }
