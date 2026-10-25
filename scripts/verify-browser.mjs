@@ -769,6 +769,39 @@ check('reloaded on the 90\u00b0 rule, the first shot asks where the cue ball goe
 await page.evaluate(() => window.__debug.selectLevel(1));
 await sleep(200);
 
+// Kicks and safeties: scored on the contacts, and for a safety on what is left.
+await page.evaluate(() => window.__debug.selectLevel(22));
+await sleep(200);
+const kickPanel = await page.textContent('#hud-shot');
+check('a kick asks for a cushion first', kickPanel.includes('off a cushion first'), kickPanel);
+await page.evaluate(() => {
+  const s = window.__debug.state();
+  const cue = s.balls[0].pos;
+  window.__debug.aimAt(Math.atan2(s.mirror.y - cue.y, s.mirror.x - cue.x));
+  window.__debug.fire(0.75);
+});
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const kickReport = await page.textContent('#hud-report');
+check('and is scored on what the cue ball met, and in what order', /Kicked it|No cushion first|wrong ball|Missed it/.test(kickReport), kickReport);
+check('a kick level counts tiers, not the aiming levels\u2019 guides', (await page.textContent('#hud-status')).includes('Tier 0') && !(await page.textContent('#hud-status')).includes('full guides'));
+await page.evaluate(() => window.__debug.setView('overhead'));
+await sleep(200);
+await page.screenshot({ path: `${OUT}kick.png` });
+await page.evaluate(() => {
+  window.__debug.setView('behind');
+  window.__debug.selectLevel(23);
+});
+await sleep(300);
+await page.evaluate(() => {
+  window.__debug.aimIdeal();
+  window.__debug.fire(0.3);
+});
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const safetyReport = await page.textContent('#hud-report');
+check('a safety is scored on the hit and on what is left', /Safe|A pot left|Potted it|Scratch|Foul/.test(safetyReport), safetyReport);
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(200);
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {

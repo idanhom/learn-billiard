@@ -37,6 +37,8 @@ export interface ShotLayout {
   readonly spotRadius?: number;
   /** Which way the cue starts pointing in a drill for the cue ball alone, as a heading. */
   readonly heading?: number;
+  /** For a kick: the object ball reflected in the cushion it is played off. */
+  readonly mirror?: Vec2;
 }
 
 /**

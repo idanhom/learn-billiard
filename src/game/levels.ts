@@ -16,8 +16,8 @@
  * without playing them, level 10 deals the angles mastered least, level 11 is
  * the daily set, levels 12 and 13 are about where the cue ball goes, 14 to 16
  * about where it stops, 17 and 18 about its speed with no object ball, 19 about
- * playing it to a zone for the next shot, 20 runs short patterns, and 21 is the
- * assessment, the exam made general.
+ * playing it to a zone for the next shot, 20 runs short patterns, 21 is the
+ * assessment, the exam made general, and 22 and 23 are kicks and safeties.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
@@ -78,7 +78,9 @@ export interface LevelDefinition {
     | { readonly kind: 'position'; readonly target: PositionTarget; readonly distance?: number }
     | { readonly kind: 'speed'; readonly target: SpeedTarget; readonly distance?: number }
     | { readonly kind: 'zone' }
-    | { readonly kind: 'pattern' };
+    | { readonly kind: 'pattern' }
+    | { readonly kind: 'kick' }
+    | { readonly kind: 'safety' };
   /** Fallback used when generation cannot satisfy the brief. */
   readonly template: ShotLayout;
 }
@@ -415,6 +417,36 @@ export const LEVELS: readonly LevelDefinition[] = [
     examShots: 0,
     assessment: true,
     template: layoutWithCut('level-21-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 22,
+    name: 'Kick shots',
+    description: 'A ball in the way: off a cushion first, then the object ball. The reflection is where to start.',
+    cutRange: [0, 60],
+    pocketAllowance: 1,
+    cueDistance: [0.35, 1],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    scoring: { kind: 'kick' },
+    template: layoutWithCut('level-22-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 23,
+    name: 'Safeties',
+    description: 'Hit the object ball, and leave no direct pot from where the cue ball stops.',
+    cutRange: [0, 60],
+    pocketAllowance: 1,
+    cueDistance: [0.35, 1],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    scoring: { kind: 'safety' },
+    template: layoutWithCut('level-23-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
   },
 ];
 

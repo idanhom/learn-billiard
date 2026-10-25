@@ -20,9 +20,11 @@ import { ShotHistory, signedShare } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
 import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
 import { DepartureDrill, departureOf, strikeFor } from './game/departure';
+import { pocketName } from './game/drill-sheet';
 import { PerceptionDrill } from './game/perception';
 import { type PositionResult, ZONE_RADIUS, scorePosition, zoneCentre } from './game/position';
 import { type SpeedResult, scoreSpeed } from './game/speed';
+import { type KickResult, type SafetyResult, kickResult, safetyResult } from './game/kicks';
 import { potWindow } from './game/pot-window';
 import { COACH_AIM_TOLERANCE, Coach } from './game/coach';
 import { MASTERED_AT, MASTERY_STANDARD, MASTERY_WINDOW } from './game/mastery';
@@ -138,6 +140,8 @@ let positionResult: PositionResult | undefined;
 let speedResult: SpeedResult | undefined;
 /** On the patterns level, how the run stood after the last shot. */
 let patternNews: CampaignEvent['pattern'];
+/** On a kick or a safety, how it went. */
+let taskResult: { readonly kind: 'kick'; readonly result: KickResult } | { readonly kind: 'safety'; readonly result: SafetyResult } | undefined;
 /**
  * The shot just played, being shown again from overhead at a quarter speed:
  * its own session, how much of it has sounded, and the view to go back to.
@@ -236,8 +240,44 @@ const DRILL_ANSWER: GuideVisibility = {
 /** As far as the aim line runs: to the ghost ball, or on its own to the ring, or up the table for the lag. */
 function aimLineLength(): number {
   const spot = session.layout.spot;
+  if (session.layout.mirror) return Math.min(1.2, dist(session.layout.cue, session.layout.mirror));
+  if (dealt.scoring?.kind === 'safety') return 0.8;
   if (!spot) return session.analysis.cueToGhost;
   return dealt.speed?.target === 'lag' ? 1 : dist(session.layout.cue, spot);
+}
+
+/** A kick or a safety as the HUD shows it: which, and once played, its verdict. */
+function taskState(): HudState['task'] {
+  const kind = dealt.scoring?.kind;
+  if (kind !== 'kick' && kind !== 'safety') return null;
+  return { kind, verdict: taskResult ? taskVerdict(taskResult) : null };
+}
+
+function taskVerdict(task: NonNullable<typeof taskResult>): { readonly text: string; readonly good: boolean; readonly why: string } {
+  if (task.kind === 'kick') {
+    switch (task.result) {
+      case 'kicked':
+        return { text: 'Kicked it', good: true, why: 'Off the cushion, then the object ball.' };
+      case 'no-cushion':
+        return { text: 'No cushion first', good: false, why: 'It met the object ball before any cushion.' };
+      case 'other-ball':
+        return { text: 'Hit the wrong ball', good: false, why: 'Another ball came first.' };
+      case 'missed':
+        return { text: 'Missed it', good: false, why: 'The cue ball never reached the object ball.' };
+    }
+  }
+  switch (task.result.kind) {
+    case 'safe':
+      return { text: 'Safe', good: true, why: 'No direct pot left, at any pocket.' };
+    case 'pot-left':
+      return { text: 'A pot left', good: false, why: `There is a direct pot to the ${pocketName(task.result.pocket)}.` };
+    case 'potted':
+      return { text: 'Potted it', good: false, why: 'A safety leaves the ball up.' };
+    case 'scratch':
+      return { text: 'Scratch', good: false, why: 'The cue ball went in.' };
+    case 'foul':
+      return { text: 'Foul', good: false, why: 'The object ball has to be hit first.' };
+  }
 }
 
 /** A speed drill as the HUD shows it. */
@@ -356,6 +396,7 @@ function startShot(): void {
   positionResult = undefined;
   speedResult = undefined;
   patternNews = undefined;
+  taskResult = undefined;
   if (campaign.level.id !== tipLevel) {
     tip = 0;
     tipLevel = campaign.level.id;
@@ -559,8 +600,26 @@ function recordSpeed(speed: NonNullable<Campaign['speed']>): void {
   handleEvent(campaign.record({ qualifying: speedResult.correct, pottedTarget: false }), level);
 }
 
+/** A kick or a safety: scored on the cue ball's contacts, and for a safety where everything stopped. */
+function recordTask(kind: 'kick' | 'safety'): void {
+  evaluations++;
+  reportShownAt = clock();
+  const [cue, object, ...others] = session.balls;
+  if (kind === 'kick') {
+    taskResult = { kind, result: kickResult(session.events) };
+  } else {
+    const standing = others.filter((ball) => !ball.potted).map((ball) => ball.pos);
+    taskResult = { kind, result: safetyResult(session.events, cue!, object!, standing) };
+  }
+  const made = taskResult.kind === 'kick' ? taskResult.result === 'kicked' : taskResult.result.kind === 'safe';
+  const level = campaign.level;
+  handleEvent(campaign.record({ qualifying: made, pottedTarget: false }), level);
+}
+
 function recordOutcome(outcome: ShotOutcome): void {
   if (departure) return recordDeparture(outcome, departure);
+  const kind = dealt.scoring?.kind;
+  if (kind === 'kick' || kind === 'safety') return recordTask(kind);
   const speed = dealt.speed;
   if (speed) return recordSpeed(speed);
   evaluations++;
@@ -843,10 +902,10 @@ function frame(now: number): void {
   // Once a shot is scored, where the balls went, beside the line it needed.
   // Not while the self-estimate asks, since the line would answer it.
   if (session.phase === 'evaluated' && !replay && !estimate?.asking) {
-    scene.trails.show(
-      session.trails,
-      session.layout.objectAway ? undefined : { from: session.layout.object, to: session.target },
-    );
+    // The line the object ball needed, where the shot was a pot.
+    const kind = dealt.scoring?.kind;
+    const notAPot = session.layout.objectAway || kind === 'kick' || kind === 'safety';
+    scene.trails.show(session.trails, notAPot ? undefined : { from: session.layout.object, to: session.target });
   } else {
     scene.trails.hide();
   }
@@ -876,6 +935,8 @@ function frame(now: number): void {
       object: session.layout.object,
       pocket: session.target,
       placed: placedGhost,
+      // The reflection to aim a kick at, while the tier still shows the line.
+      mirror: campaign.tier === 0 ? session.layout.mirror : undefined,
       predicted: departure?.predicted ? { from: analysis.ghostCenter, direction: departure.predicted } : undefined,
     });
   }
@@ -964,6 +1025,7 @@ function frame(now: number): void {
     speed: speedState(),
     pattern: campaign.pattern ?? null,
     patternNews: patternNews ?? null,
+    task: taskState(),
     outcome: session.outcome,
     history: history.entries,
     tendencies: history.tendencies,
@@ -1067,8 +1129,10 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       speed: speedState(),
       pattern: campaign.pattern ?? null,
       patternNews: patternNews ?? null,
+      task: taskState(),
       replaying: replay !== undefined,
       scoring: dealt.scoring?.kind ?? null,
+      mirror: session.layout.mirror ?? null,
       coach: coach.active ? coach.step : null,
       highContrast: settings.highContrast,
       reducedMotion: scene.reducedMotion,

@@ -49,6 +49,8 @@ export interface GuideState {
   readonly placed?: Vec2 | undefined;
   /** Where the player said the cue ball would go, from the ghost ball. */
   readonly predicted?: { readonly from: Vec2; readonly direction: Vec2 } | undefined;
+  /** For a kick: the object ball reflected in the cushion, to aim at. */
+  readonly mirror?: Vec2 | undefined;
 }
 
 /** How far the predicted line is drawn from the ghost ball. */
@@ -63,13 +65,15 @@ export class Guides {
   readonly #placed = wireBall(PLACED_COLOR);
   readonly #placedPath = flatLine(PLACED_COLOR, 0.7);
   readonly #predicted = flatLine(PLACED_COLOR, 0.85);
+  readonly #mirror = wireBall(GHOST_COLOR);
   #thickness = 1;
 
   constructor() {
     this.group.name = 'guides';
     this.#ghost.name = 'ghost-ball';
     this.#placed.name = 'placed-ghost-ball';
-    this.group.add(this.#aimLine, this.#objectPath, this.#ghost, this.#placed, this.#placedPath, this.#predicted);
+    this.#mirror.name = 'mirror-ball';
+    this.group.add(this.#aimLine, this.#objectPath, this.#ghost, this.#placed, this.#placedPath, this.#predicted, this.#mirror);
   }
 
   /** Draw the guides for high contrast, or as they normally are. */
@@ -81,6 +85,7 @@ export class Guides {
     paint(this.#placed, palette.placed);
     paint(this.#placedPath, palette.placed);
     paint(this.#predicted, palette.placed);
+    paint(this.#mirror, palette.ghost);
     this.#thickness = palette.thickness;
   }
 
@@ -105,6 +110,9 @@ export class Guides {
       const away = scale(normalize(sub(state.object, placed)), dist(state.object, state.pocket));
       placeLine(this.#placedPath, state.object, add(state.object, away), 0.004, this.#thickness);
     }
+
+    this.#mirror.visible = state.mirror !== undefined;
+    if (state.mirror) this.#mirror.position.copy(toWorld(state.mirror, BALL_RADIUS));
 
     const predicted = state.predicted;
     this.#predicted.visible = predicted !== undefined;

@@ -326,6 +326,20 @@ follows the shape of the Billiard University and PAT exams, standard drills
 scored together, but it is not calibrated against either, and the ratings are
 this trainer's own. `N` deals the same station until it is played.
 
+Levels 22 and 23 are the shots for when there is no pot, centre ball. A kick
+puts a ball straight between the cue ball and the object ball, and counts when
+the cue ball meets a cushion and then the object ball before anything else.
+The mirror system aims at the object ball reflected in the cushion, across the
+line the ball's centre rolls along against it, and at tier 0 the reflection
+is drawn. It is where to start, not the answer: aimed straight at it, a kick
+gets there in 42 of 60 layouts at 2.5 m/s but only 10 at 1.8 and 3 at 1.2,
+because a rolling ball's spin bends its path as it comes off the cushion, as
+it does at a table. A safety deals the object ball and two others, and counts
+when the cue ball hits the object ball first, nothing goes down, and no pocket
+is left with a direct pot from where the cue ball stops: a line to the ghost
+ball and on to the pocket that nothing blocks, at a cut and a stroke this
+trainer would deal.
+
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is
 part of the skill, and a level that only ever deals one kind never tests it.

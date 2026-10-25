@@ -59,6 +59,7 @@ import { SPEED_RUNGS, type SpeedTarget, speedLayout } from './speed';
 import { zoneLayout } from './zones';
 import { PATTERN_SIZES, type Pattern, dealPattern, patternLayout } from './patterns';
 import { STATIONS, pointsByPart, ratingFor } from './assessment';
+import { kickLayout, safetyLayout } from './kicks';
 import { makeRng, pickWeighted } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
@@ -258,7 +259,10 @@ export class Campaign {
    */
   get guides(): GuideVisibility {
     if (this.#level.assessment) return NO_GUIDES;
-    if (this.#level.scoring?.kind === 'speed') return CUE_ALONE;
+    const kind = this.#level.scoring?.kind;
+    if (kind === 'speed') return CUE_ALONE;
+    // Kicks and safeties: the line at the first two tiers, then nothing.
+    if (kind === 'kick' || kind === 'safety') return this.#tiers.tier < 2 ? CUE_ALONE : NO_GUIDES;
     if (this.#level.scoring) return SHOT_SHOWN;
     return this.#level.exam || this.#level.perception || this.#level.daily ? NO_GUIDES : this.#tiers.guides;
   }
@@ -646,6 +650,10 @@ export class Campaign {
     switch (scoring?.kind) {
       case 'zone':
         return { layout: zoneLayout(level, seed), source: level };
+      case 'kick':
+        return { layout: kickLayout(seed, `L${level.id}-s${seed}`), source: level };
+      case 'safety':
+        return { layout: safetyLayout(seed, `L${level.id}-s${seed}`), source: level };
       case 'speed': {
         // The rung for speed control; the lag is the same every time.
         const distance = scoring.target === 'distance' ? SPEED_RUNGS[rung]! : 0;

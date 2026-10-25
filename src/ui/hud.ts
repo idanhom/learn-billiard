@@ -131,6 +131,11 @@ export interface HudState {
     readonly distance: number;
     readonly result: PositionResult | null;
   } | null;
+  /** On a kick or a safety: which, and once played, how it went. */
+  readonly task: {
+    readonly kind: 'kick' | 'safety';
+    readonly verdict: { readonly text: string; readonly good: boolean; readonly why: string } | null;
+  } | null;
   /** On the patterns level: which ball is next, of how many. */
   readonly pattern: { readonly ball: number; readonly of: number } | null;
   /** How the run stood after the last shot: balls down, of how many, and whether it is over. */
@@ -531,7 +536,23 @@ export class Hud {
     this.#renderMilestone(state);
     this.#renderCoach(state);
 
-    if (state.speed?.result && !state.replaying) {
+    if (state.task?.verdict && !state.replaying) {
+      const { text, good, why } = state.task.verdict;
+      const html =
+        `<div class="hud-verdict ${good ? 'good' : 'bad'}">${text}</div><div class="hud-sub">${why}</div>` +
+        '<div class="hud-sub hud-note"><button type="button" class="hud-call" data-replay>Replay</button>' +
+        '<kbd class="kbd-hint"> P</kbd> &middot; <b>Retry</b><kbd class="kbd-hint"> R</kbd> this one &middot; ' +
+        '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</div>' +
+        autoNextLine(state.autoNextIn);
+      if (html !== this.#renderedReport) {
+        this.#renderedReport = html;
+        this.#report.innerHTML = html;
+      }
+      if (!this.#reportShown) {
+        this.#reportShown = true;
+        this.#report.style.display = '';
+      }
+    } else if (state.speed?.result && !state.replaying) {
       const html = renderSpeed(state.speed.target, state.speed.result, state.autoNextIn);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
@@ -714,7 +735,7 @@ export class Hud {
         ? 'Level complete'
         : (state.position && state.position.target !== 'zone') || state.speed?.target === 'distance'
           ? `Rung ${state.tier + 1} of 4`
-          : state.speed || state.position
+          : state.speed || state.position || state.task
           ? `Tier ${state.tier}`
           : state.drill || state.departure
           ? `Tier ${state.tier}`
@@ -732,10 +753,12 @@ export class Hud {
       : state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
       : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize}${state.pattern || state.patternNews ? ' runs' : ''} to advance` +
-        (state.drill || state.departure || state.position || state.speed || state.pattern || state.patternNews
+        (state.drill || state.departure || state.position || state.speed || state.pattern || state.patternNews || state.task
           ? ''
           : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
-    const tally = state.speed
+    const tally = state.task
+      ? `${state.qualified}/${state.attempts} made`
+      : state.speed
       ? `${state.qualified}/${state.attempts} in the ring`
       : state.position
       ? `${state.qualified}/${state.attempts} in the ${state.position.target === 'zone' ? 'zone' : 'ring'} &middot; ${state.potted} potted`
@@ -755,6 +778,15 @@ export class Hud {
   }
 
   #renderShot(state: HudState): void {
+    if (state.task) {
+      const kick = state.task.kind === 'kick';
+      this.#writeShot(
+        `<div class="hud-label">This shot</div><div class="hud-big">${kick ? 'kick' : 'safety'}</div>` +
+          `<div class="hud-sub">${kick ? 'off a cushion first, then the object ball' : 'hit it, and leave no direct pot'}</div>` +
+          diamondLine(state.diamonds),
+      );
+      return;
+    }
     if (state.pattern) {
       const last = state.pattern.ball === state.pattern.of;
       this.#writeShot(

@@ -407,10 +407,13 @@ describe('persistence', () => {
     const subject = campaign();
     // A layout for the cue ball alone answers to the speed drills' checks, not the aiming ones,
     // and a pattern's later shots are played from wherever the cue ball stopped.
+    // Kicks and safeties put balls in the way on purpose, and their own tests hold them.
     const violations = (level: (typeof LEVELS)[number]) =>
       level.scoring?.kind === 'speed'
         ? speedViolations(subject.layout, level.scoring.target)
-        : level.scoring?.kind === 'pattern' && subject.pattern?.ball !== 1
+        : (level.scoring?.kind === 'pattern' && subject.pattern?.ball !== 1) ||
+            level.scoring?.kind === 'kick' ||
+            level.scoring?.kind === 'safety'
           ? []
           : layoutViolations(subject.layout, subject.layoutLevel);
     for (const level of LEVELS) {
