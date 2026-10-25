@@ -86,6 +86,9 @@ const OVERHEAD_MARGIN = 1.56;
 /** How long a potted ball takes to drop out of sight. */
 const SINK_SECONDS = 0.3;
 
+/** How long a replay takes to fade into the shot it hands back to. */
+const CROSSFADE_SECONDS = 0.4;
+
 export interface RenderState {
   readonly balls: readonly Ball[];
   readonly previous: readonly Ball[];
@@ -137,6 +140,9 @@ export class PoolScene {
   /** The canvas's height in CSS pixels, and how far the player sits from it, for the stance view's true scale. */
   #cssHeight = 1;
   #viewingDistance = 0.6;
+  /** A frame held over the canvas while it fades out, and how long it has left. */
+  #fade: HTMLCanvasElement | undefined;
+  #fadeLeft = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.#canvas = canvas;
@@ -251,6 +257,41 @@ export class PoolScene {
     this.#placeCamera(cuePos, state);
     this.room.setEyeHeight(this.#camera.position.y);
     this.#renderer.render(this.scene, this.#camera);
+    if (this.#fadeLeft > 0) this.#fadeOut(state.dt);
+  }
+
+  /**
+   * Hold what is on screen now and fade it out over whatever is drawn next, as
+   * a replay hands back to the shot. A cut where motion is reduced.
+   */
+  crossfade(): void {
+    if (this.#reducedMotion) return;
+    const fade = (this.#fade ??= this.#createFade());
+    // The drawing buffer is not kept once a frame is shown: draw it again to copy it.
+    this.#renderer.render(this.scene, this.#camera);
+    fade.width = this.#canvas.width;
+    fade.height = this.#canvas.height;
+    fade.getContext('2d')?.drawImage(this.#canvas, 0, 0);
+    fade.style.opacity = '1';
+    fade.style.display = 'block';
+    this.#fadeLeft = CROSSFADE_SECONDS;
+  }
+
+  #createFade(): HTMLCanvasElement {
+    const fade = document.createElement('canvas');
+    fade.className = 'crossfade';
+    fade.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none';
+    this.#canvas.after(fade);
+    return fade;
+  }
+
+  #fadeOut(dt: number): void {
+    const fade = this.#fade!;
+    this.#fadeLeft = Math.max(0, this.#fadeLeft - dt);
+    // Eased out: quick to start clearing, gentle as the last of it goes.
+    const left = this.#fadeLeft / CROSSFADE_SECONDS;
+    fade.style.opacity = String(left * left);
+    if (this.#fadeLeft === 0) fade.style.display = 'none';
   }
 
   /** What the last frame cost the GPU: draw calls and triangles, the shadow pass included. */

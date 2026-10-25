@@ -59,7 +59,7 @@ level does too. It does not come back once done.
 | `G` | get down on the line, or stand back up (last tier and exam) |
 | `T` | at the table: what to take to a real one, and what this can't teach |
 | `M` | sound on or off |
-| `P` | replay the shot just played, from overhead at a quarter speed |
+| `P` | replay the shot just played, from overhead at a quarter speed; `Esc` stops it |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
 degree at a time with the `‹` `›` buttons. Power is the strip down the right edge:
@@ -82,8 +82,11 @@ open panel or a summary card holds it.
 
 `P` (or Replay in the report) plays the shot again from
 overhead at a quarter speed. The solver runs on a fixed tick, so the replay is
-the same shot, not a reconstruction of it. While the self-estimate is asking,
-both wait, since the dashed line would answer it.
+the same shot, not a reconstruction of it. It does not wait for the balls to
+creep to a stop: once the last contact has passed and every ball is down to a
+crawl, it fades back into the shot, where the trails show where each one
+stopped. While the self-estimate is asking, both wait, since the dashed line
+would answer it.
 
 Under `?` the guides can be drawn in high contrast: solid, brighter and twice
 as thick. When the system asks for reduced motion the camera cuts between

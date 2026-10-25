@@ -18,6 +18,7 @@ import { browserStorage, createProgressStore } from './game/progress-store';
 import { createSettingsStore, nextCloth, nextTimeScale, stepViewingDistance } from './game/settings-store';
 import { ShotHistory, signedShare } from './game/shot-history';
 import { MAX_FRAME_DT, ShotSession, type ShotOutcome } from './game/shot-session';
+import { onlyCreepingLeft } from './game/replay';
 import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
 import { DepartureDrill, departureOf, strikeFor } from './game/departure';
 import { pocketName } from './game/drill-sheet';
@@ -728,16 +729,12 @@ function released(): void {
 
 /**
  * P: the shot just played, again. The solver runs on a fixed tick, so the
- * same aim and power on the same layout and cloth is the same shot, whatever
- * the frame rate. Not while the self-estimate asks, which it would answer.
+ * same stroke on the same layout and cloth is the same shot, whatever the
+ * frame rate. Not while the self-estimate asks, which it would answer.
  */
 function startReplay(): void {
   if (session.phase !== 'evaluated' || replay || estimate?.asking) return;
-  const again = new ShotSession(session.layout, { pocketAllowance: session.pocketAllowance, cloth: session.cloth });
-  again.aimTo(session.aimAngle);
-  again.beginCharge();
-  again.setPower(session.power);
-  again.release();
+  const again = session.rerun();
   replay = { session: again, view: scene.view, heard: 0 };
   reportShownAt = null;
   scene.setView('overhead');
@@ -748,6 +745,12 @@ function stopReplay(): void {
   if (!replay) return;
   scene.setView(replay.view);
   replay = undefined;
+}
+
+/** The replay is over, or as good as: it fades back into the shot it was of. */
+function handBack(): void {
+  scene.crossfade();
+  stopReplay();
 }
 
 /** The coaching is over, played through or skipped, and is not offered again. */
@@ -804,7 +807,7 @@ attachInput(canvas, {
   onAdvance: () => {
     if (readyForNext()) nextShot();
   },
-  onDismiss: () => (replay ? stopReplay() : answerEstimate(null)),
+  onDismiss: () => (replay ? handBack() : answerEstimate(null)),
   onOpenTable: () => tablePanel.open(),
   onRetry: retry,
   onNext: nextShot,
@@ -889,7 +892,12 @@ function frame(now: number): void {
   if (replay) {
     replay.session.advance(dt * REPLAY_SPEED);
     for (; replay.heard < replay.session.events.length; replay.heard++) audio.event(replay.session.events[replay.heard]!);
-    if (replay.session.phase === 'settled') stopReplay();
+    // No need to watch the balls creep to a stop: where each one stopped is on
+    // the shot screen, in its trail.
+    const lastEvent = session.events.at(-1)?.time ?? 0;
+    if (replay.session.phase === 'settled' || onlyCreepingLeft(replay.session.balls, replay.session.elapsed, lastEvent)) {
+      handBack();
+    }
   } else {
     session.advance(dt * settings.timeScale);
     // Each contact sounds once, as the simulation reaches it.

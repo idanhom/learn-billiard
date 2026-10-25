@@ -1443,17 +1443,33 @@ await sleep(150);
 const replaying = await state();
 check('P replays it from overhead', replaying.replaying === true && replaying.view === 'overhead', `${replaying.replaying} ${replaying.view}`);
 await page.waitForFunction(() => !window.__debug.state().replaying, null, { timeout: 60000 });
+const crossfade = () =>
+  page.evaluate(() => {
+    const fade = document.querySelector('canvas.crossfade');
+    return fade ? { shown: fade.style.display !== 'none', opacity: Number(fade.style.opacity) } : null;
+  });
+const handedBack = await crossfade();
 const replayed = await state();
 check(
   'and it ends where the shot did, back in the view it left',
   replayed.view === 'behind' && JSON.stringify(replayed.balls.map((b) => b.pos)) === JSON.stringify(played.balls.map((b) => b.pos)),
   replayed.view,
 );
+check(
+  'it hands back with a crossfade from its last frame',
+  handedBack?.shown === true && handedBack.opacity > 0 && handedBack.opacity < 1,
+  JSON.stringify(handedBack),
+);
+await sleep(800);
+const cleared = await crossfade();
+check('which clears', cleared?.shown === false, JSON.stringify(cleared));
 await page.keyboard.press('KeyP');
 await sleep(300);
 await page.keyboard.press('Escape');
 await sleep(100);
 check('Escape stops a replay part way', !(await state()).replaying);
+const fadingBack = await crossfade();
+check('and fades back the same way', fadingBack?.shown === true, JSON.stringify(fadingBack));
 
 // A faster loop: once a shot is scored, Space or Enter deals the next one, and
 // the next shot can deal itself.

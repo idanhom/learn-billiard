@@ -332,6 +332,20 @@ export class ShotSession {
     return this.#tip;
   }
 
+  /**
+   * The same shot again from the stroke, as a replay plays it: the same
+   * layout, cloth, aim, power and tip, and so the same ticks to the end.
+   */
+  rerun(): ShotSession {
+    const again = new ShotSession(this.layout, { pocketAllowance: this.pocketAllowance, cloth: this.#cloth });
+    again.aimTo(this.#aimAngle);
+    again.setTip(this.#tip);
+    again.beginCharge();
+    again.setPower(this.#power);
+    again.release();
+    return again;
+  }
+
   /** The balls just after the cue ball first met the object ball, once it has. */
   get afterContact(): readonly Ball[] | undefined {
     return this.#afterContact;

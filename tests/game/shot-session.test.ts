@@ -557,6 +557,31 @@ describe('the simulation clock', () => {
     }
   });
 
+  /** What a replay plays: the stroke as it was, draw and follow included. */
+  test('a rerun is the same shot, its tip included', () => {
+    const layout = layoutWithCut('rerun', vec(0.4, 0.2), 'top-right', 20, 0.6);
+    const struck = (tip: number): ShotSession => {
+      const session = new ShotSession(layout);
+      session.aimTo(idealAimAngle(layout));
+      session.setTip(tip);
+      session.beginCharge();
+      session.setPower(session.recommendedPower!);
+      session.release();
+      return session;
+    };
+    const shot = struck(-0.4);
+    const again = shot.rerun();
+    shot.finish();
+    again.finish();
+    expect(again.tip).toBe(-0.4);
+    expect(again.balls).toEqual(shot.balls);
+    expect(again.events).toEqual(shot.events);
+    // And the tip is not idle in it: struck in the centre, the cue ball stops elsewhere.
+    const centre = struck(0);
+    centre.finish();
+    expect(len(sub(centre.cueBall.pos, shot.cueBall.pos))).toBeGreaterThan(0.05);
+  });
+
   test('ignores advance outside the simulating phase', () => {
     const session = new ShotSession(STRAIGHT_IN_DRILL);
     session.advance(1);
