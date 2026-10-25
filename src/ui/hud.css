@@ -1111,10 +1111,14 @@ body {
     max-width: 36vw;
   }
 
+  /* As wide as its chips and centred, up to the width of the screen, so a
+   * wide one is not given a long empty bar across the bottom of the table. */
   #hud-toolbar {
     left: var(--edge-left);
     right: var(--edge-right);
-    max-width: none;
+    width: max-content;
+    max-width: calc(100% - var(--edge-left) - var(--edge-right));
+    margin: 0 auto;
     flex-wrap: nowrap;
     justify-content: safe center;
     overflow-x: auto;
