@@ -9,8 +9,8 @@
 import { type ClothPreset, MAX_TIP_OFFSET, clothRollingFriction } from './constants';
 import { formatDiamonds } from './geometry/diamonds';
 import { FRACTIONS, type FractionName } from './geometry/fractions';
-import { firstTouch, fullness as fullnessOf } from './geometry/shot';
-import { type Vec2, add, angleOf, fromAngle, signedAngleBetween } from './geometry/vec2';
+import { firstTouch, fullness as fullnessOf, speedForStoppingDistance } from './geometry/shot';
+import { type Vec2, add, angleOf, dist, fromAngle, signedAngleBetween } from './geometry/vec2';
 import { Campaign, type CampaignEvent } from './game/campaign';
 import { attachAimButtons, attachInput, attachTouchPower } from './game/input';
 import { powerForCueSpeed, speedBand } from './game/power';
@@ -22,6 +22,7 @@ import { ESTIMATES, type Estimate, estimateOf } from './game/estimate';
 import { DepartureDrill, departureOf, strikeFor } from './game/departure';
 import { PerceptionDrill } from './game/perception';
 import { type PositionResult, ZONE_RADIUS, scorePosition, zoneCentre } from './game/position';
+import { type SpeedResult, scoreSpeed } from './game/speed';
 import { potWindow } from './game/pot-window';
 import { COACH_AIM_TOLERANCE, Coach } from './game/coach';
 import { MASTERED_AT, MASTERY_STANDARD, MASTERY_WINDOW } from './game/mastery';
@@ -133,6 +134,8 @@ let tipLevel = campaign.level.id;
 const TIP_STEP = 0.1;
 /** On a position level, where the cue ball stopped against the spot. */
 let positionResult: PositionResult | undefined;
+/** On a speed level, where the cue ball stopped against the ring. */
+let speedResult: SpeedResult | undefined;
 /**
  * The shot just played, being shown again from overhead at a quarter speed:
  * its own session, how much of it has sounded, and the view to go back to.
@@ -221,6 +224,20 @@ const DRILL_ANSWER: GuideVisibility = {
   overlap: false,
 };
 
+/** As far as the aim line runs: to the ghost ball, or on its own to the ring, or up the table for the lag. */
+function aimLineLength(): number {
+  const spot = session.layout.spot;
+  if (!spot) return session.analysis.cueToGhost;
+  return campaign.speed?.target === 'lag' ? 1 : dist(session.layout.cue, spot);
+}
+
+/** A speed drill as the HUD shows it. */
+function speedState(): HudState['speed'] {
+  const speed = campaign.speed;
+  if (!speed) return null;
+  return { ...speed, result: speedResult ?? null };
+}
+
 /** A position shot as the HUD shows it: what it asks, and how it went. */
 function positionState(): HudState['position'] {
   const position = campaign.position;
@@ -256,6 +273,8 @@ function clock(): number {
  * real table.
  */
 function routineActive(): boolean {
+  // The levels about the cue ball use their tiers as rungs, not for taking guides away.
+  if (campaign.level.scoring) return false;
   return campaign.level.exam || campaign.level.daily === true || campaign.tier === FINAL_TIER;
 }
 
@@ -320,6 +339,7 @@ function startShot(): void {
   heard = 0;
   departure = newDeparture();
   positionResult = undefined;
+  speedResult = undefined;
   if (campaign.level.id !== tipLevel) {
     tip = 0;
     tipLevel = campaign.level.id;
@@ -505,8 +525,20 @@ function selectLevel(id: number): void {
   canvas.focus();
 }
 
+/** The cue ball alone: scored on where it stopped, and on the cushions it touched. */
+function recordSpeed(speed: NonNullable<Campaign['speed']>): void {
+  evaluations++;
+  reportShownAt = clock();
+  const cushions = session.events.filter((event) => event.type === 'cushion' && event.ball === 0).length;
+  speedResult = scoreSpeed(speed.target, session.cueBall.pos, session.layout, cushions);
+  const level = campaign.level;
+  handleEvent(campaign.record({ qualifying: speedResult.correct, pottedTarget: false }), level);
+}
+
 function recordOutcome(outcome: ShotOutcome): void {
   if (departure) return recordDeparture(outcome, departure);
+  const speed = campaign.speed;
+  if (speed) return recordSpeed(speed);
   evaluations++;
   const level = campaign.level;
   // On a position level the shot is scored on the pot and where the cue ball stopped.
@@ -765,10 +797,12 @@ function frame(now: number): void {
   }
   const shown = replay?.session ?? session;
   if (autoNextIn() === 0) nextShot();
-  // The spot a position shot asks for, from the deal to the report.
+  // The spot a position shot or a speed drill asks for, from the deal to the report.
   const position = campaign.position;
   if (position) {
     scene.zone.show(zoneCentre(position.target, position.distance, session.layout.cue, session.analysis.ghostCenter), ZONE_RADIUS);
+  } else if (session.layout.spot) {
+    scene.zone.show(session.layout.spot, ZONE_RADIUS);
   } else {
     scene.zone.hide();
   }
@@ -779,7 +813,10 @@ function frame(now: number): void {
   // Once a shot is scored, where the balls went, beside the line it needed.
   // Not while the self-estimate asks, since the line would answer it.
   if (session.phase === 'evaluated' && !replay && !estimate?.asking) {
-    scene.trails.show(session.trails, { from: session.layout.object, to: session.target });
+    scene.trails.show(
+      session.trails,
+      session.layout.objectAway ? undefined : { from: session.layout.object, to: session.target },
+    );
   } else {
     scene.trails.hide();
   }
@@ -804,7 +841,7 @@ function frame(now: number): void {
       aimEnd:
         drill || departure
           ? analysis.ghostCenter
-          : add(session.cueBall.pos, fromAngle(session.aimAngle, analysis.cueToGhost)),
+          : add(session.cueBall.pos, fromAngle(session.aimAngle, aimLineLength())),
       ghost: analysis.ghostCenter,
       object: session.layout.object,
       pocket: session.target,
@@ -842,7 +879,11 @@ function frame(now: number): void {
     diamonds:
       drill && !drill.result
         ? null
-        : { cue: formatDiamonds(session.layout.cue), object: formatDiamonds(session.layout.object) },
+        : {
+            cue: formatDiamonds(session.layout.cue),
+            object: formatDiamonds(session.layout.spot ?? session.layout.object),
+            second: session.layout.spot ? 'ring' : 'object',
+          },
     call: session.call,
     calling: aiming && !drill && !campaign.guides.readout,
     guides: campaign.guides,
@@ -889,6 +930,7 @@ function frame(now: number): void {
     departure: departureState(),
     tip: tipAllowed() ? tip : null,
     position: positionState(),
+    speed: speedState(),
     outcome: session.outcome,
     history: history.entries,
     tendencies: history.tendencies,
@@ -932,6 +974,15 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     callDrill: (fraction: FractionName) => callDrill(fraction),
     placeDrill: (x: number, y: number) => placeDrill({ x, y }),
     predictDeparture: (x: number, y: number) => predictDeparture({ x, y }),
+    // For a speed drill: struck at just the speed that stops the ball on the ring.
+    fireToSpot: () => {
+      const spot = session.layout.spot;
+      if (!spot || !session.beginCharge()) return false;
+      session.setPower(powerForCueSpeed(speedForStoppingDistance(dist(session.layout.cue, spot), clothRollingFriction(settings.cloth))));
+      if (!session.release()) return false;
+      released();
+      return true;
+    },
     changeTip,
     ghost: () => session.analysis.ghostCenter,
     continue: continueOn,
@@ -980,6 +1031,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       departure: departureState(),
       tip: session.tip,
       position: positionState(),
+      speed: speedState(),
       replaying: replay !== undefined,
       coach: coach.active ? coach.step : null,
       highContrast: settings.highContrast,

@@ -650,6 +650,30 @@ await page.keyboard.press('ArrowUp');
 await sleep(100);
 check('on an aiming level the tip stays at centre', (await state()).tip === 0);
 
+// Speed: the cue ball alone, struck to stop in the ring.
+await page.evaluate(() => window.__debug.selectLevel(17));
+await sleep(200);
+const speedPanel = await page.textContent('#hud-shot');
+check('speed control has no object ball, and asks for the ring', speedPanel.includes('no object ball') && speedPanel.includes('cm away'), speedPanel);
+await page.evaluate(() => window.__debug.fireToSpot());
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const speedReport = await page.textContent('#hud-report');
+check('struck at the speed that stops it there, it stops in the ring', speedReport.includes('In the ring'), speedReport);
+await page.evaluate(() => window.__debug.setView('overhead'));
+await sleep(200);
+await page.screenshot({ path: `${OUT}speed-control.png` });
+await page.evaluate(() => {
+  window.__debug.setView('behind');
+  window.__debug.selectLevel(18);
+});
+await sleep(200);
+await page.evaluate(() => window.__debug.fire(0.55));
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const lagReport = await page.textContent('#hud-report');
+check('the lag is scored against its ring and the cushions it touched', /ring|cushion/.test(lagReport) && lagReport.includes('stopped'), lagReport);
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(200);
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {

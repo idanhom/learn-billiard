@@ -29,6 +29,12 @@ export interface ShotLayout {
   readonly targetPocket: PocketId;
   /** Centres of any other balls on the table. Empty for the drills. */
   readonly obstacles?: readonly Vec2[];
+  /** The object ball is out of play: a drill for the cue ball alone. */
+  readonly objectAway?: boolean;
+  /** Where a drill for the cue ball alone asks it to stop. */
+  readonly spot?: Vec2;
+  /** Which way the cue starts pointing in a drill for the cue ball alone, as a heading. */
+  readonly heading?: number;
 }
 
 /**
@@ -125,6 +131,8 @@ export const START_AIM_OFFSET_DEGREES: readonly [number, number] = [3, 8];
  * retry — starts somewhere new if the caller moves the seed on.
  */
 export function startingAimAngle(layout: ShotLayout, seed: number): number {
+  // With no object ball the drill is the speed, not the line: it starts pointed the way to go.
+  if (layout.heading !== undefined) return layout.heading;
   const rng = makeRng((seed ^ hashString(layout.id)) >>> 0);
   const [low, high] = START_AIM_OFFSET_DEGREES;
   const offset = ((low + (high - low) * rng()) * Math.PI) / 180;

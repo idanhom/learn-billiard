@@ -289,6 +289,14 @@ are 20 cm past it or back from it at the first rung and further at each of
 the four, which are the levels' tiers, with the layout leaving room to reach
 them. The guides show the shot throughout; what is tested is the cue ball.
 
+Levels 17 and 18 take the object ball away. Speed control asks the cue ball to
+stop in a ring 50 cm away at the first rung and 85 cm, 1.2 m and 1.5 m at the
+others, touching no cushion, with a quarter metre of table past the ring. The
+lag sends it to the far cushion and back, to stop in a ring 6 cm off the near
+cushion without touching it, as players lag for the break. The cue starts
+pointed the right way, so the drill is the speed alone, and neither shows the
+power marker.
+
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is
 part of the skill, and a level that only ever deals one kind never tests it.

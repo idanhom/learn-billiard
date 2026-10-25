@@ -17,6 +17,7 @@ import type { CutSide } from '../geometry/shot';
 import { ESTIMATES, type Estimate, estimateLabel } from '../game/estimate';
 import type { DepartureResult, Stroke } from '../game/departure';
 import { type PositionResult, type PositionTarget, ZONE_RADIUS } from '../game/position';
+import type { SpeedResult, SpeedTarget } from '../game/speed';
 import type { DrillKind, DrillResult } from '../game/perception';
 import type { BandMastery, ExamRun } from '../game/campaign';
 import type { CoachStep } from '../game/coach';
@@ -100,7 +101,7 @@ export interface HudState {
    * Where the balls start, in diamonds, to set the layout up on a real table.
    * Null while a perception drill is still to be answered.
    */
-  readonly diamonds: { readonly cue: string; readonly object: string } | null;
+  readonly diamonds: { readonly cue: string; readonly object: string; readonly second: 'object' | 'ring' } | null;
   /** The fraction called for this shot, and whether calling one is offered now. */
   readonly call: FractionName | null;
   readonly calling: boolean;
@@ -118,6 +119,12 @@ export interface HudState {
     readonly target: PositionTarget;
     readonly distance: number;
     readonly result: PositionResult | null;
+  } | null;
+  /** On a speed level: the drill, how far the ring is, and how it went. */
+  readonly speed: {
+    readonly target: SpeedTarget;
+    readonly distance: number;
+    readonly result: SpeedResult | null;
   } | null;
   /** On a level about the cue ball: the prediction, and how it went. */
   readonly departure: {
@@ -501,7 +508,17 @@ export class Hud {
     this.#renderMilestone(state);
     this.#renderCoach(state);
 
-    if (state.departure && !state.replaying) {
+    if (state.speed?.result && !state.replaying) {
+      const html = renderSpeed(state.speed.target, state.speed.result, state.autoNextIn);
+      if (html !== this.#renderedReport) {
+        this.#renderedReport = html;
+        this.#report.innerHTML = html;
+      }
+      if (!this.#reportShown) {
+        this.#reportShown = true;
+        this.#report.style.display = '';
+      }
+    } else if (state.departure && !state.replaying) {
       const html = renderDeparture(state.levelName, state.departure, state.autoNextIn);
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
@@ -667,8 +684,10 @@ export class Hud {
       ? `Exam &mdash; shot ${Math.min(state.exam.shotsTaken + 1, state.exam.total)} of ${state.exam.total}`
       : state.tierComplete
         ? 'Level complete'
-        : state.position
+        : state.position || state.speed?.target === 'distance'
           ? `Rung ${state.tier + 1} of 4`
+          : state.speed
+          ? `Tier ${state.tier}`
           : state.drill || state.departure
           ? `Tier ${state.tier}`
           : `Tier ${state.tier} &mdash; ${TIER_NAMES[state.tier] ?? ''}`;
@@ -682,8 +701,12 @@ export class Hud {
       : state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
       : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize} to advance` +
-        (state.drill || state.departure || state.position ? '' : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
-    const tally = state.position
+        (state.drill || state.departure || state.position || state.speed
+          ? ''
+          : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
+    const tally = state.speed
+      ? `${state.qualified}/${state.attempts} in the ring`
+      : state.position
       ? `${state.qualified}/${state.attempts} in the ring &middot; ${state.potted} potted`
       : state.drill || state.departure
       ? `${state.qualified}/${state.attempts} read right`
@@ -701,6 +724,14 @@ export class Hud {
   }
 
   #renderShot(state: HudState): void {
+    if (state.speed) {
+      this.#writeShot(
+        '<div class="hud-label">This shot</div><div class="hud-big">no object ball</div>' +
+          `<div class="hud-sub">${speedAsk(state.speed.target, state.speed.distance)}</div>` +
+          diamondLine(state.diamonds),
+      );
+      return;
+    }
     if (state.position) {
       this.#writeShot(
         '<div class="hud-label">This shot</div><div class="hud-big">straight in</div>' +
@@ -850,7 +881,7 @@ function diamondLine(diamonds: HudState['diamonds']): string {
   return (
     '<div class="hud-sub hud-extra hud-diamonds" title="In diamonds from the bottom-left corner pocket, ' +
     'as the overhead view shows it: along the long rail, then across">' +
-    `cue ${diamonds.cue} &middot; object ${diamonds.object}</div>`
+    `cue ${diamonds.cue} &middot; ${diamonds.second} ${diamonds.object}</div>`
   );
 }
 
@@ -1053,6 +1084,41 @@ function masteryStrip(bands: readonly BandMastery[]): string {
     })
     .join('');
   return `<div class="hud-label hud-mastery-label">Mastery, unguided</div><div class="hud-mastery">${cells}</div>`;
+}
+
+/** What a speed drill asks of the cue ball. */
+function speedAsk(target: SpeedTarget, distance: number): string {
+  return target === 'lag'
+    ? 'up to the far cushion and back: stop in the ring without touching the near one'
+    : `stop the cue ball in the ring, ${Math.round(distance * 100)} cm away, touching no cushion`;
+}
+
+/** A speed drill's report: where the cue ball stopped against the ring, and what it touched. */
+function renderSpeed(target: SpeedTarget, result: SpeedResult, autoNextIn: number | null): string {
+  const cm = (metres: number): string => `${Math.round(Math.abs(metres) * 100)} cm`;
+  const verdict =
+    result.correct
+      ? 'In the ring'
+      : target === 'lag' && result.cushions === 0
+        ? 'Short of the far cushion'
+        : target === 'lag' && result.cushions > 1
+          ? 'Touched the near cushion'
+          : target === 'distance' && result.cushions > 0
+            ? 'Off a cushion'
+            : 'Outside the ring';
+  const parts = [
+    ...(Math.abs(result.long) >= 0.03 ? [result.long > 0 ? `long by ${cm(result.long)}` : `short by ${cm(result.long)}`] : []),
+    ...(result.wide >= 0.03 ? [`wide by ${cm(result.wide)}`] : []),
+  ];
+  return (
+    `<div class="hud-verdict ${result.correct ? 'good' : 'bad'}">${verdict}</div>` +
+    `<div class="hud-sub">The cue ball stopped ${cm(result.off)} from the ring&rsquo;s centre` +
+    `${parts.length > 0 && !result.correct ? `: ${parts.join(', ')}` : ''}.</div>` +
+    '<div class="hud-sub hud-note"><button type="button" class="hud-call" data-replay>Replay</button>' +
+    '<kbd class="kbd-hint"> P</kbd> &middot; <b>Retry</b><kbd class="kbd-hint"> R</kbd> this one &middot; ' +
+    '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</div>' +
+    autoNextLine(autoNextIn)
+  );
 }
 
 /** What a position shot asks of the cue ball. */

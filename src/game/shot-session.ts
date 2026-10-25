@@ -169,7 +169,8 @@ export class ShotSession {
     this.#aimAngle = startingAimAngle(layout, options.aimSeed ?? 0);
     this.#balls = [
       createBall(CUE_BALL_ID, layout.cue),
-      createBall(OBJECT_BALL_ID, layout.object),
+      // Out of play is potted from the start: the solver and the scene both pass it by.
+      { ...createBall(OBJECT_BALL_ID, layout.object), potted: layout.objectAway === true },
       ...(layout.obstacles ?? []).map((p, i) => createBall(OBJECT_BALL_ID + 1 + i, p)),
     ];
     this.#previousBalls = this.#balls.map(cloneBall);

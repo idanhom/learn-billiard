@@ -26,18 +26,20 @@ export class Trails {
 
   /**
    * Draw `trails` (cue ball first, then the object ball, then any others) and
-   * the line from the object ball to where it needed to go. Drawing the same
-   * trails again does nothing.
+   * the line from the object ball to where it needed to go, when there was
+   * one. Drawing the same trails again does nothing.
    */
-  show(trails: readonly (readonly Vec2[])[], needed: { readonly from: Vec2; readonly to: Vec2 }): void {
+  show(trails: readonly (readonly Vec2[])[], needed?: { readonly from: Vec2; readonly to: Vec2 }): void {
     this.group.visible = true;
     if (trails === this.#shown) return;
     this.#shown = trails;
     this.#clear();
 
-    const dashed = line([needed.from, needed.to], new LineDashedMaterial({ color: NEEDED_COLOR, dashSize: 0.02, gapSize: 0.015 }));
-    dashed.computeLineDistances();
-    this.group.add(dashed);
+    if (needed) {
+      const dashed = line([needed.from, needed.to], new LineDashedMaterial({ color: NEEDED_COLOR, dashSize: 0.02, gapSize: 0.015 }));
+      dashed.computeLineDistances();
+      this.group.add(dashed);
+    }
     trails.forEach((trail, i) => {
       if (trail.length < 2) return;
       const color = i === 0 ? CUE_COLOR : i === 1 ? OBJECT_COLOR : OTHER_COLOR;

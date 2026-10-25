@@ -3,6 +3,7 @@ import { analyseShot } from '../../src/geometry/shot';
 import { pocketById } from '../../src/geometry/table';
 import { Campaign, INTERLEAVE_SHARE, type ScoredShot } from '../../src/game/campaign';
 import { layoutViolations } from '../../src/game/generator';
+import { SPEED_RUNGS, speedViolations } from '../../src/game/speed';
 import { LEVELS, examLevel, levelById } from '../../src/game/levels';
 import {
   PROGRESS_KEY,
@@ -404,12 +405,17 @@ describe('persistence', () => {
 
   test('every level in the curriculum can be selected and played', () => {
     const subject = campaign();
+    // A layout for the cue ball alone answers to the speed drills' checks, not the aiming ones.
+    const violations = (level: (typeof LEVELS)[number]) =>
+      level.scoring?.kind === 'speed'
+        ? speedViolations(subject.layout, level.scoring.target)
+        : layoutViolations(subject.layout, subject.layoutLevel);
     for (const level of LEVELS) {
       expect(subject.selectLevel(level.id)).toBe(true);
-      expect(layoutViolations(subject.layout, level), `level ${level.id}`).toEqual([]);
+      expect(violations(level), `level ${level.id}`).toEqual([]);
       subject.record(hit);
       subject.nextShot();
-      expect(layoutViolations(subject.layout, level), `level ${level.id} second shot`).toEqual([]);
+      expect(violations(level), `level ${level.id} second shot`).toEqual([]);
     }
   });
 });
@@ -816,5 +822,27 @@ describe('the position ladders', () => {
 
   test('are not on any other level', () => {
     expect(campaign().position).toBeUndefined();
+  });
+});
+
+describe('the speed drills', () => {
+  test('deal the cue ball alone, the ring further at each rung of speed control', () => {
+    const level = LEVELS.find((l) => l.scoring?.kind === 'speed' && l.scoring.target === 'distance')!;
+    const distances: number[] = [];
+    for (const tier of [0, 1, 2, 3] as const) {
+      const subject = resumed(level.id, tier);
+      expect(subject.layout.objectAway).toBe(true);
+      expect(speedViolations(subject.layout, 'distance')).toEqual([]);
+      distances.push(subject.speed!.distance);
+    }
+    expect(distances).toEqual([...SPEED_RUNGS]);
+  });
+
+  test('the lag is the same drill at every tier, and shows only the line', () => {
+    const level = LEVELS.find((l) => l.scoring?.kind === 'speed' && l.scoring.target === 'lag')!;
+    const subject = resumed(level.id, 2);
+    expect(subject.speed).toEqual({ target: 'lag', distance: 0 });
+    expect(subject.layout.heading).toBe(0);
+    expect(subject.guides).toMatchObject({ aimLine: true, ghostBall: false, objectPath: false, powerHint: false });
   });
 });

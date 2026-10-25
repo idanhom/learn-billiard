@@ -14,14 +14,15 @@
  * good" and starts being "can you make the ball". Level 8 is a mixed review of
  * the five fractions, leaning on the ones missed most, level 9 reads shots
  * without playing them, level 10 deals the angles mastered least, level 11 is
- * the daily set, levels 12 and 13 are about where the cue ball goes, and 14 to
- * 16 about where it stops.
+ * the daily set, levels 12 and 13 are about where the cue ball goes, 14 to 16
+ * about where it stops, and 17 and 18 about its speed with no object ball.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
 import { type ShotLayout, layoutWithCut } from './drills';
 import type { Stroke } from './departure';
 import type { PositionTarget } from './position';
+import type { SpeedTarget } from './speed';
 
 export interface LevelDefinition {
   readonly id: number;
@@ -64,11 +65,14 @@ export interface LevelDefinition {
    * on where they said the cue ball would go, within `allowance` degrees.
    * `position`: a straight-in the player plays with their own tip, scored on
    * the pot and where the cue ball stops; `distance` is the rung's, filled in
-   * as the layout is dealt.
+   * as the layout is dealt. `speed`: the cue ball alone, scored on where it
+   * stops; the layout is dealt by `speed.ts`, and the level's other fields
+   * only describe what the generator would make of it.
    */
   readonly scoring?:
     | { readonly kind: 'departure'; readonly stroke: Stroke; readonly allowance: number }
-    | { readonly kind: 'position'; readonly target: PositionTarget; readonly distance?: number };
+    | { readonly kind: 'position'; readonly target: PositionTarget; readonly distance?: number }
+    | { readonly kind: 'speed'; readonly target: SpeedTarget; readonly distance?: number };
   /** Fallback used when generation cannot satisfy the brief. */
   readonly template: ShotLayout;
 }
@@ -330,6 +334,36 @@ export const LEVELS: readonly LevelDefinition[] = [
     examShots: 0,
     scoring: { kind: 'position', target: 'draw' },
     template: layoutWithCut('level-16-template', { x: 0.45, y: 0.2 }, 'top-right', 0, 0.9),
+  },
+  {
+    id: 17,
+    name: 'Speed control',
+    description: 'No object ball: stop the cue ball in the ring, further at each rung, touching no cushion.',
+    cutRange: [0, 60],
+    pocketAllowance: 1,
+    cueDistance: [0.35, 1],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    scoring: { kind: 'speed', target: 'distance' },
+    template: layoutWithCut('level-17-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 18,
+    name: 'Lag',
+    description: 'Up to the far cushion and back: stop in the ring by the near one without touching it.',
+    cutRange: [0, 60],
+    pocketAllowance: 1,
+    cueDistance: [0.35, 1],
+    potDistance: [0.3, 1],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    scoring: { kind: 'speed', target: 'lag' },
+    template: layoutWithCut('level-18-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
   },
 ];
 

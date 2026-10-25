@@ -46,7 +46,9 @@ The exam, widened to 70-degree cuts and 1.3 m shots (D2), is where it now comes
 nearest. (The review, perception, weak-angles and daily rows are the
 generator on those levels' own bands; in play the first two deal from the five
 fraction levels, weak angles from one ten-degree band at a time, and the daily
-set from levels 1 to 6 in turn.)
+set from levels 1 to 6 in turn. Levels 17 and 18 deal the cue ball alone, from
+`src/game/speed.ts`, and are left out: the harness rows for them describe
+fields play never uses.)
 `tests/game/generator.test.ts` asserts generated layouts are never
 `underpowered`, which is the invariant that must survive.
 

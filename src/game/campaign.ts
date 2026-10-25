@@ -54,6 +54,7 @@ import {
 } from './mastery';
 import type { DrillKind } from './perception';
 import { type PositionTarget, RUNGS, rungDistances } from './position';
+import { SPEED_RUNGS, type SpeedTarget, speedLayout } from './speed';
 import { makeRng, pickWeighted } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
@@ -144,6 +145,9 @@ const SHOT_SHOWN: GuideVisibility = {
   overlap: false,
 };
 
+/** The cue ball alone: only the line it starts on. */
+const CUE_ALONE: GuideVisibility = { ...NO_GUIDES, aimLine: true };
+
 export class Campaign {
   readonly #store: ProgressStore;
   readonly #baseSeed: number;
@@ -225,6 +229,7 @@ export class Campaign {
    * whatever the tier: the aim is not what it tests.
    */
   get guides(): GuideVisibility {
+    if (this.#level.scoring?.kind === 'speed') return CUE_ALONE;
     if (this.#level.scoring) return SHOT_SHOWN;
     return this.#level.exam || this.#level.perception || this.#level.daily ? NO_GUIDES : this.#tiers.guides;
   }
@@ -240,6 +245,13 @@ export class Campaign {
   /** On how many of the last seven days there was practice, today included. */
   get daysPractised(): number {
     return daysPractised(this.#state.practiceDays, this.#today());
+  }
+
+  /** On a speed level: which drill, and how far the ring is. */
+  get speed(): { readonly target: SpeedTarget; readonly distance: number } | undefined {
+    const scoring = this.#source.scoring;
+    if (scoring?.kind !== 'speed') return undefined;
+    return { target: scoring.target, distance: scoring.distance ?? 0 };
   }
 
   /** On a position level: what the layout in play asks the cue ball to do, and how far. */
@@ -527,6 +539,14 @@ export class Campaign {
 
   #generate(): ShotLayout {
     if (this.#level.daily) return this.#dailyLayout();
+    const scoring = this.#level.scoring;
+    if (scoring?.kind === 'speed') {
+      // The tier is the rung for speed control; the lag is the same every time.
+      const distance = scoring.target === 'distance' ? SPEED_RUNGS[this.#tiers.tier]! : 0;
+      this.#source = { ...this.#level, scoring: { ...scoring, distance } };
+      const seed = this.#baseSeed + this.#shotCounter * 7919;
+      return speedLayout(scoring.target, distance, seed, `L${this.#level.id}-s${seed}`);
+    }
     // Alternate the cut side rather than leaving it to chance, so a run of
     // shots cannot all fall the same way.
     const side = this.#shotCounter % 2 === 0 ? 'left' : 'right';
