@@ -36,6 +36,8 @@ L13 The 30° rule       max cut 51.9 deg   tightest headroom  5.48x
 L14 Stop shot          max cut  2.0 deg   tightest headroom 14.70x
 L15 Follow ladder      max cut  2.0 deg   tightest headroom  9.33x
 L16 Draw ladder        max cut  2.0 deg   tightest headroom 18.51x
+L19 Position zones     max cut 49.9 deg   tightest headroom  6.12x
+L20 Patterns           max cut 44.9 deg   tightest headroom  7.37x
 ```
 
 (`MEASURE=1 npx vitest run tests/zz-calibration.test.ts --reporter=verbose`
@@ -46,9 +48,12 @@ The exam, widened to 70-degree cuts and 1.3 m shots (D2), is where it now comes
 nearest. (The review, perception, weak-angles and daily rows are the
 generator on those levels' own bands; in play the first two deal from the five
 fraction levels, weak angles from one ten-degree band at a time, and the daily
-set from levels 1 to 6 in turn. Levels 17 and 18 deal the cue ball alone, from
-`src/game/speed.ts`, and are left out: the harness rows for them describe
-fields play never uses.)
+set from levels 1 to 6 in turn. The zones and patterns rows are the first shot
+of each, which the generator deals; a pattern's later shots are played from
+wherever the cue ball stopped. Left out: levels 17 and 18, which deal the cue
+ball alone from `src/game/speed.ts`; 21, whose stations are the other levels'
+own; and 22 and 23, which deal from `src/game/kicks.ts` with balls in the way
+on purpose. Their harness rows describe fields play never uses.)
 `tests/game/generator.test.ts` asserts generated layouts are never
 `underpowered`, which is the invariant that must survive.
 
