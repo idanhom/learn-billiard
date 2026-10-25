@@ -249,6 +249,7 @@ export class PoolScene {
     const cuePos = this.#interpolatedPosition(state, 0);
     this.#placeCue(cuePos, state);
     this.#placeCamera(cuePos, state);
+    this.room.setEyeHeight(this.#camera.position.y);
     this.#renderer.render(this.scene, this.#camera);
   }
 

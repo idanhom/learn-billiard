@@ -25,6 +25,8 @@ const CHAIR_RAIL_COLOR = '#5a3a24';
 const BASEBOARD_COLOR = '#2b1a0f';
 const WALL_WIDTH = 256;
 const WALL_HEIGHT_PIXELS = 512;
+/** Texels in the two textures together: what they cost in video memory, before mipmaps. */
+export const ROOM_TEXELS = FLOOR_SIZE * FLOOR_SIZE + WALL_WIDTH * WALL_HEIGHT_PIXELS;
 
 /** Heights off the floor, in metres. */
 const CHAIR_RAIL = 0.9;

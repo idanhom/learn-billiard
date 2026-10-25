@@ -6,10 +6,11 @@
  *
  * Unlit, and cheap on purpose: it runs on a Pi and on phones. Every surface is
  * a `MeshBasicMaterial` whose light is baked into its vertex colours once, by
- * `lightAt`. No scene lights, no shadow maps, no image downloads. The light it
- * bakes is the one a lamp over a pool table gives a room: the table's shadow in
- * a dark skirt round it, a soft halo past that, and dim walls that fade out
- * toward the ceiling, so there is no ceiling to draw.
+ * `lightAt`. No scene lights, no shadow maps, no image downloads, and four
+ * draw calls: floor, walls, the fittings, and the lamp. The light it bakes is
+ * the one a lamp over a pool table gives a room: the table's shadow in a dark
+ * skirt round it, a soft halo past that, and dim walls that fade out toward
+ * the ceiling, so there is no ceiling to draw.
  *
  * The table's own lights and look are untouched. The room is measured against
  * them instead: `bedGain` is what they give the bed, and the bake is in
@@ -21,11 +22,13 @@ import {
   BoxGeometry,
   BufferGeometry,
   Color,
+  CylinderGeometry,
   DirectionalLight,
   Float32BufferAttribute,
   Group,
   Mesh,
   MeshBasicMaterial,
+  PlaneGeometry,
   type Texture,
   Vector3,
 } from 'three';
@@ -83,9 +86,55 @@ const LAMP_SAMPLES_ACROSS = 3;
 const SHADE_FROM = Math.cos((50 * Math.PI) / 180);
 const SHADE_TO = Math.cos((60 * Math.PI) / 180);
 
+/** The shade round the diffuser, hunter green, its lip trimmed in brass, hung from two rods. */
+const SHADE_DEPTH = 0.15;
+const SHADE_WALL = 0.012;
+const TRIM_HEIGHT = 0.02;
+const ROD_SPACING = 0.9;
+const SHADE_COLOR = 0x2f5a3a;
+const BRASS_COLOR = 0xa8834a;
+const ROD_COLOR = 0x3a2e22;
+
+/** Two sconces on each long wall, this high off the floor and this far either side of its middle. */
+const SCONCE_HEIGHT = 1.7;
+const SCONCE_ALONG = 1.2;
+/** How far a sconce stands out from its wall, glass included. */
+export const SCONCE_REACH = 0.235;
+/**
+ * The wash is figured from a point this far out from the wall, further than
+ * the glass sits, for a pool the size a shaded sconce throws. A design choice.
+ */
+const SCONCE_SPREAD = 0.3;
+/** The wash on the wall right behind a sconce, as a fraction of the bed's light. */
+const SCONCE_PEAK = 0.5;
+
+/**
+ * What the lamp's diffuser and the sconces' glass show: their own light, in
+ * linear RGB, unbaked. Held well short of white, so a light at the edge of the
+ * view does not pull the eye off the cloth.
+ */
+const DIFFUSER_GLOW: Rgb = [0.42, 0.36, 0.26];
+const GLASS_GLOW: Rgb = [0.5, 0.36, 0.2];
+
+/** A cue rack on each end wall, behind the middle of the end rail where there is no pocket. */
+const RACK_CUES = 6;
+/** 58", the usual length of a cue. */
+const CUE_STICK = 58 * 0.0254;
+const CUE_BUTT = 0.74;
+const RACK_SPACING = 0.09;
+const RACK_WIDTH = 0.62;
+/** How far a rack stands out from its wall. */
+export const RACK_DEPTH = 0.08;
+/** Heights off the floor: where the butts stand, and the bar that holds the cues upright. */
+const RACK_FOOT = 0.13;
+const RACK_TOP = 1.32;
+const BUTT_COLORS = [0x3a2214, 0x24150e, 0x4a2a18, 0x2e1c12, 0x412616, 0x1f130c];
+const SHAFT_COLOR = 0xd8b98a;
+
 /** Colours of light, each scaled to unit luminance so a tint never changes how much light there is. */
 const VENUE_TINT = tint(1, 0.78, 0.55);
 const LAMP_TINT = tint(1, 0.94, 0.84);
+const SCONCE_TINT = tint(1, 0.8, 0.55);
 
 /**
  * The cabinet under the frame: an apron round it and a leg at each corner.
@@ -122,20 +171,21 @@ const UP: Point3 = { x: 0, y: 1, z: 0 };
  * The light at a surface of the room, as a fraction of the light on the bed
  * under the lamp, in linear RGB at unit luminance per unit of light.
  *
- * Two sources. The venue's own light, from fittings out of sight overhead, is
- * `ROOM_LIGHT` on open floor; it fades up the walls, falls away under the
+ * Three sources. The venue's own light, from fittings out of sight overhead,
+ * is `ROOM_LIGHT` on open floor; it fades up the walls, falls away under the
  * table and darkens into the foot of each wall and corner. The lamp over the
  * table spills past it: Lambertian from its diffuser, cut off by its shade,
  * and stopped by the table wherever the line to the lamp crosses the table's
- * outline at bed height.
+ * outline at bed height. And the sconces wash the long walls round them.
  */
 export function lightAt(point: Point3, normal: Point3): Rgb {
   const venue = venueLight(point, normal);
   const lamp = lampFlux(point, normal) / LAMP_AT_BED;
+  const sconces = sconceLight(point, normal);
   return [
-    venue * VENUE_TINT[0] + lamp * LAMP_TINT[0],
-    venue * VENUE_TINT[1] + lamp * LAMP_TINT[1],
-    venue * VENUE_TINT[2] + lamp * LAMP_TINT[2],
+    venue * VENUE_TINT[0] + lamp * LAMP_TINT[0] + sconces * SCONCE_TINT[0],
+    venue * VENUE_TINT[1] + lamp * LAMP_TINT[1] + sconces * SCONCE_TINT[1],
+    venue * VENUE_TINT[2] + lamp * LAMP_TINT[2] + sconces * SCONCE_TINT[2],
   ];
 }
 
@@ -171,6 +221,7 @@ export class Room {
   readonly backdrop: Color;
   /** How long building and baking the room took, in milliseconds. */
   readonly bakeMilliseconds: number;
+  readonly #lamp: Mesh;
 
   /** `gain` is `bedGain` of the scene's lights. */
   constructor(gain: number) {
@@ -183,14 +234,30 @@ export class Room {
     const wallMap = wallTexture(BAY, WALL_HEIGHT);
     this.#add('walls', bake(wallGeometry(), gain), wallMap ? 0xffffff : WALL_COLOR, wallMap);
 
-    this.#add('fixtures', mergeGeometries(cabinet(gain)), 0xffffff);
+    this.#add('fixtures', mergeGeometries([...cabinet(gain), ...cueRacks(gain), ...sconces(gain)]), 0xffffff);
+    this.#lamp = this.#add('lamp', mergeGeometries(lamp(gain)), 0xffffff);
 
     const top = lightAt({ x: 0, y: FLOOR_Y + WALL_HEIGHT, z: -WALL_Z }, { x: 0, y: 0, z: 1 });
     this.backdrop = new Color(WALL_COLOR).multiply(new Color(top[0] * gain, top[1] * gain, top[2] * gain));
     this.bakeMilliseconds = performance.now() - started;
   }
 
-  #add(name: string, geometry: BufferGeometry, color: number | string, map?: Texture): void {
+  /**
+   * Shows the lamp only while the eye is below its underside. From any higher
+   * it would hang between the eye and the table, and the overhead view, the
+   * replay and the post-shot diagram are all well above it. Asking where the
+   * eye is rather than which view it is also covers the behind view at its
+   * highest framing, without having to prove how high that goes.
+   */
+  setEyeHeight(eye: number): void {
+    this.#lamp.visible = eye < LAMP_HEIGHT;
+  }
+
+  get lampShown(): boolean {
+    return this.#lamp.visible;
+  }
+
+  #add(name: string, geometry: BufferGeometry, color: number | string, map?: Texture): Mesh {
     const mesh = new Mesh(geometry, new MeshBasicMaterial({ color, vertexColors: true, map: map ?? null }));
     mesh.name = name;
     // After the table, so the floor under it fails the depth test early.
@@ -198,6 +265,7 @@ export class Room {
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     this.group.add(mesh);
+    return mesh;
   }
 }
 
@@ -261,13 +329,77 @@ function lampFlux(point: Point3, normal: Point3): number {
 /** The lamp's light at the middle of the bed, which every other point is a fraction of. */
 const LAMP_AT_BED = lampFlux({ x: 0, y: 0, z: 0 }, UP);
 
-/** Whether the line from the lamp to a point below the bed crosses the table's outline. */
+/**
+ * Whether the table stops the line from a light over the bed to a point below
+ * it: at the bed, the frame's outline, and below that the apron's, down to the
+ * apron's foot. A light on a wall reaches under the frame at a slant.
+ */
 function tableBlocks(source: Point3, point: Point3): boolean {
   if (point.y >= 0) return false;
-  const t = source.y / (source.y - point.y);
-  return (
-    Math.abs(source.x + t * (point.x - source.x)) < RAIL_X && Math.abs(source.z + t * (point.z - source.z)) < RAIL_Z
-  );
+  const at = (y: number): number => (source.y - y) / (source.y - point.y);
+  const bed = at(0);
+  if (
+    Math.abs(source.x + bed * (point.x - source.x)) < RAIL_X &&
+    Math.abs(source.z + bed * (point.z - source.z)) < RAIL_Z
+  ) {
+    return true;
+  }
+  if (point.y >= APRON_TOP) return false;
+  // A hair inside the apron, so its own faces do not shade themselves.
+  const apronX = RAIL_X - APRON_INSET - 0.001;
+  const apronZ = RAIL_Z - APRON_INSET - 0.001;
+  return crosses(source, point, at(APRON_TOP), Math.min(1, at(APRON_TOP - APRON_DEPTH)), apronX, apronZ);
+}
+
+/**
+ * Whether the line from `from` to `to`, between fractions `start` and `end`
+ * of the way, passes over the rectangle |x| < halfX, |z| < halfZ. Clipped to
+ * each pair of sides in turn, written out twice since it runs per vertex per
+ * light.
+ */
+function crosses(from: Point3, to: Point3, start: number, end: number, halfX: number, halfZ: number): boolean {
+  let first = start;
+  let last = end;
+  const dx = to.x - from.x;
+  if (Math.abs(dx) < 1e-12) {
+    if (Math.abs(from.x) >= halfX) return false;
+  } else {
+    const a = (-halfX - from.x) / dx;
+    const b = (halfX - from.x) / dx;
+    first = Math.max(first, Math.min(a, b));
+    last = Math.min(last, Math.max(a, b));
+  }
+  const dz = to.z - from.z;
+  if (Math.abs(dz) < 1e-12) {
+    if (Math.abs(from.z) >= halfZ) return false;
+  } else {
+    const a = (-halfZ - from.z) / dz;
+    const b = (halfZ - from.z) / dz;
+    first = Math.max(first, Math.min(a, b));
+    last = Math.min(last, Math.max(a, b));
+  }
+  return first <= last;
+}
+
+/** Where each sconce is fixed to its wall. */
+const SCONCES: readonly Point3[] = [-1, 1].flatMap((side) =>
+  [-1, 1].map((along) => ({ x: along * SCONCE_ALONG, y: FLOOR_Y + SCONCE_HEIGHT, z: side * WALL_Z })),
+);
+
+const SCONCE_SOURCES: readonly Point3[] = SCONCES.map((mount) => ({ ...mount, z: mount.z - Math.sign(mount.z) * SCONCE_SPREAD }));
+
+/** The sconces' wash at a point, as a fraction of the bed's light: cos at the surface over distance squared. */
+function sconceLight(point: Point3, normal: Point3): number {
+  let sum = 0;
+  for (const source of SCONCE_SOURCES) {
+    const dx = source.x - point.x;
+    const dy = source.y - point.y;
+    const dz = source.z - point.z;
+    const squared = dx * dx + dy * dy + dz * dz;
+    const received = (normal.x * dx + normal.y * dy + normal.z * dz) / Math.sqrt(squared);
+    if (received > 0 && !tableBlocks(source, point)) sum += received / squared;
+  }
+  return SCONCE_PEAK * SCONCE_SPREAD * SCONCE_SPREAD * sum;
 }
 
 /** Bakes `lightAt` into a `color` attribute, times the bed's gain and, for a surface with no texture, its own colour. */
@@ -339,11 +471,117 @@ function cabinet(gain: number): BufferGeometry[] {
   return parts;
 }
 
+/**
+ * The lamp: a shade open underneath, its lip trimmed in brass, the diffuser
+ * set up inside it, and two rods to the ceiling. Its underside is the trim's.
+ */
+function lamp(gain: number): BufferGeometry[] {
+  const green = new Color(SHADE_COLOR);
+  const brass = new Color(BRASS_COLOR);
+  const length = LAMP_LENGTH + 2 * SHADE_WALL;
+  const width = LAMP_WIDTH + 2 * SHADE_WALL;
+  const top = LAMP_HEIGHT + SHADE_DEPTH;
+  const ceiling = WALL_HEIGHT - BED_HEIGHT;
+  const diffuser = new PlaneGeometry(LAMP_LENGTH, LAMP_WIDTH)
+    .rotateX(Math.PI / 2)
+    .translate(0, LAMP_HEIGHT + LAMP_RECESS, 0);
+  // The sides stop short of the trim's underside and the top panel's upper
+  // face, so no two faces lie in the same plane to flicker.
+  return [
+    ...ring(length, width, SHADE_WALL, LAMP_HEIGHT + TRIM_HEIGHT / 2, top - SHADE_WALL, green, gain),
+    block(length, SHADE_WALL, width, 0, top - SHADE_WALL / 2, 0, green, gain),
+    ...ring(length + 0.008, width + 0.008, SHADE_WALL + 0.005, LAMP_HEIGHT, LAMP_HEIGHT + TRIM_HEIGHT, brass, gain),
+    glowing(diffuser, DIFFUSER_GLOW),
+    ...[-1, 1].map((side) =>
+      cylinder(0.006, 0.006, ceiling - top, side * (ROD_SPACING / 2), (top + ceiling) / 2, 0, new Color(ROD_COLOR), gain, 6),
+    ),
+  ];
+}
+
+/** A rectangular band `thickness` deep, `length` by `width` outside, from `bottom` up to `top`. */
+function ring(length: number, width: number, thickness: number, bottom: number, top: number, albedo: Color, gain: number): BufferGeometry[] {
+  const height = top - bottom;
+  const y = (bottom + top) / 2;
+  return [-1, 1].flatMap((side) => [
+    block(length, height, thickness, 0, y, side * ((width - thickness) / 2), albedo, gain),
+    block(thickness, height, width - 2 * thickness, side * ((length - thickness) / 2), y, 0, albedo, gain),
+  ]);
+}
+
+/** Six cues standing in a rack centred on each end wall: dark butts, maple shafts. */
+function cueRacks(gain: number): BufferGeometry[] {
+  const wood = new Color(FRAME_COLOR);
+  const maple = new Color(SHAFT_COLOR);
+  const parts: BufferGeometry[] = [];
+  for (const side of [-1, 1]) {
+    const wall = side * WALL_X;
+    parts.push(
+      block(RACK_DEPTH, 0.08, RACK_WIDTH, wall - side * (RACK_DEPTH / 2), FLOOR_Y + RACK_FOOT - 0.04, 0, wood, gain),
+      block(0.8 * RACK_DEPTH, 0.05, RACK_WIDTH, wall - side * 0.4 * RACK_DEPTH, FLOOR_Y + RACK_TOP, 0, wood, gain),
+    );
+    const x = wall - side * 0.045;
+    const foot = FLOOR_Y + RACK_FOOT - 0.02;
+    for (let i = 0; i < RACK_CUES; i++) {
+      const z = (i - (RACK_CUES - 1) / 2) * RACK_SPACING;
+      const butt = new Color(BUTT_COLORS[i % BUTT_COLORS.length]);
+      parts.push(
+        cylinder(0.0115, 0.0145, CUE_BUTT, x, foot + CUE_BUTT / 2, z, butt, gain),
+        cylinder(0.0065, 0.0115, CUE_STICK - CUE_BUTT, x, foot + (CUE_STICK + CUE_BUTT) / 2, z, maple, gain),
+      );
+    }
+  }
+  return parts;
+}
+
+/** Each sconce: a brass plate on the wall, an arm, and a glass shade lit from inside. */
+function sconces(gain: number): BufferGeometry[] {
+  const brass = new Color(BRASS_COLOR);
+  return SCONCES.flatMap((mount) => {
+    const inward = -Math.sign(mount.z);
+    const glass = new CylinderGeometry(0.075, 0.05, 0.13, 10).translate(mount.x, mount.y, mount.z + inward * 0.16);
+    return [
+      block(0.07, 0.14, 0.015, mount.x, mount.y - 0.05, mount.z + inward * 0.0075, brass, gain),
+      block(0.02, 0.02, 0.15, mount.x, mount.y - 0.075, mount.z + inward * 0.075, brass, gain),
+      glowing(glass, GLASS_GLOW),
+    ];
+  });
+}
+
 /** A baked box, centred at (x, y, z). */
 function block(width: number, height: number, depth: number, x: number, y: number, z: number, albedo: Color, gain: number): BufferGeometry {
   const geometry = new BoxGeometry(width, height, depth).translate(x, y, z);
   geometry.deleteAttribute('uv');
   return bake(geometry, gain, albedo);
+}
+
+/** A baked upright cylinder, centred at (x, y, z). */
+function cylinder(
+  radiusTop: number,
+  radiusBottom: number,
+  height: number,
+  x: number,
+  y: number,
+  z: number,
+  albedo: Color,
+  gain: number,
+  segments = 8,
+): BufferGeometry {
+  const geometry = new CylinderGeometry(radiusTop, radiusBottom, height, segments).translate(x, y, z);
+  geometry.deleteAttribute('uv');
+  return bake(geometry, gain, albedo);
+}
+
+/** A part that shows its own light: one colour throughout, nothing baked. */
+function glowing(geometry: BufferGeometry, [r, g, b]: Rgb): BufferGeometry {
+  geometry.deleteAttribute('uv');
+  const colors = new Float32Array(geometry.getAttribute('position').count * 3);
+  for (let i = 0; i < colors.length; i += 3) {
+    colors[i] = r;
+    colors[i + 1] = g;
+    colors[i + 2] = b;
+  }
+  geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
+  return geometry;
 }
 
 /**

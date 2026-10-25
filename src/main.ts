@@ -1124,7 +1124,7 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       })),
       view: scene.view,
       fieldOfView: scene.fieldOfView,
-      room: { visible: scene.room.group.visible },
+      room: { visible: scene.room.group.visible, lamp: scene.room.lampShown },
       viewingDistance: settings.viewingDistance,
       routine: routine ? { down: routine.down, reAims: routine.reAims } : null,
       routineLog,

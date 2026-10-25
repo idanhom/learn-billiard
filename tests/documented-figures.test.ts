@@ -8,6 +8,7 @@
  * `README.md` or `CLAUDE.md`.
  */
 
+import type { Mesh } from 'three';
 import { describe, expect, test } from 'vitest';
 import {
   CUSHION_FRICTION,
@@ -32,6 +33,8 @@ import { add, fromAngle, len, scale, signedAngleBetween, vec } from '../src/geom
 import { type CushionImpulse, resolveCushion } from '../src/physics/collision';
 import { rollOutSeconds, terminalDrift } from '../src/geometry/roll-time';
 import { straightShot } from './support/shots';
+import { BED_HEIGHT, LAMP_HEIGHT, ROOM_LIGHT, Room, WALL_X, WALL_Z, lightAt, luminance } from '../src/scene/room';
+import { ROOM_TEXELS } from '../src/scene/room-textures';
 
 const linearMeter = (speed: number): number =>
   (speed - MIN_CUE_SPEED) / (MAX_CUE_SPEED - MIN_CUE_SPEED);
@@ -306,5 +309,53 @@ describe('the diamonds, taken to a bigger table', () => {
     expect(nine.median).toBeGreaterThan(0.38);
     expect(nine.median).toBeLessThan(0.6);
     expect(nine.p90).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * The README's room. Its timings (the bake, and a frame with and without the
+ * room) are measurements of one machine and say so there; they are not held
+ * here. Everything else is.
+ */
+describe('the room', () => {
+  const INCH = 0.0254;
+  const up = { x: 0, y: 1, z: 0 };
+  const floor = (x: number, z: number): number => luminance(lightAt({ x, y: -BED_HEIGHT, z }, up));
+
+  test('the floor 76.5 cm below the bed, the lamp 40" over it, and a 5.92 by 4.93 m room', () => {
+    expect(BED_HEIGHT * 100).toBeCloseTo(76.5, 9);
+    expect(((29.25 + 31) / 2) * INCH).toBeCloseTo(BED_HEIGHT, 3);
+    expect(LAMP_HEIGHT).toBeCloseTo(40 * INCH, 9);
+    expect(2 * WALL_X).toBeCloseTo(5.92, 2);
+    expect(2 * WALL_Z).toBeCloseTo(4.93, 2);
+  });
+
+  test('the WPA’s 50 lux to 520 is about 0.1, and the room sits at a quarter', () => {
+    expect(50 / 520).toBeCloseTo(0.1, 1);
+    expect(ROOM_LIGHT).toBe(0.25);
+  });
+
+  test('a tenth of the bed’s light under the table, just under half in the halo, a quarter to a third by the walls', () => {
+    expect(floor(0, 0)).toBeCloseTo(0.1, 2);
+    const halo = Math.max(...Array.from({ length: 60 }, (_, i) => floor(0, 0.7 + i * 0.03)));
+    expect(halo).toBeGreaterThan(0.4);
+    expect(halo).toBeLessThan(0.5);
+    for (const [x, z] of [
+      [0, WALL_Z - 0.2],
+      [1.2, WALL_Z - 0.2],
+      [2, -WALL_Z + 0.2],
+      [WALL_X - 0.2, 0],
+      [-WALL_X + 0.2, 1.5],
+    ] as const) {
+      expect(floor(x, z)).toBeGreaterThan(0.25);
+      expect(floor(x, z)).toBeLessThan(1 / 3);
+    }
+  });
+
+  test('four draw calls, 21,514 triangles, and 2 MiB of textures with their mipmaps', () => {
+    const meshes = new Room(1).group.children as Mesh[];
+    expect(meshes).toHaveLength(4);
+    expect(meshes.reduce((sum, mesh) => sum + mesh.geometry.getIndex()!.count / 3, 0)).toBe(21_514);
+    expect((ROOM_TEXELS * 4 * 4) / 3).toBe(2 * 1024 * 1024);
   });
 });

@@ -635,6 +635,51 @@ three at once; and sent any other way, the ghost ball that would send it is
 inside the rail. Level 6 deals balls within six centimetres of the cushion
 instead.
 
+## The room
+
+The table stands in a billiard room laid out to the WPA's [Recommended
+Equipment Specifications](https://wpapool.com/wp-content/uploads/2024/01/RECOMMENDED-EQUIPMENT-SPECIFICATIONS.pdf)
+(read 2026-10-25), so what the stance and behind views show past the table is
+what a player down on a real one sees, at true scale:
+
+- The floor is 76.5 cm below the bed, the middle of the 29 1/4" to 31" that
+  section 2 allows.
+- The walls stand 1.83 m out from the outside edge of the rails, the 6 feet
+  that section 19 asks for between the rail and any obstacle. Round this
+  7-foot table that makes the room 5.92 by 4.93 m.
+- The lamp's underside hangs 40" (1.016 m) over the bed, the lowest that
+  section 15 allows for a fixture that can be moved aside. It is drawn only
+  while the eye is below that, so it never hangs between the overhead view and
+  the table.
+
+None of it is lit by the scene's lights. Its light is worked out once, as the
+page loads, and stored in the colours of its surfaces: the lamp's light
+falling past the table, which leaves a dark skirt of shadow round it and a soft
+halo beyond; the venue's own dim light on the floor and walls, fading up the
+walls into the dark, so there is no ceiling to draw; and two sconces on each
+long wall. Each amount is a fraction of the light on the bed, measured against
+what the scene's lights give the cloth, so it stays right if those lights
+change. Under the table the floor gets a tenth of the bed's light, the halo
+just under half, and the floor by the walls between a quarter and a third.
+
+The quarter is not the WPA's figure. Section 15 asks for at least 520 lux on
+the bed and 50 in the rest of the room, a ratio of about 0.1, but those are
+minimums, and at a tenth the room rendered close to black. It sits higher,
+still inside what the specification allows, so that it reads on a screen.
+Where the lamp's shade cuts its light off (50 to 60 degrees from straight
+down) and how wide a sconce's pool is are design choices, not measurements.
+
+It is meant to cost close to nothing, since this runs on a Pi and on phones:
+four draw calls, 21,514 triangles, and two textures drawn as the page loads
+(floorboards, and one bay of panelling) that take 2 MiB of video memory with
+their mipmaps. No lights, no shadows, nothing to download. On the development
+machine it is built and baked in 25 to 30 ms, and up to 60 while the machine
+is busy. There, on an Intel Iris Xe, a frame takes 1.5 ms with the room and
+1.2 ms without it. Under software rendering, which is what `verify:browser`
+runs on, it takes 57 ms against 34, because a software rasteriser pays for
+every pixel and the black the room replaced cost nothing. It has not been
+timed on a Pi.
+
 ## Development
 
 ```bash

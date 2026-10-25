@@ -1,12 +1,15 @@
-import { AmbientLight, Box3, DirectionalLight, type Mesh, MeshBasicMaterial } from 'three';
+import { AmbientLight, Box3, Color, DirectionalLight, type Mesh, MeshBasicMaterial } from 'three';
 import { describe, expect, test } from 'vitest';
 import { BALL_RADIUS, TABLE } from '../../src/geometry/table';
 import { CUE_REACH, behindBack } from '../../src/scene/pool-scene';
 import {
   APRON_TOP,
   BED_HEIGHT,
+  LAMP_HEIGHT,
+  RACK_DEPTH,
   ROOM_LIGHT,
   Room,
+  SCONCE_REACH,
   WALL_HEIGHT,
   WALL_X,
   WALL_Z,
@@ -14,6 +17,7 @@ import {
   lightAt,
   luminance,
 } from '../../src/scene/room';
+import { WALL_COLOR } from '../../src/scene/room-textures';
 import { FRAME_MARGIN, buildTable } from '../../src/scene/table-mesh';
 
 const INCH = 0.0254;
@@ -47,6 +51,13 @@ describe('the table and the walls are at the WPA’s dimensions', () => {
     expect(walls.max.y - walls.min.y).toBeCloseTo(WALL_HEIGHT, 6);
   });
 
+  test('the lamp’s underside is 40" over the bed, and its rods reach the ceiling', () => {
+    expect(LAMP_HEIGHT).toBeCloseTo(40 * INCH, 9);
+    const lamp = bounds('lamp');
+    expect(lamp.min.y).toBeCloseTo(LAMP_HEIGHT, 6);
+    expect(lamp.max.y).toBeCloseTo(WALL_HEIGHT - BED_HEIGHT, 6);
+  });
+
   test('the table’s frame sits on its cabinet', () => {
     expect(new Box3().setFromObject(buildTable()).min.y).toBeCloseTo(APRON_TOP, 6);
     expect(bounds('fixtures').min.y).toBeCloseTo(FLOOR, 6);
@@ -56,9 +67,14 @@ describe('the table and the walls are at the WPA’s dimensions', () => {
 /**
  * With the cue ball anywhere on the table, aimed any way: the furthest either
  * reaches from the middle of the table is from a corner of where the cue ball
- * can be, so those four corners at every heading cover it.
+ * can be, so those four corners at every heading cover it. Held clear of what
+ * stands out from the walls too: the cue racks on the end walls, which come
+ * down to the cue's height, and the sconces on the long walls, which the
+ * behind view's eye can rise to.
  */
 describe('nothing reaches a wall', () => {
+  const clearX = WALL_X - RACK_DEPTH - 0.05;
+  const clearZ = WALL_Z - SCONCE_REACH - 0.05;
   const diagonal = Math.hypot(TABLE.playLength, TABLE.playWidth);
   const corners = [-1, 1].flatMap((sx) =>
     [-1, 1].map((sz) => ({ x: sx * (TABLE.playLength / 2 - BALL_RADIUS), z: sz * (TABLE.playWidth / 2 - BALL_RADIUS) })),
@@ -76,17 +92,29 @@ describe('nothing reaches a wall', () => {
     return { x, z };
   };
 
-  test('the butt of the cue, drawn all the way back, stays 5 cm inside the walls', () => {
+  test('the butt of the cue, drawn all the way back, stays 5 cm clear of the walls and what hangs on them', () => {
     const butt = furthest(CUE_REACH);
-    expect(butt.x).toBeLessThan(WALL_X - 0.05);
-    expect(butt.z).toBeLessThan(WALL_Z - 0.05);
+    expect(butt.x).toBeLessThan(clearX);
+    expect(butt.z).toBeLessThan(clearZ);
   });
 
   /** No shot reaches further than a diagonal to the ghost ball and another to the pocket. */
   test('nor does the behind view at its furthest framing', () => {
     const camera = furthest(behindBack(2 * diagonal));
-    expect(camera.x).toBeLessThan(WALL_X - 0.05);
-    expect(camera.z).toBeLessThan(WALL_Z - 0.05);
+    expect(camera.x).toBeLessThan(clearX);
+    expect(camera.z).toBeLessThan(clearZ);
+  });
+});
+
+describe('the lamp shows only from below it', () => {
+  test('gone with the eye overhead, there with it down at the table', () => {
+    const lamp = new Room(1);
+    lamp.setEyeHeight(2.15);
+    expect(lamp.lampShown).toBe(false);
+    lamp.setEyeHeight(0.6);
+    expect(lamp.lampShown).toBe(true);
+    lamp.setEyeHeight(LAMP_HEIGHT);
+    expect(lamp.lampShown).toBe(false);
   });
 });
 
@@ -138,15 +166,21 @@ describe('the bake is measured against the bed', () => {
     expect(bedGain([overhead, new AmbientLight(0xffffff, Math.PI)])).toBeCloseTo(2, 9);
   });
 
-  test('the walls fade at the top into the clear colour', () => {
+  /** The venue's light fades to 0.35 of itself; the sconces add a little more. */
+  test('the walls fade at the top to about a third of the room’s light, and the clear colour is that', () => {
     const top = lightAt({ x: 0, y: FLOOR + WALL_HEIGHT, z: -WALL_Z }, { x: 0, y: 0, z: 1 });
-    expect(luminance(top)).toBeCloseTo(0.35 * ROOM_LIGHT, 9);
+    expect(luminance(top)).toBeGreaterThan(0.35 * ROOM_LIGHT);
+    expect(luminance(top)).toBeLessThan(0.45 * ROOM_LIGHT);
+    const wall = new Color(WALL_COLOR);
+    expect(room.backdrop.r).toBeCloseTo(wall.r * top[0], 9);
+    expect(room.backdrop.g).toBeCloseTo(wall.g * top[1], 9);
+    expect(room.backdrop.b).toBeCloseTo(wall.b * top[2], 9);
   });
 });
 
 describe('the budget holds', () => {
-  test('three meshes and fewer than 30,000 triangles', () => {
-    expect(meshes).toHaveLength(3);
+  test('four meshes and fewer than 30,000 triangles', () => {
+    expect(meshes.map((mesh) => mesh.name)).toEqual(['floor', 'walls', 'fixtures', 'lamp']);
     const triangles = meshes.reduce((sum, mesh) => sum + mesh.geometry.getIndex()!.count / 3, 0);
     expect(triangles).toBeLessThanOrEqual(30_000);
   });

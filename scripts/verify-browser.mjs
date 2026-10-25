@@ -215,6 +215,7 @@ check(
   behindRoom.top.every((p) => luma(p) > 10 && luma(p) < clothLuma),
   `top ${behindRoom.top.map((p) => luma(p).toFixed(0)).join('/')}, cloth ${clothLuma.toFixed(0)}`,
 );
+check('behind: the lamp hangs over the table', (await state()).room.lamp === true);
 await page.screenshot({ path: `${OUT}room-behind.png` });
 
 await page.evaluate(() => window.__debug.setView('overhead'));
@@ -225,6 +226,7 @@ check(
   floorSeen.every((p) => luma(p) > 10),
   floorSeen.map((p) => luma(p).toFixed(0)).join('/'),
 );
+check('overhead: the lamp is put away, above the eye', (await state()).room.lamp === false);
 await page.screenshot({ path: `${OUT}room-overhead.png` });
 
 await page.evaluate(() => window.__debug.setView('stance'));
