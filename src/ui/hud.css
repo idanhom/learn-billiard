@@ -1085,6 +1085,42 @@ body {
 }
 
 /*
+ * Finger-sized wherever there is a finger: 44 px for a button, 40 for a row in
+ * a list or a field. After the rules for each, so these win.
+ */
+@media (any-pointer: coarse) {
+  .hud-call,
+  .hud-reset {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 4px 10px;
+    vertical-align: middle;
+  }
+
+  .hud-chip {
+    min-width: 40px;
+    justify-content: center;
+  }
+
+  .hud-level {
+    min-height: 40px;
+  }
+
+  .hud-continue {
+    min-height: 44px;
+  }
+
+  #table-panel input,
+  #table-panel select {
+    min-height: 40px;
+  }
+
+  .hud-calls {
+    gap: 6px;
+  }
+}
+
+/*
  * A phone, either way up, or any window too small for the desktop layout. The
  * table has to stay visible, so the panels shrink to what is needed to play,
  * the level list and the recent shots fold into sheets behind toolbar chips,
@@ -1182,8 +1218,11 @@ body {
     order: 6;
   }
 
+  /* Centred both ways, as a button's own label is: Details beside Replay. */
   .compact-only {
     display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   #hud-power {
@@ -1252,6 +1291,19 @@ body {
     text-align: center;
   }
 
+  /* The self-estimate, and the flash drill's fractions, as one row of equal
+   * buttons: the words wrap inside them rather than the buttons wrapping. */
+  .hud-estimates {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  .hud-estimates .hud-call {
+    padding: 2px 4px;
+    line-height: 1.15;
+  }
+
   /* Sideways, the overhead table fills the middle: the status and the report
    * keep to the column beside it. */
   @media (max-height: 520px) and (orientation: landscape) {
@@ -1274,11 +1326,25 @@ body {
       text-align: left;
     }
 
+    /* 40 px, so the five fit one row of the column above the aim buttons. */
+    #hud-calls .hud-call {
+      min-width: 40px;
+      min-height: 40px;
+      padding: 4px 8px;
+    }
+
     #hud-report {
       left: var(--edge-left);
       transform: none;
       max-width: min(260px, 26vw);
+      max-height: calc(100% - var(--status-bottom, 74px) - 8px - var(--edge-bottom) - var(--toolbar-height, 44px) - 8px);
       text-align: left;
+    }
+
+    /* Three a row in the narrow column. */
+    .hud-estimates {
+      grid-auto-flow: row;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
 

@@ -1437,12 +1437,13 @@ function estimatePrompt(straight: boolean): string {
       `<button type="button" class="hud-call" data-estimate="${said}">${estimateLabel(said, straight)}` +
       `<kbd class="kbd-hint"> ${i + 1}</kbd></button>`,
   ).join('');
+  // Skip is one more button in the row, so the prompt stays one row deep on a
+  // phone however big the buttons are for a finger.
   return (
     '<div class="hud-label">Before the report</div>' +
     '<div class="hud-sub">How did you hit it?</div>' +
-    `<div class="hud-calls hud-estimates">${buttons}</div>` +
-    '<div class="hud-sub hud-note"><button type="button" class="hud-call" data-estimate-skip>skip</button>' +
-    '<kbd class="kbd-hint"> Esc</kbd></div>'
+    `<div class="hud-calls hud-estimates">${buttons}` +
+    '<button type="button" class="hud-call hud-note" data-estimate-skip>skip<kbd class="kbd-hint"> Esc</kbd></button></div>'
   );
 }
 

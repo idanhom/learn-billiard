@@ -1648,6 +1648,22 @@ check(
   (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),
 );
 
+/** The visible buttons matching `selector` that are under `min` px either way, or whose centre a tap would not reach. */
+const unfit = (p, selector, min) =>
+  p.evaluate(
+    ({ selector, min }) =>
+      [...document.querySelectorAll(selector)]
+        .filter((el) => getComputedStyle(el).display !== 'none' && el.getClientRects().length > 0)
+        .flatMap((el) => {
+          const r = el.getBoundingClientRect();
+          const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+          const name = el.dataset.action ?? el.dataset.call ?? el.dataset.estimate ?? el.textContent.trim().slice(0, 12);
+          if (r.width < min || r.height < min) return [`${name} ${Math.round(r.width)}x${Math.round(r.height)}`];
+          return hit && el.contains(hit) ? [] : [`${name} covered`];
+        }),
+    { selector, min },
+  );
+
 /**
  * The screens where the shot panel grows a row: the overlap picture and the
  * fraction to call at tier 2, the exam, and a position level's tip. Level 3 is
@@ -1716,6 +1732,9 @@ async function grownShotPanels(p, shots) {
         stripGap: shown(strip) ? Math.round(box(strip).top - box(document.getElementById('hud-shot')).bottom) : null,
         track: shown(strip) ? Math.round(box(document.querySelector('.hud-strip-track')).height) : null,
         helpOnScreen: box(help).right <= box(document.getElementById('hud-toolbar')).right,
+        smallCalls: [...document.querySelectorAll('#hud-calls [data-call]')]
+          .map((el) => box(el))
+          .filter((r) => r.width < 40 || r.height < 40).length,
       };
     });
     states.push({ label, ...measured });
@@ -1813,10 +1832,16 @@ for (const [name, viewport] of [
     );
   const chipsOff = await offScreen(['retry', 'next', 'view', 'levels', 'help']);
   check(`phone, ${name}: every action chip is on screen without scrolling`, chipsOff.length === 0, chipsOff.join());
+  // Sized for a finger: the toolbar's chips, and below the buttons of the
+  // report, the level list, the fraction to call and the self-estimate.
+  const smallChips = (await unfit(phone, '#hud-toolbar .hud-chip', 40)).filter((chip) => !chip.endsWith('covered'));
+  check(`phone, ${name}: every toolbar chip is at least 40 px each way`, smallChips.length === 0, smallChips.join());
 
   await phone.locator('.hud-chip[data-action="levels"]').tap();
   await sleep(150);
   check(`phone, ${name}: Levels opens the level list`, await phone.locator('#hud-levels').isVisible());
+  const levelRow = await phone.evaluate(() => Math.min(...[...document.querySelectorAll('.hud-level')].map((row) => row.getBoundingClientRect().height)));
+  check(`phone, ${name}: the level rows are at least 40 px tall`, levelRow >= 40, `${levelRow.toFixed(0)} px`);
   await phone.locator('.hud-level[data-level="3"]').tap();
   await sleep(300);
   const tapped = await phone.evaluate(() => window.__debug.state());
@@ -1944,6 +1969,17 @@ for (const [name, viewport] of [
     `${reviewChipsOff.join()}; scrolled off: ${(await offScreen(['history', 'help'])).join() || 'none'}`,
   );
 
+  const reportButtons = await phone.evaluate(() => {
+    const [replay, details] = ['[data-replay]', '[data-more]'].map((s) => document.querySelector(`#hud-report ${s}`).getBoundingClientRect());
+    return { replay: [replay.width, replay.height], details: [details.width, details.height], sameRow: Math.abs(replay.top - details.top) <= 1 };
+  });
+  const unfitReport = await unfit(phone, '#hud-report [data-replay], #hud-report [data-more]', 44);
+  check(
+    `phone, ${name}: Replay and Details are finger-sized, side by side, and uncovered`,
+    unfitReport.length === 0 && reportButtons.sameRow,
+    `${unfitReport.join()} ${JSON.stringify(reportButtons)}`,
+  );
+
   await phone.screenshot({ path: `${OUT}phone-${name}.png` });
   await phone.evaluate(() => window.__debug.setView('overhead'));
   await sleep(300);
@@ -1955,6 +1991,17 @@ for (const [name, viewport] of [
   await details.tap();
   await sleep(150);
   const unfolded = (await moreShown()) && (await details.getAttribute('aria-expanded')) === 'true';
+  const opened = await phone.evaluate(() => ({
+    report: document.getElementById('hud-report').getBoundingClientRect().top,
+    status: document.getElementById('hud-status').getBoundingClientRect().bottom,
+  }));
+  if (!upright) {
+    check(
+      `phone, ${name}: opened, the report keeps below the status panel`,
+      opened.report >= opened.status,
+      `report from ${opened.report.toFixed(0)}, status to ${opened.status.toFixed(0)}`,
+    );
+  }
   await details.tap();
   await sleep(150);
   const refolded = !(await moreShown()) && (await details.getAttribute('aria-expanded')) === 'false';
@@ -2013,13 +2060,44 @@ for (const [name, viewport] of [
     );
     if (grown.label !== 'a stop shot') {
       check(
-        `${where}: the five fractions to call stand clear of the middle of the table`,
-        grown.calls === 5 && !grown.callsOverMiddle,
-        `tier ${grown.tier}, ${grown.calls} calls`,
+        `${where}: the five fractions to call are finger-sized and stand clear of the middle of the table`,
+        grown.calls === 5 && grown.smallCalls === 0 && !grown.callsOverMiddle,
+        `tier ${grown.tier}, ${grown.calls} calls, ${grown.smallCalls} under 40 px`,
       );
     }
     if (grown.label === 'the exam') check(`${where}: the ? stays on screen beside the routine's chip`, grown.helpOnScreen);
   }
+
+  // A shot at tier 2 asks how it was hit before the report: six buttons, in
+  // one row upright and three a row sideways, all for a finger, and clear of
+  // the middle of the table and of the status panel.
+  await phone.evaluate(() => window.__debug.selectLevel(3));
+  await sleep(300);
+  await phone.evaluate(() => {
+    window.__debug.aimIdeal();
+    window.__debug.fire(0.5);
+  });
+  await phone.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+  await sleep(300);
+  const asking = await phone.evaluate(() => {
+    const box = (id) => document.getElementById(id).getBoundingClientRect();
+    const [r, s] = [box('hud-report'), box('hud-status')];
+    const [w, h] = [window.innerWidth, window.innerHeight];
+    return {
+      asking: window.__debug.state().estimate?.asking === true,
+      buttons: document.querySelectorAll('#hud-report .hud-estimates .hud-call').length,
+      overMiddle: r.left < (2 * w) / 3 && r.right > w / 3 && r.top < (2 * h) / 3 && r.bottom > h / 3,
+      overStatus: r.left < s.right && r.right > s.left && r.top < s.bottom && r.bottom > s.top,
+      height: Math.round(r.height),
+    };
+  });
+  const unfitEstimates = await unfit(phone, '#hud-report .hud-estimates .hud-call', 40);
+  check(
+    `phone, ${name}: the self-estimate's six buttons are finger-sized, clear of the table's middle and the status panel`,
+    asking.asking && asking.buttons === 6 && unfitEstimates.length === 0 && !asking.overMiddle && !asking.overStatus,
+    `${unfitEstimates.join()} ${JSON.stringify(asking)}`,
+  );
+  await phone.screenshot({ path: `${OUT}phone-${name}-estimate.png` });
   await context.close();
 }
 
