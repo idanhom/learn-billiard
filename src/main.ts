@@ -73,7 +73,7 @@ const hud = new Hud(hudRoot, {
   onContinue: () => continueOn(),
   onRetry: () => retry(),
   onNext: () => nextShot(),
-  onToggleView: () => (routine?.down ? toggleDown() : scene.toggleView()),
+  onToggleView: () => toggleView(),
   onGetDown: () => toggleDown(),
   onEstimate: (said) => answerEstimate(said),
   onDrillCall: (fraction) => callDrill(fraction),
@@ -112,7 +112,9 @@ let sessionsDealt = 0;
 /** The commit routine for the shot in play, where it runs; see `routineActive`. */
 let routine: Routine | undefined;
 /** How the routine went for the shot just played: time to shoot, and re-aims. */
-let routineLog: { readonly seconds: number; readonly reAims: number } | null = null;
+let routineLog: { readonly seconds: number; readonly reAims: number; readonly down: boolean } | null = null;
+/** The view the player got down from, to stand back up to. */
+let viewBeforeDown: CameraView | undefined;
 /**
  * The self-estimate for the shot just played, once the ghost ball has gone:
  * asking while the report waits, then what the player said and what it was.
@@ -346,23 +348,43 @@ function mayCharge(): boolean {
     return false;
   }
   const why = routine?.holdUp(clock());
-  if (why === 'get down first') announce('Get down on the line first: G, or Get down.');
   if (why === 'hold still') announce('Hold still a moment before the stroke.');
   return why === undefined;
 }
 
 /** G: get down on the line as it stands, or stand back up to choose again. */
 function toggleDown(): void {
-  if (!routine || session.phase !== 'aiming') return;
+  if (!routine || session.phase === 'charging') return;
+  // Once the stroke has gone, G only stands back up, to look at what happened.
+  if (session.phase !== 'aiming') {
+    if (scene.view === 'stance') standBackUp();
+    return;
+  }
   if (routine.down) {
     routine.standUp();
-    scene.setView('behind');
+    standBackUp();
     announce('Standing up. Choose the line again, then get down on it.');
   } else {
+    viewBeforeDown = scene.view === 'stance' ? 'behind' : scene.view;
     routine.getDown(session.aimAngle, clock());
     scene.setView('stance');
     announce('Down on the line: half a degree of adjustment either way from here.');
   }
+}
+
+/** Back to the view the player got down from. */
+function standBackUp(): void {
+  scene.setView(viewBeforeDown ?? 'behind');
+  viewBeforeDown = undefined;
+}
+
+/**
+ * V: the next view. Down on the line while lining up, a change of view is
+ * standing back up; once the stroke has gone, it is just the next view.
+ */
+function toggleView(): void {
+  if (routine?.down && (session.phase === 'aiming' || session.phase === 'charging')) toggleDown();
+  else scene.toggleView();
 }
 
 function dealtAs(): { readonly position: Campaign['position']; readonly speed: Campaign['speed']; readonly scoring: Campaign['shotScoring'] } {
@@ -407,7 +429,9 @@ function startShot(): void {
     scene.setView(viewBeforeResult);
     viewBeforeResult = undefined;
   }
-  if (routine) scene.setView('behind');
+  // A shot played down in the stance hands the next one back to where the player stood.
+  if (viewBeforeDown && scene.view === 'stance') scene.setView(viewBeforeDown);
+  viewBeforeDown = undefined;
 }
 
 /** A perception drill for the layout in play, where the level has them. */
@@ -723,7 +747,7 @@ function handleEvent(event: CampaignEvent, level: LevelDefinition): void {
 
 /** The stroke has gone: note how the routine went, for the report. */
 function released(): void {
-  if (routine) routineLog = { seconds: routine.elapsed(clock()), reAims: routine.reAims };
+  if (routine) routineLog = { seconds: routine.elapsed(clock()), reAims: routine.reAims, down: routine.down };
   audio.strike(session.cueSpeed);
 }
 
@@ -795,11 +819,7 @@ attachInput(canvas, {
     if (session.release()) released();
     chargeSeconds = 0;
   },
-  onToggleView() {
-    // Down in the stance, a change of view is standing back up.
-    if (routine?.down) toggleDown();
-    else scene.toggleView();
-  },
+  onToggleView: toggleView,
   onGetDown: toggleDown,
   onToggleSound: toggleSound,
   onReplay: startReplay,
@@ -1039,7 +1059,8 @@ function frame(now: number): void {
       const left = autoNextIn();
       return left === null ? null : Math.ceil(left);
     })(),
-    routine: routine ? { down: routine.down } : null,
+    // Only while lining up: once the stroke has gone, getting down means nothing.
+    routine: routine && aiming ? { down: routine.down } : null,
     routineLog,
     estimate,
     drill: drillState(),

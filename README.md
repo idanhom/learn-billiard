@@ -56,7 +56,7 @@ level does too. It does not come back once done.
 | `N` | next shot, mid-shot the same way; `Space` or `Enter` too, once a shot is scored |
 | `1`–`9`, `0` | jump to a level (`0` is level 10) |
 | `F` | call the fraction the shot needs |
-| `G` | get down on the line, or stand back up (last tier and exam) |
+| `G` | get down on the line, or stand back up (last tier and exam; optional) |
 | `T` | at the table: what to take to a real one, and what this can't teach |
 | `M` | sound on or off |
 | `P` | replay the shot just played, from overhead at a quarter speed; `Esc` stops it |
@@ -134,12 +134,14 @@ which the controls panel lets you set; 60 cm to start. A desktop window is
 often too short to hold both balls at true scale, and then the view widens just
 enough to keep them.
 
-At the last tier and in the exam, when the guides have gone, you play from it
-the way you would at a table. Choose the line standing, from behind the cue,
-then get down on it (`G`, or Get down). Once down, the line moves only half a
-degree either way; anything bigger means standing back up to choose again. The
-stroke waits until the aim has been still for a moment. The report says how
-long the shot took and how many times you stood back up.
+At the last tier and in the exam, when the guides have gone, you can play from
+it the way you would at a table: choose the line standing, then get down on it
+(`G`, or Get down). Once down, the line moves only half a degree either way;
+anything bigger means standing back up to choose again, and the stroke waits
+until the aim has been still for a moment. Getting down is your choice: from
+any view, standing, the stroke goes as on any other level. The report says how
+long the shot took, whether it was played in the stance or standing, and how
+many times you stood back up.
 
 Every shot is dealt with the cue pointed 3–8° off the object ball's centre, to
 one side or the other, and never within 3° of the line. Finding the line is the

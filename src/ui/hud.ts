@@ -197,7 +197,7 @@ export interface HudState {
   /** The commit routine, where it runs: down on the line or still standing. */
   readonly routine: { readonly down: boolean } | null;
   /** How it went for the shot just played: time to shoot, and how often the player stood back up. */
-  readonly routineLog: { readonly seconds: number; readonly reAims: number } | null;
+  readonly routineLog: { readonly seconds: number; readonly reAims: number; readonly down: boolean } | null;
   /**
    * The self-estimate, where one is asked: asking while the report waits,
    * then what the player said (null if they skipped) against what it was.
@@ -1059,8 +1059,8 @@ function renderReport(
         `${estimate.said === estimate.actual ? 'right' : `it was ${estimateLabel(estimate.actual, estimate.straight)}`}</div>`
       : '') +
     (routine
-      ? `<div class="hud-sub hud-note">Struck ${routine.seconds.toFixed(1)} s after the deal` +
-        `${routine.reAims === 0 ? ', from the first line' : `, standing up ${routine.reAims === 1 ? 'once' : `${routine.reAims} times`} to re-aim`}</div>`
+      ? `<div class="hud-sub hud-note">Struck ${routine.seconds.toFixed(1)} s after the deal ${routine.down ? 'in the stance' : 'standing'}` +
+        `${routine.reAims === 0 ? (routine.down ? ', from the first line' : '') : `, standing up ${routine.reAims === 1 ? 'once' : `${routine.reAims} times`} to re-aim`}</div>`
       : '') +
     (outcome.call === null
       ? ''

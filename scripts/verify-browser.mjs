@@ -376,14 +376,10 @@ check('the exam turns every guide off', Object.values(exam.guides).every((v) => 
 check('the exam counts shots rather than tiers', exam.exam?.total === 10 && exam.exam?.shotsTaken === 0);
 await page.screenshot({ path: `${OUT}exam.png` });
 
-// The exam plays through the commit routine: the stroke waits until the player
-// has got down on the line, and been still there a moment.
+// The exam offers the commit routine: getting down on the line is optional,
+// but once down the stroke waits for a still moment there.
 check('the exam starts each shot standing', exam.routine?.down === false, JSON.stringify(exam.routine));
 await page.focus('#game');
-await page.keyboard.down('Space');
-await sleep(150);
-await page.keyboard.up('Space');
-check('no stroke before getting down', (await state()).phase === 'aiming', (await state()).phase);
 await page.keyboard.press('KeyG');
 await sleep(100);
 const gotDown = await state();
@@ -392,6 +388,10 @@ check(
   gotDown.routine?.down === true && gotDown.view === 'stance',
   `${JSON.stringify(gotDown.routine)} ${gotDown.view}`,
 );
+await page.keyboard.down('Space');
+await sleep(150);
+await page.keyboard.up('Space');
+check('down, the stroke waits for a still moment', (await state()).phase === 'aiming', (await state()).phase);
 await sleep(700);
 await page.keyboard.down('Space');
 await sleep(250);
@@ -402,11 +402,44 @@ await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', 
 await page.keyboard.press('Escape');
 await sleep(100);
 const timedReport = await page.evaluate(() => document.querySelector('#hud-report')?.textContent ?? '');
-check('the report times the shot', /after the deal/.test(timedReport), timedReport);
+check('the report times the shot, played in the stance', /after the deal in the stance/.test(timedReport), timedReport);
+
+// Once the stroke has gone, the review is free to look from anywhere.
+await page.keyboard.press('KeyV');
+await sleep(100);
+const reviewView = (await state()).view;
+check('after the shot, V leaves the stance view', reviewView !== 'stance', reviewView);
+while ((await state()).view !== 'stance') {
+  await page.keyboard.press('KeyV');
+  await sleep(50);
+}
+await page.keyboard.press('KeyG');
+await sleep(100);
+check('and G stands back up', (await state()).view === 'behind', (await state()).view);
 
 await playPerfect();
 const examAfter = await state();
 check('an exam shot counts against the run', examAfter.exam?.shotsTaken === 1, JSON.stringify(examAfter.exam));
+
+// Standing, from any view, the stroke goes as on any level. On a retry, which
+// is practice, so the run's count above stands.
+await page.evaluate(() => {
+  window.__debug.retry();
+  window.__debug.aimIdeal();
+});
+await sleep(100);
+await page.focus('#game');
+await page.keyboard.down('Space');
+await sleep(250);
+await page.keyboard.up('Space');
+await sleep(100);
+check('standing, the stroke goes too', (await state()).phase !== 'aiming', (await state()).phase);
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+await page.keyboard.press('Escape');
+await sleep(100);
+const standingReport = await page.evaluate(() => document.querySelector('#hud-report')?.textContent ?? '');
+check('and the report says it was played standing', /after the deal standing/.test(standingReport), standingReport);
+check('practice leaves the run as it was', (await state()).exam?.shotsTaken === 1, JSON.stringify((await state()).exam));
 
 // The perception drills: a flash, then a placing.
 await page.evaluate(() => window.__debug.selectLevel(9));

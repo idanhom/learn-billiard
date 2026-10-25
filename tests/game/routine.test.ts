@@ -4,10 +4,13 @@ import { DOWN_ADJUSTMENT, Routine, STILL_SECONDS } from '../../src/game/routine'
 const deg = (d: number) => (d * Math.PI) / 180;
 
 describe('the commit routine', () => {
-  test('starts standing, and the stroke waits until the player gets down', () => {
+  /** Getting down is the player's choice: the shot can be struck from any view. */
+  test('starts standing, and standing the stroke can go at once', () => {
     const routine = new Routine(0);
     expect(routine.down).toBe(false);
-    expect(routine.holdUp(10)).toBe('get down first');
+    expect(routine.holdUp(0)).toBeUndefined();
+    routine.steer(0.1, 5);
+    expect(routine.holdUp(5)).toBeUndefined();
   });
 
   test('standing, the line goes anywhere', () => {
