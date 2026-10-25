@@ -547,12 +547,20 @@ await sleep(100);
 
 // Timing the cloth: the stopwatch takes a time, and a typed one picks the
 // nearest preset for the table it was taken on.
+const watchFrom = Date.now();
 await page.click('#table-panel [data-stopwatch]');
 await sleep(1200);
 await page.click('#table-panel [data-stopwatch]');
+const watchSpan = (Date.now() - watchFrom) / 1000;
 const stopped = Number(await page.inputValue('#cloth-seconds'));
-// Playwright's clicks take their own time on top of the 1.2 s between them.
-check('the stopwatch takes the time between Start and Stop', stopped >= 1.1 && stopped <= 2.5, String(stopped));
+// Playwright's clicks take their own time on top of the 1.2 s between them,
+// and on a busy machine a lot of it: so the reading is held inside the span
+// the two clicks were measured to take, not under a fixed ceiling.
+check(
+  'the stopwatch takes the time between Start and Stop',
+  stopped >= 1.1 && stopped <= watchSpan + 0.1,
+  `${stopped} s, the clicks spanned ${watchSpan.toFixed(2)} s`,
+);
 await page.click('#table-panel [data-feet="9"]');
 await page.fill('#cloth-seconds', '3.95');
 await sleep(100);
