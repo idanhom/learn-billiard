@@ -1707,6 +1707,21 @@ for (const [name, viewport] of [
   );
   check(`phone, ${name}: nothing sits over the middle of the table`, layout.over.length === 0, layout.over.join());
 
+  // The status panel keeps to what the rest of the HUD does not already say,
+  // and sideways stays in the column beside the overhead table.
+  const status = await phone.evaluate(() => {
+    const panel = document.getElementById('hud-status');
+    return { text: panel.innerText, right: panel.getBoundingClientRect().right / window.innerWidth };
+  });
+  check(
+    `phone, ${name}: the status panel drops the tier's name and the allowance`,
+    !status.text.includes('full guides') && !status.text.includes('of the pocket') && status.text.includes('3 of 5 to advance'),
+    status.text.replace(/\s+/g, ' '),
+  );
+  if (!upright) {
+    check(`phone, ${name}: the status panel keeps to the left third`, status.right <= 1 / 3, `right edge at ${(status.right * 100).toFixed(0)}%`);
+  }
+
   /** The chips for these actions, each wholly on screen; the names of any that are not. */
   const offScreen = (actions) =>
     phone.evaluate(

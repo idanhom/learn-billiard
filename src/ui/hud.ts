@@ -763,7 +763,7 @@ export class Hud {
           ? `Tier ${state.tier}`
           : state.drill || state.departure
           ? `Tier ${state.tier}`
-          : `Tier ${state.tier} &mdash; ${TIER_NAMES[state.tier] ?? ''}`;
+          : `Tier ${state.tier}<span class="hud-extra"> &mdash; ${TIER_NAMES[state.tier] ?? ''}</span>`;
 
     // The drills show no guide at any tier, and a flash drill is judged on
     // the fraction rather than the pocket.
@@ -776,10 +776,11 @@ export class Hud {
         : `Practice: today&rsquo;s first run stands at ${ofThePocket(state.daily.firstToday)}`
       : state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
-      : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize}${state.pattern || state.patternNews ? ' runs' : ''} to advance` +
+      : `${tierPips(state)} ${state.windowNeeded} of <span class="hud-extra">the last </span>${state.windowSize}` +
+        `${state.pattern || state.patternNews ? ' runs' : ''} to advance` +
         (state.drill || state.departure || state.position || state.speed || state.pattern || state.patternNews || state.task
           ? ''
-          : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
+          : `<span class="hud-extra"> &middot; within ${percent(state.pocketAllowance)} of the pocket</span>`);
     const tally = state.task
       ? `${state.qualified}/${state.attempts} made`
       : state.speed

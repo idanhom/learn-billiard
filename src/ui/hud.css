@@ -1213,8 +1213,13 @@ body {
     font-size: 16px;
   }
 
-  /* Sideways, the overhead table fills the middle: the report goes beside it. */
+  /* Sideways, the overhead table fills the middle: the status and the report
+   * keep to the column beside it. */
   @media (max-height: 520px) and (orientation: landscape) {
+    #hud-status {
+      max-width: min(260px, 26vw);
+    }
+
     #hud-report {
       left: var(--edge-left);
       transform: none;
