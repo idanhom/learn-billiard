@@ -120,6 +120,10 @@ export interface HudState {
     readonly distance: number;
     readonly result: PositionResult | null;
   } | null;
+  /** On the patterns level: which ball is next, of how many. */
+  readonly pattern: { readonly ball: number; readonly of: number } | null;
+  /** How the run stood after the last shot: balls down, of how many, and whether it is over. */
+  readonly patternNews: { readonly down: number; readonly of: number; readonly over: boolean } | null;
   /** On a speed level: the drill, how far the ring is, and how it went. */
   readonly speed: {
     readonly target: SpeedTarget;
@@ -552,6 +556,7 @@ export class Hud {
               state.estimate,
               state.autoNextIn,
               state.position?.result ? { result: state.position.result, zone: state.position.target === 'zone' } : null,
+              state.patternNews,
             );
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
@@ -680,6 +685,8 @@ export class Hud {
   #renderStatus(state: HudState): void {
     const heading = state.daily
       ? `Daily set: shot ${state.daily.shot} of ${state.daily.total}`
+      : state.pattern
+      ? `Tier ${state.tier}: ball ${state.pattern.ball} of ${state.pattern.of}`
       : state.exam
       ? `Exam &mdash; shot ${Math.min(state.exam.shotsTaken + 1, state.exam.total)} of ${state.exam.total}`
       : state.tierComplete
@@ -700,8 +707,8 @@ export class Hud {
         : `Practice: today&rsquo;s first run stands at ${ofThePocket(state.daily.firstToday)}`
       : state.exam
       ? `${state.exam.potted} potted${state.examBest === null ? '' : ` &middot; best ${state.examBest}/${state.exam.total}`}`
-      : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize} to advance` +
-        (state.drill || state.departure || state.position || state.speed
+      : `${tierPips(state)} ${state.windowNeeded} of the last ${state.windowSize}${state.pattern || state.patternNews ? ' runs' : ''} to advance` +
+        (state.drill || state.departure || state.position || state.speed || state.pattern || state.patternNews
           ? ''
           : ` &middot; within ${percent(state.pocketAllowance)} of the pocket`);
     const tally = state.speed
@@ -724,6 +731,16 @@ export class Hud {
   }
 
   #renderShot(state: HudState): void {
+    if (state.pattern) {
+      const last = state.pattern.ball === state.pattern.of;
+      this.#writeShot(
+        `<div class="hud-label">This shot</div><div class="hud-big">ball ${state.pattern.ball} of ${state.pattern.of}</div>` +
+          `<div class="hud-sub">${last ? 'pot it to run out' : 'pot it, and leave yourself the next'}</div>` +
+          (state.tip === null ? '' : tipPicture(state.tip)) +
+          diamondLine(state.diamonds),
+      );
+      return;
+    }
     if (state.speed) {
       this.#writeShot(
         '<div class="hud-label">This shot</div><div class="hud-big">no object ball</div>' +
@@ -931,8 +948,13 @@ function renderReport(
   estimate: HudState['estimate'],
   autoNextIn: number | null,
   position: { readonly result: PositionResult; readonly zone: boolean } | null,
+  pattern: HudState['patternNews'],
 ): string {
-  const verdict = position ? positionVerdict(position.result, position.zone) : verdictFor(outcome, exam !== undefined);
+  const verdict = position
+    ? positionVerdict(position.result, position.zone)
+    : pattern
+      ? patternVerdict(pattern, outcome)
+      : verdictFor(outcome, exam !== undefined);
 
   const used = outcome.pocketUsed;
   const aim = !outcome.contacted
@@ -1084,6 +1106,26 @@ function masteryStrip(bands: readonly BandMastery[]): string {
     })
     .join('');
   return `<div class="hud-label hud-mastery-label">Mastery, unguided</div><div class="hud-mastery">${cells}</div>`;
+}
+
+/** A pattern shot's verdict: the run going on, run out, or over. */
+function patternVerdict(
+  pattern: NonNullable<HudState['patternNews']>,
+  outcome: ShotOutcome,
+): { readonly text: string; readonly good: boolean; readonly why: string } {
+  if (!pattern.over) {
+    return {
+      text: `Ball ${pattern.down} of ${pattern.of} down`,
+      good: true,
+      why: 'On to the next, from where the cue ball stopped: <b>Space</b> or <b>Next</b>.',
+    };
+  }
+  if (pattern.down === pattern.of) return { text: `Run out: ${pattern.of} of ${pattern.of}`, good: true, why: 'Every ball, in order.' };
+  return {
+    text: `Run over: ${pattern.down} of ${pattern.of} down`,
+    good: false,
+    why: outcome.scratch ? 'The cue ball went in.' : 'That one stayed up. The next run starts afresh.',
+  };
 }
 
 /** What a speed drill asks of the cue ball. */

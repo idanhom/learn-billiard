@@ -15,8 +15,8 @@
  * the five fractions, leaning on the ones missed most, level 9 reads shots
  * without playing them, level 10 deals the angles mastered least, level 11 is
  * the daily set, levels 12 and 13 are about where the cue ball goes, 14 to 16
- * about where it stops, 17 and 18 about its speed with no object ball, and 19
- * about playing it to a zone for the next shot.
+ * about where it stops, 17 and 18 about its speed with no object ball, 19 about
+ * playing it to a zone for the next shot, and 20 runs short patterns.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
@@ -74,7 +74,8 @@ export interface LevelDefinition {
     | { readonly kind: 'departure'; readonly stroke: Stroke; readonly allowance: number }
     | { readonly kind: 'position'; readonly target: PositionTarget; readonly distance?: number }
     | { readonly kind: 'speed'; readonly target: SpeedTarget; readonly distance?: number }
-    | { readonly kind: 'zone' };
+    | { readonly kind: 'zone' }
+    | { readonly kind: 'pattern' };
   /** Fallback used when generation cannot satisfy the brief. */
   readonly template: ShotLayout;
 }
@@ -381,6 +382,21 @@ export const LEVELS: readonly LevelDefinition[] = [
     examShots: 0,
     scoring: { kind: 'zone' },
     template: layoutWithCut('level-19-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 20,
+    name: 'Patterns',
+    description: 'Two balls, then three, potted in order: each shot from where the last one left the cue ball.',
+    cutRange: [5, 45],
+    pocketAllowance: 1,
+    cueDistance: [0.35, 0.9],
+    potDistance: [0.3, 0.9],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    scoring: { kind: 'pattern' },
+    template: layoutWithCut('level-20-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
   },
 ];
 

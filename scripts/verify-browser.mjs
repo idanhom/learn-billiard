@@ -700,6 +700,35 @@ await page.evaluate(() => {
 });
 await sleep(200);
 
+// Patterns: each shot from where the last left the cue ball.
+await page.evaluate(() => window.__debug.selectLevel(20));
+await sleep(400);
+const patternStart = await page.textContent('#hud-status');
+check('the patterns level opens on the first of two balls', patternStart.includes('ball 1 of 2'), patternStart);
+await page.evaluate(() => {
+  window.__debug.aimIdeal();
+  window.__debug.fire(window.__debug.state().recommendedPower ?? 0.5);
+});
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const afterFirst = await state();
+const firstReport = await page.textContent('#hud-report');
+const ranOn = firstReport.includes('Ball 1 of 2 down');
+check('a pot carries the run on, and anything else ends it, either way said', ranOn || firstReport.includes('Run over'), firstReport);
+if (ranOn) {
+  const rest = afterFirst.balls[0].pos;
+  await page.evaluate(() => window.__debug.next());
+  await sleep(200);
+  const second = await state();
+  check(
+    'the next ball is played from where the cue ball stopped',
+    Math.hypot(second.balls[0].pos.x - rest.x, second.balls[0].pos.y - rest.y) < 1e-9 && (await page.textContent('#hud-status')).includes('ball 2 of 2'),
+    JSON.stringify({ rest, now: second.balls[0].pos }),
+  );
+}
+await page.screenshot({ path: `${OUT}pattern.png` });
+await page.evaluate(() => window.__debug.selectLevel(1));
+await sleep(200);
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {

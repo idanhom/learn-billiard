@@ -47,7 +47,7 @@ level does too. It does not come back once done.
 |---|---|
 | drag with the left button | aim (hold `Shift` to fine-tune) |
 | `←` / `→` | nudge the aim a twentieth of a degree (hold `Shift` for a whole one) |
-| `↑` / `↓` | move the tip up the ball for follow, or down it for draw (levels 14 to 16 and 19) |
+| `↑` / `↓` | move the tip up the ball for follow, or down it for draw (levels 14 to 16, 19 and 20) |
 | hold `Space` | charge power, release to strike |
 | `V` | switch between behind the cue, overhead, and down in your stance |
 | `.` | cycle full / half / quarter speed |
@@ -304,6 +304,16 @@ shot's ideal line at a spread of speeds and tips until one pots cleanly and
 leaves the cue ball in open table, and the zone is centred where it stopped.
 Finding a stroke that does it is the drill, so the line is shown and the speed
 and tip are yours.
+
+Level 20, Patterns, deals two balls to pot in order at the first two tiers and
+three at the last two, each shot played from wherever the last one left the
+cue ball, with the balls still to come on the table. A run counts once, at its
+end, when every ball has gone down in order; a miss or a scratch ends it and
+the next is a fresh pattern. Every pattern can be run: it is built forward,
+each ball placed as an ordinary cut from where a clean stroke on the shot
+before left the cue ball, and kept only if, with every ball on the table from
+the start, those strokes still run it the same way. Building one takes a
+fraction of a second of simulation when it is dealt.
 
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is

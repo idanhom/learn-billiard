@@ -136,6 +136,8 @@ const TIP_STEP = 0.1;
 let positionResult: PositionResult | undefined;
 /** On a speed level, where the cue ball stopped against the ring. */
 let speedResult: SpeedResult | undefined;
+/** On the patterns level, how the run stood after the last shot. */
+let patternNews: CampaignEvent['pattern'];
 /**
  * The shot just played, being shown again from overhead at a quarter speed:
  * its own session, how much of it has sounded, and the view to go back to.
@@ -340,6 +342,7 @@ function startShot(): void {
   departure = newDeparture();
   positionResult = undefined;
   speedResult = undefined;
+  patternNews = undefined;
   if (campaign.level.id !== tipLevel) {
     tip = 0;
     tipLevel = campaign.level.id;
@@ -363,7 +366,7 @@ function newDrill(): PerceptionDrill | undefined {
 
 function tipAllowed(): boolean {
   const kind = campaign.level.scoring?.kind;
-  return kind === 'position' || kind === 'zone';
+  return kind === 'position' || kind === 'zone' || kind === 'pattern';
 }
 
 /** Where a shot played for position asks the cue ball to stop, and how near counts. */
@@ -561,17 +564,16 @@ function recordOutcome(outcome: ShotOutcome): void {
   }
   // Once the ghost ball has gone, the player says how they hit it before the
   // report says. Judged on the tier the shot was played at.
-  if (!position && (level.exam || level.daily || campaign.tier >= 2) && outcome.pocketUsed !== null) {
+  if (!level.scoring && (level.exam || level.daily || campaign.tier >= 2) && outcome.pocketUsed !== null) {
     const actual = estimateOf(signedShare(outcome.pocketUsed, outcome.aimError.side));
     estimate = { asking: true, said: null, actual, straight: outcome.cutSide === 'straight' };
   }
   if (!estimate?.asking) reportShownAt = clock();
   if (coach.active && coach.scored()) coachingDone();
   // A shot played without the ghost ball counts toward mastery of its band.
-  const event = campaign.record(
-    positionResult
-      ? { ...outcome, qualifying: positionResult.correct }
-      : campaign.guides.ghostBall
+  const scored = positionResult
+    ? { ...outcome, qualifying: positionResult.correct }
+    : campaign.guides.ghostBall
       ? outcome
       : {
           ...outcome,
@@ -579,8 +581,10 @@ function recordOutcome(outcome: ShotOutcome): void {
             cutDegrees: (outcome.cutAngle * 180) / Math.PI,
             onStandard: outcome.pocketUsed !== null && outcome.pocketUsed <= MASTERY_STANDARD,
           },
-        },
-  );
+        };
+  // Where the cue ball stopped is where a pattern's next shot is played from.
+  const event = campaign.record({ ...scored, cueRest: session.cueBall.pos });
+  patternNews = event.pattern;
   history.record({
     pocketShare: outcome.pocketUsed === null ? null : signedShare(outcome.pocketUsed, outcome.aimError.side),
     qualifying: outcome.qualifying,
@@ -942,6 +946,8 @@ function frame(now: number): void {
     tip: tipAllowed() ? tip : null,
     position: positionState(),
     speed: speedState(),
+    pattern: campaign.pattern ?? null,
+    patternNews: patternNews ?? null,
     outcome: session.outcome,
     history: history.entries,
     tendencies: history.tendencies,
@@ -1043,6 +1049,8 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       tip: session.tip,
       position: positionState(),
       speed: speedState(),
+      pattern: campaign.pattern ?? null,
+      patternNews: patternNews ?? null,
       replaying: replay !== undefined,
       coach: coach.active ? coach.step : null,
       highContrast: settings.highContrast,

@@ -405,11 +405,14 @@ describe('persistence', () => {
 
   test('every level in the curriculum can be selected and played', () => {
     const subject = campaign();
-    // A layout for the cue ball alone answers to the speed drills' checks, not the aiming ones.
+    // A layout for the cue ball alone answers to the speed drills' checks, not the aiming ones,
+    // and a pattern's later shots are played from wherever the cue ball stopped.
     const violations = (level: (typeof LEVELS)[number]) =>
       level.scoring?.kind === 'speed'
         ? speedViolations(subject.layout, level.scoring.target)
-        : layoutViolations(subject.layout, subject.layoutLevel);
+        : level.scoring?.kind === 'pattern' && subject.pattern?.ball !== 1
+          ? []
+          : layoutViolations(subject.layout, subject.layoutLevel);
     for (const level of LEVELS) {
       expect(subject.selectLevel(level.id)).toBe(true);
       expect(violations(level), `level ${level.id}`).toEqual([]);
@@ -844,5 +847,42 @@ describe('the speed drills', () => {
     expect(subject.speed).toEqual({ target: 'lag', distance: 0 });
     expect(subject.layout.heading).toBe(0);
     expect(subject.guides).toMatchObject({ aimLine: true, ghostBall: false, objectPath: false, powerHint: false });
+  });
+});
+
+describe('the patterns level', () => {
+  const level = LEVELS.find((l) => l.scoring?.kind === 'pattern')!;
+  const potted: ScoredShot = { qualifying: true, pottedTarget: true, scratch: false };
+
+  test('carries the cue ball from each shot to the next, and scores the run once, at its end', () => {
+    const subject = resumed(level.id, 0);
+    expect(subject.pattern).toEqual({ ball: 1, of: 2 });
+    const first = subject.layout;
+    expect(first.obstacles).toHaveLength(1);
+    const rest = { x: 0.1, y: -0.1 };
+    const going = subject.record({ ...potted, cueRest: rest });
+    expect(going.pattern).toEqual({ down: 1, of: 2, over: false });
+    expect(subject.tierWindow).toEqual([]);
+    subject.nextShot();
+    expect(subject.layout.cue).toEqual(rest);
+    expect(subject.layout.object).toEqual(first.obstacles![0]);
+    expect(subject.layout.obstacles).toEqual([]);
+    const done = subject.record({ ...potted, cueRest: rest });
+    expect(done.pattern).toEqual({ down: 2, of: 2, over: true });
+    expect(subject.tierWindow).toEqual([true]);
+  });
+
+  test('ends the run on a miss or a scratch, and deals a fresh one', () => {
+    const subject = resumed(level.id, 0);
+    const first = subject.layout.id;
+    expect(subject.record({ ...potted, scratch: true }).pattern).toEqual({ down: 0, of: 2, over: true });
+    expect(subject.tierWindow).toEqual([false]);
+    subject.nextShot();
+    expect(subject.layout.id).not.toBe(first);
+    expect(subject.pattern).toEqual({ ball: 1, of: 2 });
+  });
+
+  test('runs three balls at the last tiers', () => {
+    expect(resumed(level.id, 2).pattern).toEqual({ ball: 1, of: 3 });
   });
 });

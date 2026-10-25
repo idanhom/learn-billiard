@@ -12,6 +12,7 @@
  * playing, as practice, and counted for nothing.
  */
 
+import type { Vec2 } from '../geometry/vec2';
 import type { ShotLayout } from './drills';
 import { generateShot } from './generator';
 import {
@@ -56,6 +57,7 @@ import type { DrillKind } from './perception';
 import { type PositionAsk, RUNGS, rungDistances } from './position';
 import { SPEED_RUNGS, type SpeedTarget, speedLayout } from './speed';
 import { zoneLayout } from './zones';
+import { PATTERN_SIZES, type Pattern, dealPattern, patternLayout } from './patterns';
 import { makeRng, pickWeighted } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
@@ -70,6 +72,10 @@ export interface ScoredShot {
   readonly mastery?: { readonly cutDegrees: number; readonly onStandard: boolean };
   /** The share of the pocket the aim used, or null with no line: what the daily set scores. */
   readonly pocketUsed?: number | null;
+  /** The cue ball went in. */
+  readonly scratch?: boolean;
+  /** Where the cue ball stopped: where a pattern's next shot is played from. */
+  readonly cueRest?: Vec2;
 }
 
 export interface DailyResult {
@@ -118,6 +124,8 @@ export interface CampaignEvent {
   /** The band this shot took to mastered, by its label. */
   readonly mastered?: string;
   readonly dailyFinished?: DailyResult;
+  /** On a pattern: how many of its balls are down, of how many, and whether the run is over. */
+  readonly pattern?: { readonly down: number; readonly of: number; readonly over: boolean };
 }
 
 export interface CampaignOptions {
@@ -167,6 +175,8 @@ export class Campaign {
   /** Layouts moved on through since the level in play was entered, so its perception drills start on a flash. */
   #turnOnLevel = 0;
   #exam: ExamRun | undefined;
+  /** A pattern being run: which ball is next, and where the cue ball is. */
+  #run: { readonly pattern: Pattern; readonly seed: number; readonly index: number; readonly cue: Vec2 } | undefined;
 
   constructor(store: ProgressStore, options: CampaignOptions = {}) {
     this.#store = store;
@@ -246,6 +256,24 @@ export class Campaign {
   /** On how many of the last seven days there was practice, today included. */
   get daysPractised(): number {
     return daysPractised(this.#state.practiceDays, this.#today());
+  }
+
+  /** The next shot of the pattern being run, or the first of a new one, as big as the tier asks. */
+  #patternShot(): ShotLayout {
+    if (!this.#run) {
+      const seed = this.#baseSeed + this.#shotCounter * 7919;
+      const pattern = dealPattern(PATTERN_SIZES[this.#tiers.tier]!, this.#level, seed);
+      this.#run = { pattern, seed, index: 0, cue: pattern.cue };
+    }
+    this.#source = this.#level;
+    const { pattern, seed, index, cue } = this.#run;
+    return patternLayout(pattern, index, cue, `L${this.#level.id}-p${seed}-b${index + 1}`);
+  }
+
+  /** On the patterns level: which ball is next, of how many. */
+  get pattern(): { readonly ball: number; readonly of: number } | undefined {
+    if (this.#level.scoring?.kind !== 'pattern' || !this.#run) return undefined;
+    return { ball: this.#run.index + 1, of: this.#run.pattern.balls.length };
   }
 
   /** On a speed level: which drill, and how far the ring is. */
@@ -341,6 +369,8 @@ export class Campaign {
     this.#state = { ...this.#state, currentLevel: id };
     this.#shotCounter++;
     this.#turnOnLevel = 0;
+    // A run is a sitting: leaving the level ends it.
+    this.#run = undefined;
     this.#deal();
     this.#persist();
     return true;
@@ -361,6 +391,29 @@ export class Campaign {
 
     if (this.#level.daily) {
       return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordDaily(shot), ...news };
+    }
+
+    if (this.#level.scoring?.kind === 'pattern' && this.#run) {
+      const run = this.#run;
+      const of = run.pattern.balls.length;
+      const clean = shot.pottedTarget && !shot.scratch;
+      if (clean && run.index < of - 1) {
+        // On to the next ball, from where the cue ball stopped. The run is scored once, at its end.
+        this.#run = { ...run, index: run.index + 1, cue: shot.cueRest ?? run.cue };
+        this.#persist();
+        return { advancedTier: false, levelCompleted: false, practice: false, pattern: { down: run.index + 1, of, over: false }, ...news };
+      }
+      this.#run = undefined;
+      const pattern = { down: clean ? of : run.index, of, over: true };
+      const wasCompleted = this.#tiers.completed;
+      const result = this.#tiers.record(clean);
+      this.#writeTier();
+      if (result.completed && !wasCompleted) {
+        this.#advanceToNextLevel();
+        return { advancedTier: false, levelCompleted: true, practice: false, pattern, ...news };
+      }
+      this.#persist();
+      return { advancedTier: result.advanced, levelCompleted: false, practice: false, pattern, ...news };
     }
     if (this.#level.exam) {
       return { advancedTier: false, levelCompleted: false, practice: false, ...this.#recordExam(shot), ...news };
@@ -542,6 +595,7 @@ export class Campaign {
   #generate(): ShotLayout {
     if (this.#level.daily) return this.#dailyLayout();
     const scoring = this.#level.scoring;
+    if (scoring?.kind === 'pattern') return this.#patternShot();
     if (scoring?.kind === 'zone') {
       this.#source = this.#level;
       return zoneLayout(this.#level, this.#baseSeed + this.#shotCounter * 7919);
