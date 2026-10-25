@@ -276,6 +276,20 @@ await sleep(1200);
 check('a settled shot is never re-evaluated', (await state()).evaluations === 1);
 await page.screenshot({ path: `${OUT}post-shot-report.png` });
 
+// With room to show it, the whole report is up, and there is nothing to unfold.
+const desktopReport = await page.evaluate(() => {
+  const shown = (selector) => {
+    const element = document.querySelector(selector);
+    return Boolean(element) && getComputedStyle(element).display !== 'none';
+  };
+  return { more: shown('#hud-report .hud-report-more'), details: shown('#hud-report [data-more]'), next: shown('#hud-report .hud-report-next') };
+});
+check(
+  'on a desktop the report shows its details and the words for Retry and Next, with no Details button',
+  desktopReport.more && desktopReport.next && !desktopReport.details,
+  JSON.stringify(desktopReport),
+);
+
 await page.evaluate(() => window.__debug.retry());
 const retried = await state();
 check('a retry starts off the ideal line too', offIdeal(retried) >= 3, `${offIdeal(retried).toFixed(2)} deg off`);
@@ -1608,13 +1622,18 @@ check(
 
 /*
  * On a phone, either way up. Chromium stands in for one here: an iPhone 13's
- * screen, touch, and the mobile viewport. That checks the layout and the touch
- * paths, not Safari itself, which still wants a real device.
+ * screen, and a Galaxy S24's as Chrome leaves it with the address bar showing,
+ * which never hides on a page that does not scroll. That checks the layout and
+ * the touch paths, not Safari or Chrome on the phone itself, which still want
+ * a real device.
  */
-for (const [orientation, viewport] of [
+for (const [name, viewport] of [
   ['portrait', { width: 390, height: 664 }],
   ['landscape', { width: 664, height: 390 }],
+  ['s24-portrait', { width: 360, height: 660 }],
+  ['s24-landscape', { width: 780, height: 300 }],
 ]) {
+  const upright = viewport.height > viewport.width;
   const context = await browser.newContext({ viewport, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   const phone = await context.newPage();
   phone.on('console', (message) => {
@@ -1625,10 +1644,10 @@ for (const [orientation, viewport] of [
   await sleep(900);
   await skipCoaching(phone);
 
-  if (orientation === 'portrait') {
+  if (upright) {
     const upper = await phone.evaluate(() => [0.25, 0.5, 0.75].map((x) => window.__debug.pixel(x, 0.3)));
     check(
-      'phone, portrait: the upper half is the room, not black',
+      `phone, ${name}: the upper half is the room, not black`,
       upper.every((p) => luma(p) > 10),
       upper.map((p) => luma(p).toFixed(0)).join('/'),
     );
@@ -1654,28 +1673,33 @@ for (const [orientation, viewport] of [
   // about a tenth of an upright screen, and it is long on purpose, since every
   // pixel of it is finer control of the stroke.
   check(
-    `phone, ${orientation}: the panels leave most of the screen to the table`,
+    `phone, ${name}: the panels leave most of the screen to the table`,
     layout.share < 0.35,
     `${(layout.share * 100).toFixed(0)}% covered`,
   );
-  check(`phone, ${orientation}: nothing sits over the middle of the table`, layout.over.length === 0, layout.over.join());
+  check(`phone, ${name}: nothing sits over the middle of the table`, layout.over.length === 0, layout.over.join());
 
-  const onScreen = await phone.evaluate(() =>
-    ['retry', 'next', 'view', 'levels', 'help'].every((action) => {
-      const r = document.querySelector(`.hud-chip[data-action="${action}"]`)?.getBoundingClientRect();
-      return Boolean(r) && r.left >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight;
-    }),
-  );
-  check(`phone, ${orientation}: every action chip is on screen without scrolling`, onScreen);
+  /** The chips for these actions, each wholly on screen; the names of any that are not. */
+  const offScreen = (actions) =>
+    phone.evaluate(
+      (wanted) =>
+        wanted.filter((action) => {
+          const r = document.querySelector(`.hud-chip[data-action="${action}"]`)?.getBoundingClientRect();
+          return !r || r.left < 0 || r.right > window.innerWidth || r.bottom > window.innerHeight;
+        }),
+      actions,
+    );
+  const chipsOff = await offScreen(['retry', 'next', 'view', 'levels', 'help']);
+  check(`phone, ${name}: every action chip is on screen without scrolling`, chipsOff.length === 0, chipsOff.join());
 
   await phone.locator('.hud-chip[data-action="levels"]').tap();
   await sleep(150);
-  check(`phone, ${orientation}: Levels opens the level list`, await phone.locator('#hud-levels').isVisible());
+  check(`phone, ${name}: Levels opens the level list`, await phone.locator('#hud-levels').isVisible());
   await phone.locator('.hud-level[data-level="3"]').tap();
   await sleep(300);
   const tapped = await phone.evaluate(() => window.__debug.state());
   check(
-    `phone, ${orientation}: tapping a level selects it and folds the list away`,
+    `phone, ${name}: tapping a level selects it and folds the list away`,
     tapped.levelId === 3 && !(await phone.locator('#hud-levels').isVisible()),
     `level=${tapped.levelId}`,
   );
@@ -1683,7 +1707,7 @@ for (const [orientation, viewport] of [
   // Firing by touch: the strip replaces the bar, and real touch events, sent
   // through the DevTools protocol, drive it the way a thumb would.
   check(
-    `phone, ${orientation}: a power strip replaces the bar`,
+    `phone, ${name}: a power strip replaces the bar`,
     (await phone.locator('#hud-strip').isVisible()) && !(await phone.locator('#hud-power').isVisible()),
   );
   const touch = await context.newCDPSession(phone);
@@ -1703,12 +1727,12 @@ for (const [orientation, viewport] of [
   await phone.locator('.hud-aim-button').first().tap();
   await sleep(100);
   const nudged = ((((await phoneState()).aimAngle - ready.aimAngle) * 180) / Math.PI);
-  check(`phone, ${orientation}: the left aim button nudges a twentieth of a degree`, Math.abs(nudged - 0.05) < 0.002, `${nudged.toFixed(3)} deg`);
+  check(`phone, ${name}: the left aim button nudges a twentieth of a degree`, Math.abs(nudged - 0.05) < 0.002, `${nudged.toFixed(3)} deg`);
 
   await stroke([{ x: midX, y: track.y + track.height * 0.5 }]);
   const tapped2 = await phoneState();
   check(
-    `phone, ${orientation}: a tap on the strip is not a stroke`,
+    `phone, ${name}: a tap on the strip is not a stroke`,
     tapped2.phase === 'aiming' && tapped2.evaluations === ready.evaluations,
     tapped2.phase,
   );
@@ -1719,7 +1743,7 @@ for (const [orientation, viewport] of [
     { x: midX - track.width - 80, y: track.y + track.height * 0.4 },
   ]);
   const slid = await phoneState();
-  check(`phone, ${orientation}: sliding off the strip calls the stroke off`, slid.phase === 'aiming', slid.phase);
+  check(`phone, ${name}: sliding off the strip calls the stroke off`, slid.phase === 'aiming', slid.phase);
 
   const lift = 0.45;
   await stroke([
@@ -1729,16 +1753,59 @@ for (const [orientation, viewport] of [
   ]);
   const fired = await phoneState();
   check(
-    `phone, ${orientation}: dragging down the strip and lifting strikes at the power reached`,
+    `phone, ${name}: dragging down the strip and lifting strikes at the power reached`,
     fired.phase !== 'aiming' && Math.abs(fired.power - lift) < 0.02,
     `${fired.phase} at ${(fired.power * 100).toFixed(1)}%`,
   );
   await phone.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+  await sleep(200);
 
-  await phone.screenshot({ path: `${OUT}phone-${orientation}.png` });
+  // The review: the stroke's controls go, and the report keeps to the verdict
+  // and the aim, low down upright and beside the table sideways.
+  const review = await phone.evaluate(() => {
+    const shown = (id) => getComputedStyle(document.getElementById(id)).display !== 'none';
+    const r = document.getElementById('hud-report').getBoundingClientRect();
+    const [w, h] = [window.innerWidth, window.innerHeight];
+    return {
+      controls: ['hud-strip', 'hud-aim'].filter(shown),
+      report: shown('hud-report'),
+      overMiddle: r.left < (2 * w) / 3 && r.right > w / 3 && r.top < (2 * h) / 3 && r.bottom > h / 3,
+      height: r.height / h,
+      right: r.right / w,
+    };
+  });
+  check(`phone, ${name}: after the shot the power strip and aim buttons go`, review.controls.length === 0, review.controls.join());
+  // Sideways the report stands as tall as the screen allows, beside the table
+  // rather than over it, so there it is held to the left third instead.
+  check(
+    upright
+      ? `phone, ${name}: the report misses the middle third and is under 22% of the screen height`
+      : `phone, ${name}: the report misses the middle third and keeps to the left third`,
+    review.report && !review.overMiddle && (upright ? review.height < 0.22 : review.right <= 1 / 3),
+    `${(review.height * 100).toFixed(0)}% of the height, right edge at ${(review.right * 100).toFixed(0)}% of the width`,
+  );
+  const reviewChipsOff = await offScreen(['retry', 'next', 'view', 'levels', 'history', 'help']);
+  check(`phone, ${name}: in the review every action chip is on screen`, reviewChipsOff.length === 0, reviewChipsOff.join());
+
+  await phone.screenshot({ path: `${OUT}phone-${name}.png` });
   await phone.evaluate(() => window.__debug.setView('overhead'));
   await sleep(300);
-  await phone.screenshot({ path: `${OUT}phone-${orientation}-overhead.png` });
+  await phone.screenshot({ path: `${OUT}phone-${name}-overhead.png` });
+
+  const details = phone.locator('#hud-report [data-more]');
+  const moreShown = () => phone.locator('#hud-report .hud-report-more').isVisible();
+  const folded = !(await moreShown());
+  await details.tap();
+  await sleep(150);
+  const unfolded = (await moreShown()) && (await details.getAttribute('aria-expanded')) === 'true';
+  await details.tap();
+  await sleep(150);
+  const refolded = !(await moreShown()) && (await details.getAttribute('aria-expanded')) === 'false';
+  check(
+    `phone, ${name}: Details opens the report's details and a second tap folds them`,
+    folded && unfolded && refolded,
+    JSON.stringify({ folded, unfolded, refolded }),
+  );
   await context.close();
 }
 

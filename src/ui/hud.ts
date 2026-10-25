@@ -309,6 +309,11 @@ export class Hud {
   #renderedMilestone = '';
   #renderedToolbar = '';
   #reportShown = false;
+  /**
+   * Whether a small screen shows the report's detail lines. Kept for the
+   * session, so anyone who opens them once keeps getting them.
+   */
+  #reportOpen = false;
   /** The sheet a small screen has open, if any. Ignored where there is room. */
   #openSheet: Sheet | undefined;
   #helpOpen = false;
@@ -468,6 +473,12 @@ export class Hud {
       if (button instanceof HTMLElement) this.#actions.onEstimate(Number(button.dataset.estimate) as Estimate);
       if ((event.target as HTMLElement).closest('[data-estimate-skip]')) this.#actions.onEstimate(null);
       if ((event.target as HTMLElement).closest('[data-replay]')) this.#actions.onReplay();
+      const more = (event.target as HTMLElement).closest('[data-more]');
+      if (more) {
+        this.#reportOpen = !this.#reportOpen;
+        this.#report.classList.toggle('open', this.#reportOpen);
+        more.setAttribute('aria-expanded', String(this.#reportOpen));
+      }
     });
     this.#shot.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest('[data-call]');
@@ -528,6 +539,9 @@ export class Hud {
     // A perception drill takes no shot, so the controls for one go with it.
     this.#root.classList.toggle('drilling', state.drill !== null || state.departure !== null);
     this.#root.classList.toggle('tipping', state.tip !== null);
+    // The stroke's controls are for taking the shot, and only in the way of
+    // the review after it.
+    this.#root.classList.toggle('shooting', state.phase === 'aiming' || state.phase === 'charging');
     writeToggle(this.#soundToggle, state.sound);
     writeToggle(this.#autoNextToggle, state.autoNext);
     writeToggle(this.#contrastToggle, state.highContrast);
@@ -547,47 +561,19 @@ export class Hud {
       const html =
         `<div class="hud-verdict ${good ? 'good' : 'bad'}">${text}</div><div class="hud-sub">${why}</div>` +
         '<div class="hud-sub hud-note"><button type="button" class="hud-call" data-replay>Replay</button>' +
-        '<kbd class="kbd-hint"> P</kbd> &middot; <b>Retry</b><kbd class="kbd-hint"> R</kbd> this one &middot; ' +
-        '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</div>' +
+        '<kbd class="kbd-hint"> P</kbd><span class="hud-report-next"> &middot; <b>Retry</b><kbd class="kbd-hint"> R</kbd> this one &middot; ' +
+        '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</span></div>' +
         autoNextLine(state.autoNextIn);
-      if (html !== this.#renderedReport) {
-        this.#renderedReport = html;
-        this.#report.innerHTML = html;
-      }
-      if (!this.#reportShown) {
-        this.#reportShown = true;
-        this.#report.style.display = '';
-      }
+      this.#showReport(html);
     } else if (state.speed?.result && !state.replaying) {
       const html = renderSpeed(state.speed.target, state.speed.result, state.autoNextIn);
-      if (html !== this.#renderedReport) {
-        this.#renderedReport = html;
-        this.#report.innerHTML = html;
-      }
-      if (!this.#reportShown) {
-        this.#reportShown = true;
-        this.#report.style.display = '';
-      }
+      this.#showReport(html);
     } else if (state.departure && !state.replaying) {
       const html = renderDeparture(state.levelName, state.departure, state.autoNextIn);
-      if (html !== this.#renderedReport) {
-        this.#renderedReport = html;
-        this.#report.innerHTML = html;
-      }
-      if (!this.#reportShown) {
-        this.#reportShown = true;
-        this.#report.style.display = '';
-      }
+      this.#showReport(html);
     } else if (state.drill) {
       const html = renderDrill(state.drill, state.pocketAllowance, state.autoNextIn);
-      if (html !== this.#renderedReport) {
-        this.#renderedReport = html;
-        this.#report.innerHTML = html;
-      }
-      if (!this.#reportShown) {
-        this.#reportShown = true;
-        this.#report.style.display = '';
-      }
+      this.#showReport(html);
     } else if (state.outcome) {
       const html = state.replaying
         ? '<div class="hud-sub">Replay, from above at a quarter speed &middot; <b>Esc</b> stops it</div>'
@@ -604,20 +590,26 @@ export class Hud {
               state.position?.result ? { result: state.position.result, zone: state.position.target === 'zone' } : null,
               state.patternNews,
             );
-      if (html !== this.#renderedReport) {
-        this.#renderedReport = html;
-        this.#report.innerHTML = html;
-      }
-      if (!this.#reportShown) {
-        this.#reportShown = true;
-        this.#report.style.display = '';
-      }
+      this.#showReport(html);
     } else if (this.#reportShown) {
       this.#reportShown = false;
       this.#report.style.display = 'none';
     }
 
     this.#renderNotice(state.notice);
+  }
+
+  /** Write the report, if it changed, and show it. */
+  #showReport(html: string): void {
+    if (html !== this.#renderedReport) {
+      this.#renderedReport = html;
+      this.#report.innerHTML = html;
+      this.#report.querySelector('[data-more]')?.setAttribute('aria-expanded', String(this.#reportOpen));
+    }
+    if (!this.#reportShown) {
+      this.#reportShown = true;
+      this.#report.style.display = '';
+    }
   }
 
   /**
@@ -1040,6 +1032,8 @@ function renderReport(
         : `used ${ofThePocket(used)}, ${outcome.aimError.side}`;
   const cut = `${((outcome.cutAngle * 180) / Math.PI).toFixed(1)}&deg; cut`;
 
+  const details = '<button type="button" class="hud-call compact-only" data-more>Details</button>';
+
   const notes: string[] = [];
   if (practice) notes.push('retry: practice, not counted');
   if (outcome.scratch) notes.push('scratch');
@@ -1049,6 +1043,8 @@ function renderReport(
     `<div class="hud-verdict ${verdict.good ? 'good' : 'bad'}">${verdict.text}</div>` +
     (verdict.why ? `<div class="hud-sub">${verdict.why}</div>` : '') +
     `<div class="hud-sub">Aim: ${aim}${used === null ? '' : ` &middot; ${percent(outcome.pocketAllowance)} allowed`}</div>` +
+    // A small screen shows the lines above and folds these behind Details.
+    '<div class="hud-report-more">' +
     (outcome.fullnessHit === null
       ? `<div class="hud-sub">${cut}</div>`
       : `<div class="hud-sub">Hit ${percent(outcome.fullnessHit)} of the ball, needed ` +
@@ -1067,13 +1063,14 @@ function renderReport(
       : `<div class="hud-sub">Called ${fractionByName(outcome.call).label}: ` +
         `${outcome.call === outcome.needed ? 'right' : `it was ${fractionByName(outcome.needed).label}`}</div>`) +
     (notes.length ? `<div class="hud-sub hud-note">${notes.join(' &middot; ')}</div>` : '') +
+    '</div>' +
     // Held under a summary card the layout has gone, and the card says what next.
     (held
-      ? ''
+      ? `<div class="hud-sub hud-note">${details}</div>`
       : '<div class="hud-sub hud-note">' +
-        '<button type="button" class="hud-call" data-replay>Replay</button><kbd class="kbd-hint"> P</kbd> &middot; ' +
-        '<b>Retry</b><kbd class="kbd-hint"> R</kbd> this layout &middot; ' +
-        '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</div>' +
+        `<button type="button" class="hud-call" data-replay>Replay</button><kbd class="kbd-hint"> P</kbd> ${details}` +
+        '<span class="hud-report-next"> &middot; <b>Retry</b><kbd class="kbd-hint"> R</kbd> this layout &middot; ' +
+        '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</span></div>' +
         autoNextLine(autoNextIn))
   );
 }
@@ -1123,8 +1120,8 @@ function callButtons(call: FractionName | null): string {
 /** A perception drill: what to do, then how it went. */
 function renderDrill(drill: NonNullable<HudState['drill']>, allowance: number, autoNextIn: number | null): string {
   const next =
-    '<div class="hud-sub hud-note"><b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another &middot; ' +
-    '<b>Retry</b><kbd class="kbd-hint"> R</kbd> this one again</div>' +
+    '<div class="hud-sub hud-note"><span class="hud-report-next"><b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another &middot; ' +
+    '<b>Retry</b><kbd class="kbd-hint"> R</kbd> this one again</span></div>' +
     autoNextLine(autoNextIn);
   if (drill.kind === 'flash' && drill.stage === 'showing') {
     return '<div class="hud-label">Read the angle</div><div class="hud-sub">Look now: the balls go in a moment.</div>';
@@ -1231,8 +1228,8 @@ function renderSpeed(target: SpeedTarget, result: SpeedResult, autoNextIn: numbe
     `<div class="hud-sub">The cue ball stopped ${cm(result.off)} from the ring&rsquo;s centre` +
     `${parts.length > 0 && !result.correct ? `: ${parts.join(', ')}` : ''}.</div>` +
     '<div class="hud-sub hud-note"><button type="button" class="hud-call" data-replay>Replay</button>' +
-    '<kbd class="kbd-hint"> P</kbd> &middot; <b>Retry</b><kbd class="kbd-hint"> R</kbd> this one &middot; ' +
-    '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</div>' +
+    '<kbd class="kbd-hint"> P</kbd><span class="hud-report-next"> &middot; <b>Retry</b><kbd class="kbd-hint"> R</kbd> this one &middot; ' +
+    '<b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another</span></div>' +
     autoNextLine(autoNextIn)
   );
 }
@@ -1368,7 +1365,7 @@ function renderDeparture(
   return (
     `<div class="hud-verdict ${correct ? 'good' : 'bad'}">${correct ? 'Right' : 'Not quite'}</div>` +
     `<div class="hud-sub">Off by ${error.toFixed(1)}&deg;, ${departure.allowance}&deg; allowed: ${went}</div>` +
-    '<div class="hud-sub hud-note"><b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another &middot; ' +
+    '<div class="hud-sub hud-note"><span class="hud-report-next"><b>Next</b><kbd class="kbd-hint"> N or Space</kbd> for another &middot; </span>' +
     '<button type="button" class="hud-call" data-replay>Replay</button><kbd class="kbd-hint"> P</kbd></div>' +
     autoNextLine(autoNextIn)
   );

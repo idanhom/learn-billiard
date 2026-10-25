@@ -817,6 +817,12 @@ body {
     display: flex;
   }
 
+  /* Only while there is a stroke to take: after it, they cover the review. */
+  #hud:not(.shooting) #hud-strip,
+  #hud:not(.shooting) #hud-aim {
+    display: none;
+  }
+
   /*
    * No power meter in the middle to keep clear of, so the toolbar runs on as
    * far as the coaching panel's corner and stays one row on a touch laptop.
@@ -1119,7 +1125,8 @@ body {
   }
 
   /* Actions first, settings last: if the row is too long for the screen, it is
-   * speed and cloth that scroll off, not the level list or the help. */
+   * the table notes, speed and cloth that scroll off, not the level list or
+   * the help. */
   .hud-chip[data-action='levels'] {
     order: 1;
   }
@@ -1132,12 +1139,16 @@ body {
     order: 3;
   }
 
-  .hud-chip[data-action='speed'] {
+  .hud-chip[data-action='table'] {
     order: 4;
   }
 
-  .hud-chip[data-action='cloth'] {
+  .hud-chip[data-action='speed'] {
     order: 5;
+  }
+
+  .hud-chip[data-action='cloth'] {
+    order: 6;
   }
 
   .compact-only {
@@ -1166,12 +1177,38 @@ body {
     width: min(220px, 52vw);
   }
 
+  /*
+   * The review: low down, where the touch controls were, and only the verdict
+   * and the aim until Details is pressed. The toolbar has Retry and Next, so
+   * the words for them go.
+   */
   #hud-report {
     top: auto;
-    bottom: calc(var(--edge-bottom) + 118px);
+    bottom: calc(var(--edge-bottom) + var(--toolbar-height, 44px) + 8px);
     min-width: 0;
     width: max-content;
-    max-width: 92vw;
+    max-width: calc(100% - var(--edge-left) - var(--edge-right));
+    max-height: calc(100% - var(--edge-top) - var(--edge-bottom) - var(--toolbar-height, 44px) - 16px);
+    overflow-y: auto;
+  }
+
+  #hud-report:not(.open) .hud-report-more,
+  .hud-report-next {
+    display: none;
+  }
+
+  .hud-verdict {
+    font-size: 16px;
+  }
+
+  /* Sideways, the overhead table fills the middle: the report goes beside it. */
+  @media (max-height: 520px) and (orientation: landscape) {
+    #hud-report {
+      left: var(--edge-left);
+      transform: none;
+      max-width: min(260px, 26vw);
+      text-align: left;
+    }
   }
 
   #hud-notice {

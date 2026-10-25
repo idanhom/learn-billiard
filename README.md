@@ -98,8 +98,10 @@ it.
 Every key also has a button in the toolbar along the bottom of the screen. On
 a small screen, a phone either way up, the panels shrink, and the level list
 and the recent shots fold away behind toolbar buttons of their own, so the
-table keeps most of the screen. `?` opens the controls and the notes on what
-the physics leaves out.
+table keeps most of the screen. After a shot the power strip and the aim
+buttons go, and the report keeps to the verdict and the aim, low down upright
+and beside the table sideways; **Details** opens the rest. `?` opens the
+controls and the notes on what the physics leaves out.
 
 At the table (`T`) gathers what carries the trainer over to a real table.
 **Drill sheet** deals ten shots to set up at a real table, from the fractions
