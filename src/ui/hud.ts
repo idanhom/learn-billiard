@@ -273,6 +273,8 @@ export class Hud {
   readonly #autoNextToggle: HTMLElement;
   readonly #contrastToggle: HTMLElement;
   readonly #shot: HTMLElement;
+  /** The fraction to call: a row of buttons wider than a small screen lets the shot panel be. */
+  readonly #calls: HTMLElement;
   readonly #levels: HTMLElement;
   readonly #root: HTMLElement;
   readonly #powerFill: HTMLElement;
@@ -302,6 +304,7 @@ export class Hud {
   #renderedLevels = '';
   #renderedStatus = '';
   #renderedShot = '';
+  #renderedCalls = '';
   #renderedReport = '';
   #renderedHistory = '';
   #renderedSpeed = '';
@@ -336,6 +339,9 @@ export class Hud {
     this.#status = panel(root, 'hud-status');
     this.#shot = panel(root, 'hud-shot');
     this.#shot.classList.add('interactive');
+    this.#calls = panel(root, 'hud-calls');
+    this.#calls.classList.add('interactive');
+    this.#calls.style.display = 'none';
     this.#levels = panel(root, 'hud-levels');
     this.#levels.classList.add('interactive');
     this.#report = panel(root, 'hud-report');
@@ -358,10 +364,24 @@ export class Hud {
     this.#toolbar.setAttribute('role', 'toolbar');
     // What stands on the toolbar (the controls panel, the fine-aim buttons)
     // sits on its real height, which changes whenever it wraps to another
-    // row: on a new chip, and on a resize.
-    new ResizeObserver(() => {
-      root.style.setProperty('--toolbar-height', `${this.#toolbar.offsetHeight}px`);
-    }).observe(this.#toolbar);
+    // row: on a new chip, and on a resize. What hangs below the panels along
+    // the top (the power strip, the fraction to call) starts where they really
+    // end, since they gain a row whenever a guide gives way to a picture or a
+    // call. On the document, so the At the table panel, outside the HUD, can
+    // keep clear of the toolbar too.
+    const published = document.documentElement.style;
+    const bottomOf = (element: HTMLElement): number =>
+      element.style.display === 'none' ? 0 : element.offsetTop + element.offsetHeight;
+    const measure = new ResizeObserver(() => {
+      const status = bottomOf(this.#status);
+      const shot = bottomOf(this.#shot);
+      published.setProperty('--toolbar-height', `${this.#toolbar.offsetHeight}px`);
+      published.setProperty('--status-bottom', `${status}px`);
+      published.setProperty('--shot-bottom', `${shot}px`);
+      published.setProperty('--right-bottom', `${Math.max(shot, bottomOf(this.#calls))}px`);
+      published.setProperty('--top-bottom', `${Math.max(status, shot)}px`);
+    });
+    for (const element of [this.#toolbar, this.#status, this.#shot, this.#calls]) measure.observe(element);
 
     const power = panel(root, 'hud-power');
     power.innerHTML =
@@ -485,7 +505,7 @@ export class Hud {
         more.setAttribute('aria-expanded', String(this.#reportOpen));
       }
     });
-    this.#shot.addEventListener('click', (event) => {
+    this.#calls.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest('[data-call]');
       if (!(button instanceof HTMLElement)) return;
       const fraction = button.dataset.call as FractionName;
@@ -727,7 +747,12 @@ export class Hud {
       chip('retry', 'Retry', { key: 'R' }) +
       chip('next', 'Next', { key: 'N' }) +
       chip('view', VIEW_LABELS[state.view] ?? 'Behind', { key: 'V' }) +
-      (state.routine ? chip('down', state.routine.down ? 'Stand up' : 'Get down', { key: 'G' }) : '') +
+      (state.routine
+        ? chip('down', state.routine.down ? shortOnPhone('Stand up', 'Up') : shortOnPhone('Get down', 'Down'), {
+            key: 'G',
+            label: state.routine.down ? 'Stand up' : 'Get down',
+          })
+        : '') +
       (this.#reviewing
         ? chip('hide', this.#bare ? 'Show' : 'Hide', { key: 'H', label: this.#bare ? 'Show the panels' : 'Hide the panels' })
         : '') +
@@ -860,8 +885,8 @@ export class Hud {
         `<div class="hud-label">This shot</div><div class="hud-big">${left}</div>` +
           `<div class="hud-sub">${hint}</div>` +
           (state.guides.overlap ? overlapPicture(state.aimOverlap) : '') +
-          (state.calling ? callButtons(state.call) : '') +
           diamondLine(state.diamonds),
+        state.calling ? callButtons(state.call) : '',
       );
       return;
     }
@@ -876,10 +901,16 @@ export class Hud {
     );
   }
 
-  #writeShot(html: string): void {
-    if (html === this.#renderedShot) return;
-    this.#renderedShot = html;
-    this.#shot.innerHTML = html;
+  /** The shot panel, and the fraction to call where one is offered. */
+  #writeShot(html: string, calls = ''): void {
+    if (html !== this.#renderedShot) {
+      this.#renderedShot = html;
+      this.#shot.innerHTML = html;
+    }
+    if (calls === this.#renderedCalls) return;
+    this.#renderedCalls = calls;
+    this.#calls.innerHTML = calls;
+    this.#calls.style.display = calls === '' ? 'none' : '';
   }
 
   /**
@@ -1464,6 +1495,11 @@ interface ChipOptions {
   readonly pressed?: boolean;
   /** Spoken name, for a chip whose text is a symbol. */
   readonly label?: string;
+}
+
+/** A chip's words in full, and shorter where the toolbar is one row across a phone. */
+function shortOnPhone(full: string, short: string): string {
+  return `<span class="hud-extra">${full}</span><span class="compact-only">${short}</span>`;
 }
 
 /** One toolbar button. */

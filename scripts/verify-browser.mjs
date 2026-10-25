@@ -373,11 +373,11 @@ await page.evaluate(() => window.__debug.retry());
 await sleep(200);
 const middle = await page.evaluate(() => ({
   overlap: Boolean(document.querySelector('#hud-shot .hud-overlap')),
-  calls: [...document.querySelectorAll('#hud-shot .hud-call')].map((button) => button.textContent),
+  calls: [...document.querySelectorAll('#hud-calls .hud-call')].map((button) => button.textContent),
 }));
 check('the middle tier draws the overlap the line makes', middle.overlap);
 check('and offers a call for each reference fraction', middle.calls.join() === 'full,¾,½,¼,⅛', middle.calls.join());
-await page.locator('#hud-shot .hud-call').nth(2).click();
+await page.locator('#hud-calls .hud-call').nth(2).click();
 await sleep(100);
 check('a call is made from the panel', (await state()).call === 'half', String((await state()).call));
 await page.evaluate(() => {
@@ -500,7 +500,7 @@ check('a digit calls the fraction, and the answer shows', called.drill?.stage ==
 const drillHud = await page.evaluate(() => ({
   power: getComputedStyle(document.getElementById('hud-power')).display,
   status: document.getElementById('hud-status').textContent,
-  calls: document.querySelectorAll('#hud-shot [data-call]').length,
+  calls: document.querySelectorAll('#hud-calls [data-call]').length,
 }));
 check(
   'a drill shows no power meter or shot call, and tallies reads, not pots',
@@ -1648,6 +1648,82 @@ check(
   (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),
 );
 
+/**
+ * The screens where the shot panel grows a row: the overlap picture and the
+ * fraction to call at tier 2, the exam, and a position level's tip. Level 3 is
+ * seeded at tier 2 through the saved progress, as a real save would hold it.
+ * For each: panels that sit on one another (a notice or the coaching aside),
+ * buttons and pictures that something else covers, and where the power strip
+ * and the fraction to call stand. With `shots`, a screenshot of each.
+ */
+async function grownShotPanels(p, shots) {
+  await p.evaluate(() =>
+    window.localStorage.setItem(
+      'pool-angle-trainer/progress/v1',
+      JSON.stringify({
+        version: 1,
+        currentLevel: 3,
+        examBest: null,
+        levels: { 3: { tier: 2, completed: false, attempts: 5, qualified: 3, potted: 3 } },
+      }),
+    ),
+  );
+  await p.reload({ waitUntil: 'load' });
+  await sleep(900);
+  const states = [];
+  for (const [label, levelId] of [
+    ['tier 2', 3],
+    ['the exam', 7],
+    ['a stop shot', 14],
+  ]) {
+    if (levelId !== 3) await p.evaluate((id) => window.__debug.selectLevel(id), levelId);
+    await sleep(400);
+    const measured = await p.evaluate(() => {
+      const shown = (el) => Boolean(el) && getComputedStyle(el).display !== 'none';
+      const box = (el) => el.getBoundingClientRect();
+      const panels = [...document.querySelectorAll('#hud > .panel')].filter(
+        (el) => shown(el) && el.id !== 'hud-notice' && el.id !== 'hud-coach',
+      );
+      const overlaps = [];
+      panels.forEach((a, i) =>
+        panels.slice(i + 1).forEach((b) => {
+          const [ra, rb] = [box(a), box(b)];
+          const w = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+          const h = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+          if (w > 1 && h > 1) overlaps.push(`${a.id}/${b.id} ${Math.round(w)}x${Math.round(h)}`);
+        }),
+      );
+      // Covered is what a tap at its own centre would not reach.
+      const covered = [...document.querySelectorAll('#hud [data-call], #hud .hud-overlap, #hud .hud-tip')]
+        .filter(shown)
+        .filter((el) => {
+          const r = box(el);
+          const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+          return !hit || !el.contains(hit);
+        })
+        .map((el) => el.dataset.call ?? el.getAttribute('class'));
+      const [w, h] = [window.innerWidth, window.innerHeight];
+      const calls = document.getElementById('hud-calls');
+      const c = shown(calls) ? box(calls) : null;
+      const strip = document.getElementById('hud-strip');
+      const help = document.querySelector('.hud-chip[data-action="help"]');
+      return {
+        tier: window.__debug.state().tier,
+        overlaps,
+        covered,
+        calls: document.querySelectorAll('#hud-calls [data-call]').length,
+        callsOverMiddle: c !== null && c.left < (2 * w) / 3 && c.right > w / 3 && c.top < (2 * h) / 3 && c.bottom > h / 3,
+        stripGap: shown(strip) ? Math.round(box(strip).top - box(document.getElementById('hud-shot')).bottom) : null,
+        track: shown(strip) ? Math.round(box(document.querySelector('.hud-strip-track')).height) : null,
+        helpOnScreen: box(help).right <= box(document.getElementById('hud-toolbar')).right,
+      };
+    });
+    states.push({ label, ...measured });
+    if (shots) await p.screenshot({ path: `${shots}-${label.replace(/ /g, '-')}.png` });
+  }
+  return states;
+}
+
 /*
  * On a phone, either way up. Chromium stands in for one here: an iPhone 13's
  * screen, and a Galaxy S24's as Chrome leaves it with the address bar showing,
@@ -1923,6 +1999,27 @@ for (const [name, viewport] of [
       (await phone.locator('#hud-status').isVisible()) && (await hide.count()) === 0,
     JSON.stringify(dealt),
   );
+
+  // Where the shot panel grows, the strip starts below it, the fraction to
+  // call stands beside the table, and nothing sits on anything else.
+  for (const grown of await grownShotPanels(phone, `${OUT}phone-${name}`)) {
+    const where = `phone, ${name}, ${grown.label}`;
+    check(`${where}: no panel sits on another`, grown.overlaps.length === 0, grown.overlaps.join());
+    check(`${where}: no button or picture is covered`, grown.covered.length === 0, grown.covered.join());
+    check(
+      `${where}: the power strip starts below the shot panel and keeps room for a stroke`,
+      grown.stripGap >= 0 && grown.track >= (upright ? 200 : 50),
+      `gap ${grown.stripGap} px, track ${grown.track} px`,
+    );
+    if (grown.label !== 'a stop shot') {
+      check(
+        `${where}: the five fractions to call stand clear of the middle of the table`,
+        grown.calls === 5 && !grown.callsOverMiddle,
+        `tier ${grown.tier}, ${grown.calls} calls`,
+      );
+    }
+    if (grown.label === 'the exam') check(`${where}: the ? stays on screen beside the routine's chip`, grown.helpOnScreen);
+  }
   await context.close();
 }
 
@@ -1957,6 +2054,13 @@ for (const width of [1280, 900]) {
   );
   check(`touch laptop, ${width} wide: the ? never wraps onto a row of its own`, layout.besideHelp > 0, `${layout.rows} rows`);
   await laptop.screenshot({ path: `${OUT}touch-laptop-${width}.png` });
+  for (const grown of await grownShotPanels(laptop)) {
+    check(
+      `touch laptop, ${width} wide, ${grown.label}: the strip and the fraction to call keep clear of the shot panel`,
+      grown.overlaps.length === 0 && grown.covered.length === 0 && grown.stripGap >= 0,
+      `${grown.overlaps.join()} ${grown.covered.join()} gap ${grown.stripGap}`,
+    );
+  }
   await context.close();
 }
 

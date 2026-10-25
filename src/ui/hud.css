@@ -186,9 +186,20 @@ body {
 }
 
 #hud-history {
-  top: 150px;
+  top: max(150px, calc(var(--right-bottom, 0px) + 12px));
   right: var(--edge-right);
   text-align: right;
+}
+
+/* The fraction to call, under the shot it belongs to. */
+#hud-calls {
+  top: calc(var(--shot-bottom, 90px) + 6px);
+  right: var(--edge-right);
+  padding: 6px 8px;
+}
+
+#hud-calls .hud-calls {
+  margin-top: 0;
 }
 
 #hud-report {
@@ -367,8 +378,9 @@ body {
   display: none;
 }
 
+/* Below the shot panel, however many rows it has grown to. */
 #hud-strip {
-  top: calc(var(--edge-top) + 120px);
+  top: max(calc(var(--edge-top) + 120px), calc(var(--shot-bottom, 0px) + 8px));
   bottom: calc(var(--edge-bottom) + 64px);
   right: var(--edge-right);
   width: 58px;
@@ -850,7 +862,8 @@ body {
   }
 
   /* Clear of the strip, where the screen is big enough to show the panel. */
-  #hud-history {
+  #hud-history,
+  #hud-calls {
     right: calc(var(--edge-right) + 66px);
   }
 }
@@ -1108,8 +1121,9 @@ body {
     display: none;
   }
 
+  /* With the shot panel's 36vw and the gaps, never more than the screen. */
   #hud-status {
-    max-width: 60vw;
+    max-width: calc(64vw - var(--edge-left) - var(--edge-right) - 8px);
   }
 
   #hud-shot {
@@ -1178,7 +1192,7 @@ body {
   }
 
   #hud-strip {
-    top: calc(var(--edge-top) + 92px);
+    top: max(calc(var(--edge-top) + 92px), calc(var(--shot-bottom, 0px) + 8px));
     bottom: calc(var(--edge-bottom) + 58px);
   }
 
@@ -1218,11 +1232,46 @@ body {
     font-size: 16px;
   }
 
+  /* Beside the table rather than over it: down the left edge, under the
+   * status panel. */
+  #hud-calls {
+    top: calc(var(--status-bottom, 74px) + 6px);
+    left: var(--edge-left);
+    right: auto;
+    padding: 4px;
+  }
+
+  #hud-calls .hud-calls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #hud-calls .hud-calls .hud-note {
+    margin: 0;
+    font-size: 10px;
+    text-align: center;
+  }
+
   /* Sideways, the overhead table fills the middle: the status and the report
    * keep to the column beside it. */
   @media (max-height: 520px) and (orientation: landscape) {
     #hud-status {
       max-width: min(260px, 26vw);
+    }
+
+    #hud-calls {
+      max-width: calc(100% / 3 - var(--edge-left));
+    }
+
+    #hud-calls .hud-calls {
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+
+    #hud-calls .hud-calls .hud-note {
+      flex-basis: 100%;
+      text-align: left;
     }
 
     #hud-report {
