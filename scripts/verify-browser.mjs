@@ -1648,6 +1648,32 @@ check(
   (await page.locator('#hud-power').isVisible()) && !(await page.locator('#hud-strip').isVisible()),
 );
 
+/**
+ * The panels that the one with this id sits on, by more than a pixel each way,
+ * leaving out those it may cover, as an overlay covers what is under it.
+ */
+const panelClashes = (p, id, allowed = []) =>
+  p.evaluate(
+    ({ id, allowed }) => {
+      const shown = (el) => Boolean(el) && getComputedStyle(el).display !== 'none' && el.getClientRects().length > 0;
+      const me = document.getElementById(id);
+      if (!shown(me)) return [`${id} is not up`];
+      const a = me.getBoundingClientRect();
+      return [...document.querySelectorAll('#hud > .panel'), document.getElementById('table-panel')]
+        .filter((el) => el && el !== me && shown(el) && !allowed.includes(el.id))
+        .flatMap((el) => {
+          const b = el.getBoundingClientRect();
+          const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          return w > 1 && h > 1 ? [`${el.id} ${Math.round(w)}x${Math.round(h)}`] : [];
+        });
+    },
+    { id, allowed },
+  );
+
+/** Everything but the toolbar, for an overlay that may cover the rest. */
+const ALL_BUT_TOOLBAR = ['hud-status', 'hud-shot', 'hud-calls', 'hud-levels', 'hud-report', 'hud-notice', 'hud-history', 'hud-milestone', 'hud-coach', 'hud-help', 'hud-strip', 'hud-aim', 'hud-power'];
+
 /** The visible buttons matching `selector` that are under `min` px either way, or whose centre a tap would not reach. */
 const unfit = (p, selector, min) =>
   p.evaluate(
@@ -1842,6 +1868,8 @@ for (const [name, viewport] of [
   check(`phone, ${name}: Levels opens the level list`, await phone.locator('#hud-levels').isVisible());
   const levelRow = await phone.evaluate(() => Math.min(...[...document.querySelectorAll('.hud-level')].map((row) => row.getBoundingClientRect().height)));
   check(`phone, ${name}: the level rows are at least 40 px tall`, levelRow >= 40, `${levelRow.toFixed(0)} px`);
+  const levelsClash = await panelClashes(phone, 'hud-levels', ALL_BUT_TOOLBAR);
+  check(`phone, ${name}: the level list stops above the toolbar`, levelsClash.length === 0, levelsClash.join());
   await phone.locator('.hud-level[data-level="3"]').tap();
   await sleep(300);
   const tapped = await phone.evaluate(() => window.__debug.state());
@@ -2011,6 +2039,14 @@ for (const [name, viewport] of [
     JSON.stringify({ folded, unfolded, refolded }),
   );
 
+  // News in the review goes over the panels along the top for its few
+  // seconds, never over the report's verdict or the toolbar.
+  await phone.evaluate(() => window.__debug.toggleAutoNext());
+  await sleep(150);
+  const noticeClash = await panelClashes(phone, 'hud-notice', ['hud-status', 'hud-shot']);
+  await phone.evaluate(() => window.__debug.toggleAutoNext());
+  check(`phone, ${name}: a notice in the review sits on nothing but the top panels`, noticeClash.length === 0, noticeClash.join());
+
   // Hide, to see the trails and the needed line with nothing over them.
   const hide = phone.locator('.hud-chip[data-action="hide"]');
   await hide.tap();
@@ -2098,6 +2134,44 @@ for (const [name, viewport] of [
     `${unfitEstimates.join()} ${JSON.stringify(asking)}`,
   );
   await phone.screenshot({ path: `${OUT}phone-${name}-estimate.png` });
+  await phone.evaluate(() => window.__debug.estimate(null));
+  await sleep(200);
+
+  // The controls panel and At the table at its tallest, a dealt sheet: both
+  // over the table, neither over the toolbar.
+  await phone.locator('.hud-chip[data-action="help"]').click();
+  await sleep(150);
+  const helpClash = await panelClashes(phone, 'hud-help', ALL_BUT_TOOLBAR);
+  await phone.locator('.hud-chip[data-action="help"]').click();
+  check(`phone, ${name}: the controls panel stops above the toolbar`, helpClash.length === 0, helpClash.join());
+  await phone.locator('.hud-chip[data-action="table"]').click();
+  await sleep(300);
+  await phone.locator('#table-panel [data-deal]').click();
+  await sleep(300);
+  const tableClash = await panelClashes(phone, 'table-panel', ALL_BUT_TOOLBAR);
+  check(`phone, ${name}: At the table, with a sheet dealt, stops above the toolbar`, tableClash.length === 0, tableClash.join());
+  await phone.locator('#table-panel [data-close]').click();
+  await sleep(150);
+
+  // A first launch's coaching, on the line and then on the report: on no other
+  // panel, the strip and the report it talks about included.
+  await phone.evaluate(() => window.localStorage.clear());
+  await phone.reload({ waitUntil: 'load' });
+  await sleep(900);
+  const coachAim = await panelClashes(phone, 'hud-coach');
+  await phone.evaluate(() => {
+    window.__debug.aimIdeal();
+    window.__debug.fire(0.5);
+  });
+  await phone.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+  await sleep(300);
+  const coachReport = await panelClashes(phone, 'hud-coach');
+  check(
+    `phone, ${name}: the coaching card sits on no other panel, aiming or over the report`,
+    coachAim.length === 0 && coachReport.length === 0,
+    `aim: ${coachAim.join()}; report: ${coachReport.join()}`,
+  );
+  await phone.screenshot({ path: `${OUT}phone-${name}-coaching.png` });
   await context.close();
 }
 
@@ -2139,6 +2213,29 @@ for (const width of [1280, 900]) {
       `${grown.overlaps.join()} ${grown.covered.join()} gap ${grown.stripGap}`,
     );
   }
+  await laptop.evaluate(() => window.localStorage.clear());
+  await laptop.reload({ waitUntil: 'load' });
+  await sleep(900);
+  const coachAim = await panelClashes(laptop, 'hud-coach');
+  await laptop.evaluate(() => {
+    window.__debug.aimIdeal();
+    window.__debug.fire(0.5);
+  });
+  await laptop.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+  await sleep(300);
+  const coachReport = await panelClashes(laptop, 'hud-coach');
+  const reportClash = await panelClashes(laptop, 'hud-report', ['hud-notice']);
+  check(
+    `touch laptop, ${width} wide: the coaching card and the report sit on no other panel`,
+    coachAim.length === 0 && coachReport.length === 0 && reportClash.length === 0,
+    `coach: ${coachAim.join()} / ${coachReport.join()}; report: ${reportClash.join()}`,
+  );
+  await laptop.locator('.hud-chip[data-action="table"]').click();
+  await sleep(300);
+  await laptop.locator('#table-panel [data-deal]').click();
+  await sleep(300);
+  const tableClash = await panelClashes(laptop, 'table-panel', ALL_BUT_TOOLBAR);
+  check(`touch laptop, ${width} wide: At the table stops above the toolbar`, tableClash.length === 0, tableClash.join());
   await context.close();
 }
 

@@ -216,6 +216,16 @@ body {
   transform: translateX(-50%);
 }
 
+/*
+ * Between the phone layout and a wide screen, the report centred at the top
+ * runs into the status panel beside it, so it goes below the panels there.
+ */
+@media (min-width: 761px) and (max-width: 1160px) {
+  #hud-report {
+    top: calc(var(--top-bottom, 116px) + 8px);
+  }
+}
+
 #hud-milestone {
   top: 50%;
   left: 50%;
@@ -464,11 +474,12 @@ body {
  * own when it is taller than the screen.
  */
 #table-panel {
-  top: 50%;
+  /* Centred in the room above the toolbar, which stays in reach under it. */
+  top: calc((100% + var(--edge-top) - var(--edge-bottom) - var(--toolbar-height, 44px) - 8px) / 2);
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(600px, calc(100% - 28px));
-  max-height: calc(100dvh - 40px);
+  max-height: calc(100% - var(--edge-top) - var(--edge-bottom) - var(--toolbar-height, 44px) - 16px);
   overflow-y: auto;
   z-index: 10;
   background: rgba(12, 18, 24, 0.96);
@@ -865,6 +876,13 @@ body {
   #hud-history,
   #hud-calls {
     right: calc(var(--edge-right) + 66px);
+  }
+
+  /* Clear of the strip too, and narrower by as much, so its left edge stays
+   * where the toolbar's room was measured from. */
+  #hud-coach {
+    right: calc(var(--edge-right) + 66px);
+    max-width: calc(min(380px, calc(50% - 149px)) - 66px);
   }
 }
 
@@ -1348,10 +1366,11 @@ body {
     }
   }
 
+  /* News at the top, over the status and the shot for its few seconds,
+   * rather than over the report's verdict low down. */
   #hud-notice {
-    top: auto;
-    bottom: calc(var(--edge-bottom) + 118px);
     max-width: 92vw;
+    z-index: 4;
   }
 
   #hud-milestone {
@@ -1362,14 +1381,15 @@ body {
   #hud-levels,
   #hud-history,
   #hud-help {
-    top: 50%;
+    /* Centred in the room above the toolbar, and never down over it. */
+    top: calc((100% + var(--edge-top) - var(--edge-bottom) - var(--toolbar-height, 44px) - 8px) / 2);
     bottom: auto;
     left: 50%;
     right: auto;
     transform: translate(-50%, -50%);
     width: min(320px, 92vw);
     max-width: none;
-    max-height: 78dvh;
+    max-height: min(78dvh, calc(100% - var(--edge-top) - var(--edge-bottom) - var(--toolbar-height, 44px) - 16px));
     overflow-y: auto;
     text-align: left;
     z-index: 2;
@@ -1382,10 +1402,39 @@ body {
 
   /* Under the status panel, across the top: the corner belongs to the power strip. */
   #hud-coach {
-    top: calc(var(--edge-top) + 64px);
+    top: calc(var(--top-bottom, 74px) + 8px);
     bottom: auto;
     left: var(--edge-left);
     right: var(--edge-right);
     max-width: none;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: 8px;
+    align-items: center;
+  }
+
+  /* Skip on the label's line, so the card is no taller than its words. */
+  #hud-coach .hud-keys {
+    grid-column: 1 / -1;
+  }
+
+  #hud-coach .hud-call {
+    grid-row: 1;
+    grid-column: 2;
+    margin: 0;
+  }
+
+  @media (any-pointer: coarse) {
+    #hud-coach {
+      right: calc(var(--edge-right) + 66px);
+    }
+  }
+
+  /* Sideways it starts right of the left column, clear of the report it
+   * talks about and of the aim buttons. */
+  @media (max-height: 520px) and (orientation: landscape) {
+    #hud-coach {
+      left: calc(var(--edge-left) + min(260px, 26vw) + 8px);
+    }
   }
 }
