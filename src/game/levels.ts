@@ -15,7 +15,8 @@
  * the five fractions, leaning on the ones missed most, level 9 reads shots
  * without playing them, level 10 deals the angles mastered least, level 11 is
  * the daily set, levels 12 and 13 are about where the cue ball goes, 14 to 16
- * about where it stops, and 17 and 18 about its speed with no object ball.
+ * about where it stops, 17 and 18 about its speed with no object ball, and 19
+ * about playing it to a zone for the next shot.
  */
 
 import { FRACTIONS, type FractionName } from '../geometry/fractions';
@@ -72,7 +73,8 @@ export interface LevelDefinition {
   readonly scoring?:
     | { readonly kind: 'departure'; readonly stroke: Stroke; readonly allowance: number }
     | { readonly kind: 'position'; readonly target: PositionTarget; readonly distance?: number }
-    | { readonly kind: 'speed'; readonly target: SpeedTarget; readonly distance?: number };
+    | { readonly kind: 'speed'; readonly target: SpeedTarget; readonly distance?: number }
+    | { readonly kind: 'zone' };
   /** Fallback used when generation cannot satisfy the brief. */
   readonly template: ShotLayout;
 }
@@ -364,6 +366,21 @@ export const LEVELS: readonly LevelDefinition[] = [
     examShots: 0,
     scoring: { kind: 'speed', target: 'lag' },
     template: layoutWithCut('level-18-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
+  },
+  {
+    id: 19,
+    name: 'Position zones',
+    description: 'Pot it, and leave the cue ball in the zone for the next shot. Speed and tip are yours.',
+    cutRange: [10, 50],
+    pocketAllowance: 1,
+    cueDistance: [0.4, 0.9],
+    potDistance: [0.3, 0.9],
+    railAdjacent: false,
+    railBand: NO_RAIL_CONSTRAINT,
+    exam: false,
+    examShots: 0,
+    scoring: { kind: 'zone' },
+    template: layoutWithCut('level-19-template', { x: 0.25, y: 0.05 }, 'top-right', 30, 0.6),
   },
 ];
 

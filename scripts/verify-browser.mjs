@@ -674,6 +674,32 @@ check('the lag is scored against its ring and the cushions it touched', /ring|cu
 await page.evaluate(() => window.__debug.selectLevel(1));
 await sleep(200);
 
+// Position zones: a cut with a zone to leave the cue ball in.
+await page.evaluate(() => window.__debug.selectLevel(19));
+await sleep(300);
+const zoned = await page.evaluate(() => ({
+  panel: document.getElementById('hud-shot').textContent,
+  tip: window.__debug.state().tip,
+}));
+check('position zones ask for the zone, with the tip in the player\u2019s hands', zoned.panel.includes('leave the cue ball in the zone') && zoned.tip === 0, JSON.stringify(zoned));
+await page.evaluate(() => {
+  window.__debug.aimIdeal();
+  window.__debug.fire(0.5);
+});
+await page.waitForFunction(() => window.__debug.state().phase !== 'simulating', null, { timeout: 30000 });
+const zoneReport = await page.textContent('#hud-report');
+check('and the shot is reported against the zone', /zone|Missed the pot|Scratch/.test(zoneReport), zoneReport);
+const zoneStatus = await page.textContent('#hud-status');
+check('the zone level counts tiers and shots in the zone, not rungs', zoneStatus.includes('Tier 0') && zoneStatus.includes('in the zone'), zoneStatus);
+await page.evaluate(() => window.__debug.setView('overhead'));
+await sleep(200);
+await page.screenshot({ path: `${OUT}position-zone.png` });
+await page.evaluate(() => {
+  window.__debug.setView('behind');
+  window.__debug.selectLevel(1);
+});
+await sleep(200);
+
 // Corrupted storage resets cleanly, with a notice.
 await page.evaluate(() => {
   for (const key of Object.keys(window.localStorage)) {

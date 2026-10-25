@@ -362,7 +362,15 @@ function newDrill(): PerceptionDrill | undefined {
 }
 
 function tipAllowed(): boolean {
-  return campaign.level.scoring?.kind === 'position';
+  const kind = campaign.level.scoring?.kind;
+  return kind === 'position' || kind === 'zone';
+}
+
+/** Where a shot played for position asks the cue ball to stop, and how near counts. */
+function positionSpot(position: NonNullable<Campaign['position']>): { readonly centre: Vec2; readonly radius: number } {
+  const { layout } = session;
+  if (position.target === 'zone') return { centre: layout.spot!, radius: layout.spotRadius ?? ZONE_RADIUS };
+  return { centre: zoneCentre(position.target, position.distance, layout.cue, session.analysis.ghostCenter), radius: ZONE_RADIUS };
 }
 
 /** Up and down: the tip a step up the ball for follow, or down it for draw. */
@@ -546,8 +554,10 @@ function recordOutcome(outcome: ShotOutcome): void {
   if (position) {
     const { cue } = session.layout;
     const ghost = session.analysis.ghostCenter;
-    const spot = zoneCentre(position.target, position.distance, cue, ghost);
-    positionResult = scorePosition(position.target, session.cueBall.pos, spot, cue, ghost, outcome.pottedTarget, outcome.scratch);
+    const { centre, radius } = positionSpot(position);
+    // A zone is judged on distance alone; long and wide follow the stop shot's line.
+    const target = position.target === 'zone' ? 'stop' : position.target;
+    positionResult = scorePosition(target, session.cueBall.pos, centre, cue, ghost, outcome.pottedTarget, outcome.scratch, radius);
   }
   // Once the ghost ball has gone, the player says how they hit it before the
   // report says. Judged on the tier the shot was played at.
@@ -800,7 +810,8 @@ function frame(now: number): void {
   // The spot a position shot or a speed drill asks for, from the deal to the report.
   const position = campaign.position;
   if (position) {
-    scene.zone.show(zoneCentre(position.target, position.distance, session.layout.cue, session.analysis.ghostCenter), ZONE_RADIUS);
+    const { centre, radius } = positionSpot(position);
+    scene.zone.show(centre, radius);
   } else if (session.layout.spot) {
     scene.zone.show(session.layout.spot, ZONE_RADIUS);
   } else {
@@ -881,8 +892,8 @@ function frame(now: number): void {
         ? null
         : {
             cue: formatDiamonds(session.layout.cue),
-            object: formatDiamonds(session.layout.spot ?? session.layout.object),
-            second: session.layout.spot ? 'ring' : 'object',
+            object: formatDiamonds(session.layout.objectAway ? session.layout.spot! : session.layout.object),
+            second: session.layout.objectAway ? 'ring' : 'object',
           },
     call: session.call,
     calling: aiming && !drill && !campaign.guides.readout,

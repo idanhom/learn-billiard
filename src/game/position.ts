@@ -12,6 +12,9 @@ import { type Vec2, add, dot, normalize, scale, sub } from '../geometry/vec2';
 
 export type PositionTarget = 'stop' | 'follow' | 'draw';
 
+/** What a shot that plays for position asks: a spot on its own line, or a zone dealt with the layout. */
+export type PositionAsk = PositionTarget | 'zone';
+
 /** How near the spot the cue ball has to stop, in metres. */
 export const ZONE_RADIUS = 0.1;
 
@@ -69,6 +72,7 @@ export function scorePosition(
   ghost: Vec2,
   potted: boolean,
   scratch: boolean,
+  radius = ZONE_RADIUS,
 ): PositionResult {
   const line = normalize(sub(ghost, cue));
   // A stop shot and a follow shot travel down the line; a draw shot comes back up it.
@@ -77,5 +81,5 @@ export function scorePosition(
   const long = dot(miss, travel);
   const wide = Math.abs(miss.x * travel.y - miss.y * travel.x);
   const off = Math.hypot(long, wide);
-  return { off, long, wide, potted, scratch, correct: potted && !scratch && off <= ZONE_RADIUS };
+  return { off, long, wide, potted, scratch, correct: potted && !scratch && off <= radius };
 }

@@ -53,8 +53,9 @@ import {
   recordInBand,
 } from './mastery';
 import type { DrillKind } from './perception';
-import { type PositionTarget, RUNGS, rungDistances } from './position';
+import { type PositionAsk, RUNGS, rungDistances } from './position';
 import { SPEED_RUNGS, type SpeedTarget, speedLayout } from './speed';
+import { zoneLayout } from './zones';
 import { makeRng, pickWeighted } from './random';
 import { FINAL_TIER, type GuideVisibility, type Tier, TierTracker } from './tiers';
 
@@ -254,9 +255,10 @@ export class Campaign {
     return { target: scoring.target, distance: scoring.distance ?? 0 };
   }
 
-  /** On a position level: what the layout in play asks the cue ball to do, and how far. */
-  get position(): { readonly target: PositionTarget; readonly distance: number } | undefined {
+  /** On a level that plays for position: what the layout in play asks the cue ball to do, and how far. */
+  get position(): { readonly target: PositionAsk; readonly distance: number } | undefined {
     const scoring = this.#source.scoring;
+    if (scoring?.kind === 'zone') return { target: 'zone', distance: 0 };
     if (scoring?.kind !== 'position') return undefined;
     return { target: scoring.target, distance: scoring.distance ?? 0 };
   }
@@ -540,6 +542,10 @@ export class Campaign {
   #generate(): ShotLayout {
     if (this.#level.daily) return this.#dailyLayout();
     const scoring = this.#level.scoring;
+    if (scoring?.kind === 'zone') {
+      this.#source = this.#level;
+      return zoneLayout(this.#level, this.#baseSeed + this.#shotCounter * 7919);
+    }
     if (scoring?.kind === 'speed') {
       // The tier is the rung for speed control; the lag is the same every time.
       const distance = scoring.target === 'distance' ? SPEED_RUNGS[this.#tiers.tier]! : 0;

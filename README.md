@@ -47,7 +47,7 @@ level does too. It does not come back once done.
 |---|---|
 | drag with the left button | aim (hold `Shift` to fine-tune) |
 | `←` / `→` | nudge the aim a twentieth of a degree (hold `Shift` for a whole one) |
-| `↑` / `↓` | move the tip up the ball for follow, or down it for draw (levels 14 to 16) |
+| `↑` / `↓` | move the tip up the ball for follow, or down it for draw (levels 14 to 16 and 19) |
 | hold `Space` | charge power, release to strike |
 | `V` | switch between behind the cue, overhead, and down in your stance |
 | `.` | cycle full / half / quarter speed |
@@ -296,6 +296,14 @@ lag sends it to the far cushion and back, to stop in a ring 6 cm off the near
 cushion without touching it, as players lag for the break. The cue starts
 pointed the right way, so the drill is the speed alone, and neither shows the
 power marker.
+
+Level 19, Position zones, deals ordinary cuts with a zone 30 cm across to
+leave the cue ball in, as a player plays for the next shot: pot it and stop in
+the zone. Every zone is one the cue ball can reach. Strokes are tried on the
+shot's ideal line at a spread of speeds and tips until one pots cleanly and
+leaves the cue ball in open table, and the zone is centred where it stopped.
+Finding a stroke that does it is the drill, so the line is shown and the speed
+and tip are yours.
 
 Once you reach the last tier of a fraction level, two shots in five come from
 the fractions before it. Telling a half-ball cut from a three-quarter one is

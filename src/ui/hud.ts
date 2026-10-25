@@ -16,7 +16,7 @@ import { FRACTIONS, type FractionName, fractionByName } from '../geometry/fracti
 import type { CutSide } from '../geometry/shot';
 import { ESTIMATES, type Estimate, estimateLabel } from '../game/estimate';
 import type { DepartureResult, Stroke } from '../game/departure';
-import { type PositionResult, type PositionTarget, ZONE_RADIUS } from '../game/position';
+import type { PositionAsk, PositionResult } from '../game/position';
 import type { SpeedResult, SpeedTarget } from '../game/speed';
 import type { DrillKind, DrillResult } from '../game/perception';
 import type { BandMastery, ExamRun } from '../game/campaign';
@@ -116,7 +116,7 @@ export interface HudState {
   readonly tip: number | null;
   /** On a position level: what the shot asks of the cue ball, and how it went. */
   readonly position: {
-    readonly target: PositionTarget;
+    readonly target: PositionAsk;
     readonly distance: number;
     readonly result: PositionResult | null;
   } | null;
@@ -551,7 +551,7 @@ export class Hud {
               state.routineLog,
               state.estimate,
               state.autoNextIn,
-              state.position?.result ?? null,
+              state.position?.result ? { result: state.position.result, zone: state.position.target === 'zone' } : null,
             );
       if (html !== this.#renderedReport) {
         this.#renderedReport = html;
@@ -684,9 +684,9 @@ export class Hud {
       ? `Exam &mdash; shot ${Math.min(state.exam.shotsTaken + 1, state.exam.total)} of ${state.exam.total}`
       : state.tierComplete
         ? 'Level complete'
-        : state.position || state.speed?.target === 'distance'
+        : (state.position && state.position.target !== 'zone') || state.speed?.target === 'distance'
           ? `Rung ${state.tier + 1} of 4`
-          : state.speed
+          : state.speed || state.position
           ? `Tier ${state.tier}`
           : state.drill || state.departure
           ? `Tier ${state.tier}`
@@ -707,7 +707,7 @@ export class Hud {
     const tally = state.speed
       ? `${state.qualified}/${state.attempts} in the ring`
       : state.position
-      ? `${state.qualified}/${state.attempts} in the ring &middot; ${state.potted} potted`
+      ? `${state.qualified}/${state.attempts} in the ${state.position.target === 'zone' ? 'zone' : 'ring'} &middot; ${state.potted} potted`
       : state.drill || state.departure
       ? `${state.qualified}/${state.attempts} read right`
       : `${state.qualified}/${state.attempts} on aim &middot; ${state.potted} potted`;
@@ -734,7 +734,7 @@ export class Hud {
     }
     if (state.position) {
       this.#writeShot(
-        '<div class="hud-label">This shot</div><div class="hud-big">straight in</div>' +
+        `<div class="hud-label">This shot</div><div class="hud-big">${state.position.target === 'zone' ? 'play for position' : 'straight in'}</div>` +
           `<div class="hud-sub">${positionAsk(state.position.target, state.position.distance)}</div>` +
           (state.tip === null ? '' : tipPicture(state.tip)) +
           diamondLine(state.diamonds),
@@ -930,9 +930,9 @@ function renderReport(
   routine: HudState['routineLog'],
   estimate: HudState['estimate'],
   autoNextIn: number | null,
-  position: PositionResult | null,
+  position: { readonly result: PositionResult; readonly zone: boolean } | null,
 ): string {
-  const verdict = position ? positionVerdict(position) : verdictFor(outcome, exam !== undefined);
+  const verdict = position ? positionVerdict(position.result, position.zone) : verdictFor(outcome, exam !== undefined);
 
   const used = outcome.pocketUsed;
   const aim = !outcome.contacted
@@ -1122,7 +1122,8 @@ function renderSpeed(target: SpeedTarget, result: SpeedResult, autoNextIn: numbe
 }
 
 /** What a position shot asks of the cue ball. */
-function positionAsk(target: PositionTarget, distance: number): string {
+function positionAsk(target: PositionAsk, distance: number): string {
+  if (target === 'zone') return 'pot it, and leave the cue ball in the zone';
   if (target === 'stop') return 'stop the cue ball where it meets the object ball';
   const cm = Math.round(distance * 100);
   return target === 'follow' ? `follow through ${cm} cm to the ring` : `draw back ${cm} cm to the ring`;
@@ -1144,14 +1145,17 @@ function tipPicture(tip: number): string {
   );
 }
 
-/** A position shot's verdict: the ring, and why not when not. */
-function positionVerdict(result: PositionResult): { readonly text: string; readonly good: boolean; readonly why: string } {
+/** A position shot's verdict: the ring or the zone, and why not when not. */
+function positionVerdict(result: PositionResult, zone: boolean): { readonly text: string; readonly good: boolean; readonly why: string } {
   const cm = (metres: number): string => `${Math.round(Math.abs(metres) * 100)} cm`;
+  const place = zone ? 'zone' : 'ring';
+  const from = zone ? 'the zone&rsquo;s centre' : 'the spot';
   if (result.scratch) return { text: 'Scratch', good: false, why: 'The cue ball went in after it.' };
-  if (!result.potted) return { text: 'Missed the pot', good: false, why: `The cue ball stopped ${cm(result.off)} from the spot.` };
+  if (!result.potted) return { text: 'Missed the pot', good: false, why: `The cue ball stopped ${cm(result.off)} from ${from}.` };
   if (result.correct) {
-    return { text: 'In the ring', good: true, why: `The cue ball stopped ${cm(result.off)} from the spot, inside ${cm(ZONE_RADIUS)}.` };
+    return { text: `In the ${place}`, good: true, why: `The cue ball stopped ${cm(result.off)} from ${from}.` };
   }
+  if (zone) return { text: 'Outside the zone', good: false, why: `The cue ball stopped ${cm(result.off)} from ${from}.` };
   const parts = [
     ...(Math.abs(result.long) >= 0.03 ? [result.long > 0 ? `long by ${cm(result.long)}` : `short by ${cm(result.long)}`] : []),
     ...(result.wide >= 0.03 ? [`wide by ${cm(result.wide)}`] : []),

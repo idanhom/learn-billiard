@@ -31,8 +31,10 @@ export interface ShotLayout {
   readonly obstacles?: readonly Vec2[];
   /** The object ball is out of play: a drill for the cue ball alone. */
   readonly objectAway?: boolean;
-  /** Where a drill for the cue ball alone asks it to stop. */
+  /** Where a drill asks the cue ball to stop: on its own, or after a pot. */
   readonly spot?: Vec2;
+  /** How near the spot counts, in metres, where it is not the ring's 10 cm. */
+  readonly spotRadius?: number;
   /** Which way the cue starts pointing in a drill for the cue ball alone, as a heading. */
   readonly heading?: number;
 }
