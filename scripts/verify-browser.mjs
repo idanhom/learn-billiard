@@ -1482,14 +1482,18 @@ await page.evaluate(() => {
   window.__debug.toggleContrast();
   window.__debug.setView('behind');
 });
+// Waited for rather than slept on: on a busy machine the change event can take
+// longer than a fixed pause, and the check then fails on timing alone.
+const motionSettles = (reduced) =>
+  page.waitForFunction((r) => window.__debug.state().reducedMotion === r, reduced, { timeout: 3000 }).catch(() => {});
 await page.emulateMedia({ reducedMotion: 'reduce' });
-await sleep(100);
+await motionSettles(true);
 const calm = await page.evaluate(() => ({
   scene: window.__debug.state().reducedMotion,
   transition: getComputedStyle(document.querySelector('.hud-meter-fill')).transitionDuration,
 }));
 await page.emulateMedia({ reducedMotion: 'no-preference' });
-await sleep(100);
+await motionSettles(false);
 check(
   'reduced motion is honoured the moment it is asked for, and let go after',
   calm.scene === true && calm.transition === '0s' && (await state()).reducedMotion === false,
@@ -1634,6 +1638,40 @@ for (const [orientation, viewport] of [
   await phone.evaluate(() => window.__debug.setView('overhead'));
   await sleep(300);
   await phone.screenshot({ path: `${OUT}phone-${orientation}-overhead.png` });
+  await context.close();
+}
+
+/*
+ * A touch laptop: a touch screen and a trackpad, so the touch controls and the
+ * key hints both show, at desktop widths. The fine-aim buttons stand clear of
+ * the toolbar and the level list, and the ? never wraps onto a row alone.
+ */
+for (const width of [1280, 900]) {
+  const context = await browser.newContext({ viewport: { width, height: 760 }, hasTouch: true });
+  const laptop = await context.newPage();
+  laptop.on('pageerror', (error) => consoleErrors.push(String(error)));
+  await laptop.goto(PAGE_URL, { waitUntil: 'load' });
+  await sleep(900);
+  await skipCoaching(laptop);
+  // Chromium's touch emulation reports no fine pointer, which a real touch laptop also has.
+  await laptop.addStyleTag({ content: '.kbd-hint { display: revert !important; }' });
+  await sleep(200);
+  const layout = await laptop.evaluate(() => {
+    const rect = (id) => document.getElementById(id).getBoundingClientRect();
+    const [aim, toolbar, levels] = ['hud-aim', 'hud-toolbar', 'hud-levels'].map(rect);
+    const chips = [...document.querySelectorAll('#hud-toolbar .hud-chip')].filter((c) => getComputedStyle(c).display !== 'none');
+    const help = chips.find((c) => c.dataset.action === 'help').getBoundingClientRect();
+    const rows = new Set(chips.map((c) => Math.round(c.getBoundingClientRect().top)));
+    const besideHelp = chips.filter((c) => c.dataset.action !== 'help' && Math.abs(c.getBoundingClientRect().top - help.top) < 2);
+    return { aim: [aim.top, aim.bottom], toolbar: toolbar.top, levels: levels.bottom, rows: rows.size, besideHelp: besideHelp.length };
+  });
+  check(
+    `touch laptop, ${width} wide: the fine-aim buttons stand clear of the toolbar and the level list`,
+    layout.aim[1] <= layout.toolbar && layout.levels <= layout.aim[0],
+    JSON.stringify(layout),
+  );
+  check(`touch laptop, ${width} wide: the ? never wraps onto a row of its own`, layout.besideHelp > 0, `${layout.rows} rows`);
+  await laptop.screenshot({ path: `${OUT}touch-laptop-${width}.png` });
   await context.close();
 }
 

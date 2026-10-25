@@ -347,6 +347,12 @@ export class Hud {
     this.#toolbar = panel(root, 'hud-toolbar');
     this.#toolbar.classList.add('interactive');
     this.#toolbar.setAttribute('role', 'toolbar');
+    // What stands on the toolbar (the controls panel, the fine-aim buttons)
+    // sits on its real height, which changes whenever it wraps to another
+    // row: on a new chip, and on a resize.
+    new ResizeObserver(() => {
+      root.style.setProperty('--toolbar-height', `${this.#toolbar.offsetHeight}px`);
+    }).observe(this.#toolbar);
 
     const power = panel(root, 'hud-power');
     power.innerHTML =
@@ -712,14 +718,14 @@ export class Hud {
       (state.history.length > 0
         ? chip('history', 'Shots', { compactOnly: true, pressed: this.#openSheet === 'history' })
         : '') +
+      // Held together, so a row that wraps never leaves the ? on its own.
+      '<span class="hud-chip-pair">' +
       chip('table', 'At the table', { key: 'T' }) +
-      chip('help', '?', { pressed: this.#helpOpen, label: 'Controls and model notes' });
+      chip('help', '?', { pressed: this.#helpOpen, label: 'Controls and model notes' }) +
+      '</span>';
     if (html === this.#renderedToolbar) return;
     this.#renderedToolbar = html;
     this.#toolbar.innerHTML = html;
-    // The controls panel sits on top of the toolbar, which wraps to a second
-    // row when its chips outgrow it.
-    this.#root.style.setProperty('--toolbar-height', `${this.#toolbar.offsetHeight}px`);
   }
 
   #renderStatus(state: HudState): void {

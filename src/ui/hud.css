@@ -307,6 +307,11 @@ body {
   background: rgba(111, 211, 160, 0.14);
 }
 
+.hud-chip-pair {
+  display: inline-flex;
+  gap: 5px;
+}
+
 #hud kbd {
   font: inherit;
   font-size: 0.85em;
@@ -405,7 +410,7 @@ body {
 }
 
 #hud-aim {
-  bottom: calc(var(--edge-bottom) + 64px);
+  bottom: calc(var(--edge-bottom) + var(--toolbar-height, 44px) + 8px);
   left: var(--edge-left);
   gap: 10px;
   padding: 6px;
@@ -812,6 +817,19 @@ body {
     display: flex;
   }
 
+  /*
+   * No power meter in the middle to keep clear of, so the toolbar runs on as
+   * far as the coaching panel's corner and stays one row on a touch laptop.
+   */
+  #hud-toolbar {
+    max-width: calc(100% - var(--edge-left) - var(--edge-right) - min(380px, calc(50% - 149px)) - 8px);
+  }
+
+  /* The level list stops above the fine-aim buttons: 62px of them and a gap. */
+  #hud-levels {
+    max-height: calc(100% - 150px - var(--edge-bottom) - var(--toolbar-height, 44px) - 12px - 70px);
+  }
+
   /* Clear of the strip, where the screen is big enough to show the panel. */
   #hud-history {
     right: calc(var(--edge-right) + 66px);
@@ -1093,6 +1111,11 @@ body {
   .hud-chip {
     flex: none;
     padding: 4px 9px;
+  }
+
+  /* One scrolling row: the pair's chips take their own places in it. */
+  .hud-chip-pair {
+    display: contents;
   }
 
   /* Actions first, settings last: if the row is too long for the screen, it is
