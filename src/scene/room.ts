@@ -52,8 +52,8 @@ export const WALL_HEIGHT = 2.7;
 export const ROOM_LIGHT = 0.25;
 
 /** The outside edge of the rail, each way from the middle of the table. */
-const RAIL_X = TABLE.playLength / 2 + FRAME_MARGIN;
-const RAIL_Z = TABLE.playWidth / 2 + FRAME_MARGIN;
+export const RAIL_X = TABLE.playLength / 2 + FRAME_MARGIN;
+export const RAIL_Z = TABLE.playWidth / 2 + FRAME_MARGIN;
 /** The walls, each way from the middle of the table. */
 export const WALL_X = RAIL_X + TABLE_CLEARANCE;
 export const WALL_Z = RAIL_Z + TABLE_CLEARANCE;

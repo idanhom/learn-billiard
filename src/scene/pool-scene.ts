@@ -34,6 +34,7 @@ import { ZoneMarker } from './zone';
 import { STANCE_BACK, STANCE_EYE_HEIGHT, stanceFraming } from './stance';
 import { FRAME_MARGIN, buildTable } from './table-mesh';
 import { Room, bedGain } from './room';
+import { Orbit } from './explore';
 
 export type CameraView = 'behind' | 'overhead' | 'stance';
 
@@ -135,6 +136,8 @@ export class PoolScene {
 
   #view: CameraView = 'behind';
   #viewSettled = false;
+  /** The camera taken in hand after a shot. While it is, `#view` is where it goes back to. */
+  #free: Orbit | undefined;
   /** The player has asked for less motion: the camera cuts rather than glides, and pots vanish. */
   #reducedMotion = false;
   /** The canvas's height in CSS pixels, and how far the player sits from it, for the stance view's true scale. */
@@ -193,11 +196,66 @@ export class PoolScene {
 
   setView(view: CameraView): void {
     this.#view = view;
+    this.#free = undefined;
   }
 
+  /** The next view in the cycle, or, with the camera free, the view it was taken from. */
   toggleView(): CameraView {
+    if (this.#free) {
+      this.#free = undefined;
+      return this.#view;
+    }
     this.#view = VIEW_CYCLE[(VIEW_CYCLE.indexOf(this.#view) + 1) % VIEW_CYCLE.length]!;
     return this.#view;
+  }
+
+  /** Whether the camera is free, moved by hand rather than placed by the view. */
+  get free(): boolean {
+    return this.#free !== undefined;
+  }
+
+  /** The free camera's pivot and its distance from it, or null when the camera is not free. */
+  get orbit(): { readonly pivot: Vector3; readonly distance: number } | null {
+    return this.#free ? { pivot: this.#free.pivot, distance: this.#free.distance } : null;
+  }
+
+  get cameraPosition(): Vector3 {
+    return this.#camera.position.clone();
+  }
+
+  /** Turn the view round the table by a drag of this many pixels, freeing the camera if it is not already. */
+  turn(dx: number, dy: number): void {
+    this.#orbit().turn(dx, dy);
+  }
+
+  /** Bring the free camera `factor` times closer. */
+  zoom(factor: number): void {
+    this.#orbit().zoom(factor);
+  }
+
+  /** Slide the free camera so the cloth follows fingers moved this many pixels. */
+  slide(dx: number, dy: number): void {
+    this.#orbit().slide(dx, dy, this.#cssHeight, this.#camera.fov);
+  }
+
+  /** Put the camera back in the view it was taken from. */
+  endFree(): void {
+    this.#free = undefined;
+  }
+
+  /** The view a free camera goes back to, changed without putting it back. */
+  setReturnView(view: CameraView): void {
+    this.#view = view;
+  }
+
+  /** The camera as the last frame left it, taken in hand from there. */
+  #orbit(): Orbit {
+    this.#free ??= Orbit.fromCamera(
+      this.#camera.position,
+      this.#camera.getWorldDirection(new Vector3()),
+      this.#camera.up,
+    );
+    return this.#free;
   }
 
   /** How far the player's eyes are from the screen, in metres: what true scale is measured against. */
@@ -441,6 +499,19 @@ export class PoolScene {
   }
 
   #placeCamera(cuePos: Vec2, state: RenderState): void {
+    if (this.#free) {
+      // From the stance's narrow true scale, the field widens from the same
+      // eye rather than jumping: the first drag reveals more of the table.
+      const fov = fieldOfView(this.#camera.aspect);
+      const t = this.#reducedMotion ? 1 : 1 - Math.exp(-VIEW_SMOOTHING_RATE * Math.max(0, state.dt));
+      const next = this.#camera.fov + (fov - this.#camera.fov) * t;
+      this.#setFov(Math.abs(fov - next) < 0.01 ? fov : next);
+      this.#free.write(this.#camera.position, this.#cameraTarget);
+      this.#camera.up.set(0, 1, 0);
+      this.#camera.lookAt(this.#cameraTarget);
+      this.#viewSettled = false;
+      return;
+    }
     if (this.#view === 'stance') {
       // Down on the shot: on the cue line, the eye where a player's would be,
       // tipped down to keep cue ball and object ball both in frame.

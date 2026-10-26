@@ -1090,6 +1090,11 @@ function frame(now: number): void {
 
 requestAnimationFrame(frame);
 
+/** A point's coordinates on their own, for the debug state's plain JSON. */
+function point3({ x, y, z }: { readonly x: number; readonly y: number; readonly z: number }) {
+  return { x, y, z };
+}
+
 // Dev-gated debug hook. Also available on a production build behind ?debug=1,
 // so the verification pass can drive the real artifact rather than a dev server.
 if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
@@ -1170,6 +1175,10 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       })),
       view: scene.view,
       fieldOfView: scene.fieldOfView,
+      free: scene.free,
+      camera: point3(scene.cameraPosition),
+      orbit: scene.orbit && { pivot: point3(scene.orbit.pivot), distance: scene.orbit.distance },
+      autoNextIn: autoNextIn(),
       room: { visible: scene.room.group.visible, lamp: scene.room.lampShown },
       viewingDistance: settings.viewingDistance,
       routine: routine ? { down: routine.down, reAims: routine.reAims } : null,
