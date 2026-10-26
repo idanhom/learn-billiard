@@ -35,6 +35,7 @@ import { ADVANCE_REQUIRED, ADVANCE_WINDOW, FINAL_TIER, type GuideVisibility } fr
 import type { LevelDefinition } from './game/levels';
 import { ballNumberFor } from './scene/ball-textures';
 import { type CameraView, PoolScene } from './scene/pool-scene';
+import { WALL_X, WALL_Z } from './scene/room';
 import { Hud, type HudState, type Milestone, type Notice } from './ui/hud';
 import { TablePanel } from './ui/table-panel';
 import { TableAudio } from './scene/audio';
@@ -425,6 +426,7 @@ function startShot(): void {
     tipLevel = campaign.level.id;
   }
   if (tipAllowed()) session.setTip(tip);
+  scene.endFree();
   if (viewBeforeResult) {
     scene.setView(viewBeforeResult);
     viewBeforeResult = undefined;
@@ -549,6 +551,27 @@ function autoNextIn(): number | null {
     return null;
   }
   return Math.max(0, AUTO_NEXT_SECONDS - (clock() - reportShownAt));
+}
+
+/**
+ * After a shot, a drag on the table looks round it. Not while the
+ * self-estimate asks, before the lines are drawn, and not in a drill, which
+ * plays no shot.
+ */
+function canExplore(): boolean {
+  return (session.phase === 'settled' || session.phase === 'evaluated') && !estimate?.asking && !drill;
+}
+
+/**
+ * The player moves the camera: the panels make way, unless a milestone card
+ * or the coaching is up to be read, and the next shot waits for them, as it
+ * does through a replay.
+ */
+function explore(move: () => void): void {
+  if (!canExplore()) return;
+  move();
+  if (!milestone && !coach.active) hud.hideForExplore();
+  reportShownAt = null;
 }
 
 function toggleAutoNext(): void {
@@ -761,13 +784,16 @@ function startReplay(): void {
   const again = session.rerun();
   replay = { session: again, view: scene.view, heard: 0 };
   reportShownAt = null;
-  scene.setView('overhead');
+  // From above, unless the player has the camera where they want it.
+  if (!scene.free) scene.setView('overhead');
   audio.strike(again.cueSpeed);
 }
 
 function stopReplay(): void {
   if (!replay) return;
-  scene.setView(replay.view);
+  // A camera taken in hand stays there; it still goes back to the view from before the replay.
+  if (scene.free) scene.setReturnView(replay.view);
+  else scene.setView(replay.view);
   replay = undefined;
 }
 
@@ -825,6 +851,10 @@ attachInput(canvas, {
   onReplay: startReplay,
   onToggleHide: () => hud.toggleBare(),
   onTip: changeTip,
+  canExplore,
+  onTurn: (dx, dy) => explore(() => scene.turn(dx, dy)),
+  onZoom: (factor) => explore(() => scene.zoom(factor)),
+  onSlide: (dx, dy) => explore(() => scene.slide(dx, dy)),
   onAdvance: () => {
     if (readyForNext()) nextShot();
   },
@@ -1050,6 +1080,7 @@ function frame(now: number): void {
     milestone,
     notice,
     view: scene.view,
+    freeCamera: scene.free,
     viewingDistance: settings.viewingDistance,
     sound: settings.sound,
     highContrast: settings.highContrast,
@@ -1145,6 +1176,9 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
     },
     resetProgress,
     setView: (view: CameraView) => scene.setView(view),
+    turn: (dx: number, dy: number) => explore(() => scene.turn(dx, dy)),
+    zoom: (factor: number) => explore(() => scene.zoom(factor)),
+    slide: (dx: number, dy: number) => explore(() => scene.slide(dx, dy)),
     setRoom: (visible: boolean) => {
       scene.room.group.visible = visible;
     },
@@ -1176,10 +1210,11 @@ if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) {
       view: scene.view,
       fieldOfView: scene.fieldOfView,
       free: scene.free,
+      bare: hud.bare,
       camera: point3(scene.cameraPosition),
       orbit: scene.orbit && { pivot: point3(scene.orbit.pivot), distance: scene.orbit.distance },
       autoNextIn: autoNextIn(),
-      room: { visible: scene.room.group.visible, lamp: scene.room.lampShown },
+      room: { visible: scene.room.group.visible, lamp: scene.room.lampShown, walls: { x: WALL_X, z: WALL_Z } },
       viewingDistance: settings.viewingDistance,
       routine: routine ? { down: routine.down, reAims: routine.reAims } : null,
       routineLog,

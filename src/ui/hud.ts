@@ -183,6 +183,8 @@ export interface HudState {
   readonly milestone: Milestone | undefined;
   readonly notice: Notice | undefined;
   readonly view: string;
+  /** The camera has been moved by hand after the shot; `view` is where it goes back to. */
+  readonly freeCamera: boolean;
   /** How far the player sits from the screen, in metres, for the stance view. */
   readonly viewingDistance: number;
   readonly sound: boolean;
@@ -321,6 +323,8 @@ export class Hud {
   #reviewing = false;
   /** Every panel but the toolbar put away, to look at the table. Ends with the review. */
   #bare = false;
+  /** The player pressed Hide or Show this review, so looking round the table leaves the panels as they are. */
+  #bareChosen = false;
   /** The sheet a small screen has open, if any. Ignored where there is room. */
   #openSheet: Sheet | undefined;
   #helpOpen = false;
@@ -443,11 +447,15 @@ export class Hud {
       '<b>V</b> camera: behind, overhead, stance &middot; <b>.</b> slow motion &middot; <b>C</b> cloth speed<br>' +
       '<b>R</b> retry &middot; <b>N</b> next shot &middot; <b>1</b>&ndash;<b>9</b>, <b>0</b> level &middot; ' +
       '<b>F</b> call the fraction &middot; <b>G</b> get down on the line &middot; <b>T</b> at the table &middot; ' +
-      '<b>M</b> sound &middot; <b>H</b> hide the panels after a shot</div>' +
+      '<b>M</b> sound &middot; <b>H</b> hide the panels after a shot<br>' +
+      'After a shot, <b>drag</b> to look round the table, the <b>wheel</b> to zoom, and ' +
+      '<b>right-drag</b> to slide the view; <b>V</b> puts the camera back</div>' +
       '<div class="hud-keys touch-hint"><b>Drag</b> on the table to aim, and nudge it with ' +
       '<b>&lsaquo; &rsaquo;</b>. <b>Slide up the strip</b> on the right to charge the power, and ' +
       'lift to strike; slide off its side to call the shot off. The buttons along the bottom do ' +
-      'everything the keys do, and after a shot <b>Hide</b> clears the table.</div>' +
+      'everything the keys do, and after a shot <b>Hide</b> clears the table. After a shot, ' +
+      '<b>drag</b> the table to look round it, <b>pinch</b> to zoom, and move <b>two fingers</b> ' +
+      'to slide the view; the first drag clears the panels, and the view button puts the camera back.</div>' +
       // Say plainly what this simulation is not, so nothing learned here comes
       // as a surprise on a real table.
       '<div class="hud-keys hud-eye">The stance view is true to scale with your eyes ' +
@@ -569,8 +577,28 @@ export class Hud {
    */
   toggleBare(): void {
     if (!this.#reviewing) return;
-    this.#bare = !this.#bare;
-    this.#root.classList.toggle('bare', this.#bare);
+    this.#bareChosen = true;
+    this.#setBare(!this.#bare);
+  }
+
+  /**
+   * The player has started looking round the table: the panels go, as Hide
+   * puts them, unless Hide or Show has already said how they are wanted this
+   * review.
+   */
+  hideForExplore(): void {
+    if (!this.#reviewing || this.#bareChosen || this.#bare) return;
+    this.#setBare(true);
+  }
+
+  /** Whether the panels are put away. */
+  get bare(): boolean {
+    return this.#bare;
+  }
+
+  #setBare(bare: boolean): void {
+    this.#bare = bare;
+    this.#root.classList.toggle('bare', bare);
     this.#renderedToolbar = '';
   }
 
@@ -580,6 +608,7 @@ export class Hud {
       this.#bare = false;
       this.#root.classList.remove('bare');
     }
+    if (!this.#reviewing) this.#bareChosen = false;
     // A perception drill takes no shot, so the controls for one go with it.
     this.#root.classList.toggle('drilling', state.drill !== null || state.departure !== null);
     this.#root.classList.toggle('tipping', state.tip !== null);
@@ -620,7 +649,7 @@ export class Hud {
       this.#showReport(html);
     } else if (state.outcome) {
       const html = state.replaying
-        ? '<div class="hud-sub">Replay, from above at a quarter speed &middot; <b>Esc</b> stops it</div>'
+        ? `<div class="hud-sub">Replay${state.freeCamera ? '' : ', from above'} at a quarter speed &middot; <b>Esc</b> stops it</div>`
         : state.estimate?.asking
           ? estimatePrompt(state.estimate.straight)
           : renderReport(
@@ -746,7 +775,9 @@ export class Hud {
     const html =
       chip('retry', 'Retry', { key: 'R' }) +
       chip('next', 'Next', { key: 'N' }) +
-      chip('view', VIEW_LABELS[state.view] ?? 'Behind', { key: 'V' }) +
+      (state.freeCamera
+        ? chip('view', 'Free', { key: 'V', label: `Free camera, back to ${VIEW_LABELS[state.view] ?? 'Behind'}` })
+        : chip('view', VIEW_LABELS[state.view] ?? 'Behind', { key: 'V' })) +
       (state.routine
         ? chip('down', state.routine.down ? shortOnPhone('Stand up', 'Up') : shortOnPhone('Get down', 'Down'), {
             key: 'G',

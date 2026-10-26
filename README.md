@@ -49,7 +49,7 @@ level does too. It does not come back once done.
 | `←` / `→` | nudge the aim a twentieth of a degree (hold `Shift` for a whole one) |
 | `↑` / `↓` | move the tip up the ball for follow, or down it for draw (levels 14 to 16, 19 and 20) |
 | hold `Space` | charge power, release to strike |
-| `V` | switch between behind the cue, overhead, and down in your stance |
+| `V` | switch between behind the cue, overhead, and down in your stance; with the camera moved by hand after a shot, back to the view it left |
 | `.` | cycle full / half / quarter speed |
 | `C` | cycle fast / normal / slow cloth |
 | `R` | retry the same layout. While the balls still roll, the rest of the shot plays out at once and is scored as it would have been |
@@ -59,8 +59,9 @@ level does too. It does not come back once done.
 | `G` | get down on the line, or stand back up (last tier and exam; optional) |
 | `T` | at the table: what to take to a real one, and what this can't teach |
 | `M` | sound on or off |
-| `P` | replay the shot just played, from overhead at a quarter speed; `Esc` stops it |
+| `P` | replay the shot just played at a quarter speed, from overhead, or from wherever you have moved the camera; `Esc` stops it |
 | `H` | after a shot, put every panel but the toolbar away to see the table; `H` again brings them back |
+| drag, wheel, right-drag | after a shot, look round the table, zoom, and slide the view; the first drag puts the panels away as `H` does |
 
 On a touch screen, drag on the table to aim and nudge the aim a twentieth of a
 degree at a time with the `‹` `›` buttons. Power is the strip down the right edge,
@@ -69,6 +70,13 @@ you want, and lift to strike. The power follows your finger, so lifting at the
 target mark plays the marked stroke. A
 tap that does not travel is not a stroke, and sliding off the side of the strip
 calls the shot off.
+
+After a shot, drag on the table to look round it: one finger turns the view
+about a point on the cloth, a pinch zooms, and two fingers moved together slide
+the view along the table. The first drag puts the panels away, as **Hide**
+does, and **Show** brings them back for the rest of that shot. The view button
+reads **Free** while the camera is in your hands; press it, or play on, and the
+camera goes back to the view it left.
 
 The table sounds as it plays: the strike, the balls meeting, the cushions and
 the pockets, each made from the simulation's own contacts and as loud as the

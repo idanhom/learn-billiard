@@ -35,7 +35,7 @@ export interface InputHandlers {
   onOpenTable(): void;
   /** M: sound on or off. */
   onToggleSound(): void;
-  /** P: the shot just played, again, from overhead and slowed down. */
+  /** P: the shot just played, again, slowed down: from overhead, or from wherever the player has moved the camera. */
   onReplay(): void;
   /** H: after a shot, put the panels away to see the table, or bring them back. */
   onToggleHide(): void;
@@ -43,6 +43,14 @@ export interface InputHandlers {
   onAdvance(): void;
   /** Up and down arrows: move the tip up the ball for follow, or down it for draw, a step at a time. */
   onTip(steps: number): void;
+  /** After a shot, whether a drag on the table looks round it rather than aiming. */
+  canExplore(): boolean;
+  /** A drag of this many pixels: turn the view round the table with it. */
+  onTurn(dx: number, dy: number): void;
+  /** Fingers spread to this many times as far apart, or the wheel turned: bring the view that much closer. */
+  onZoom(factor: number): void;
+  /** Two fingers, or a right-drag, moved this many pixels: slide the view along the table with them. */
+  onSlide(dx: number, dy: number): void;
 }
 
 /**
@@ -76,6 +84,41 @@ export const AIM_DEGREES_PER_PIXEL = 0.08;
 /** Holding shift while dragging divides the rate, for the last half degree. */
 export const FINE_DRAG_DIVISOR = 5;
 
+/**
+ * After a shot, how far a finger travels on the table, in CSS pixels, before
+ * it is looking round rather than tapping. Short, since a tap there does
+ * nothing else; the travel up to it is dropped, so the view does not lurch.
+ */
+export const EXPLORE_ARM_PX = 6;
+
+/** Wheel zoom per pixel scrolled: a 100 px notch is about a fifth nearer or further. */
+const WHEEL_ZOOM_PER_PIXEL = 0.002;
+/** A wheel that counts in lines or pages, in pixels: what a browser scrolls for one. */
+const WHEEL_LINE_PX = 16;
+const WHEEL_PAGE_PX = 400;
+
+interface Point {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * One step of a two-finger gesture, as one finger moves from `a0` to `a1` and
+ * the other is at `b0`, then `b1`: how many times further apart they are, and
+ * how far their midpoint went. Browsers report one finger at a time, and the
+ * steps compose: the zooms multiply and the slides add up to what moving both
+ * at once would give.
+ */
+export function pinchStep(a0: Point, b0: Point, a1: Point, b1: Point): { zoom: number; dx: number; dy: number } {
+  const before = Math.hypot(a0.x - b0.x, a0.y - b0.y);
+  const after = Math.hypot(a1.x - b1.x, a1.y - b1.y);
+  return {
+    zoom: before < 1 || after < 1 ? 1 : after / before,
+    dx: (a1.x + b1.x - a0.x - b0.x) / 2,
+    dy: (a1.y + b1.y - a0.y - b0.y) / 2,
+  };
+}
+
 /** Digit rows 1-9 select a level, and 0 the tenth. Physical codes, so the layout does not matter. */
 const LEVEL_KEYS = new Map<string, number>(
   [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].flatMap((n) => [
@@ -93,8 +136,75 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
   let draggingPointer: number | undefined;
   let lastClientX = 0;
 
+  // Looking round the table after a shot: each finger on it and where it last
+  // was, where the first one came down, whether it has gone far enough to be a
+  // drag, and whether it slides the view rather than turning it. That is
+  // settled when it comes down, since a move does not say which button is held.
+  const exploring = new Map<number, { x: number; y: number }>();
+  let exploreFrom: Point = { x: 0, y: 0 };
+  let exploreArmed = false;
+  let exploreSlides = false;
+  // The click that ends a drag is not a click on the table.
+  let swallowClick = false;
+
+  const startExplore = (event: PointerEvent): void => {
+    if ((event.button !== 0 && event.button !== 2) || exploring.size >= 2) return;
+    if (exploring.size === 0) {
+      exploreFrom = { x: event.clientX, y: event.clientY };
+      exploreArmed = false;
+      exploreSlides = event.button === 2 || event.shiftKey;
+    } else {
+      // A second finger is a gesture straight away.
+      exploreArmed = true;
+      swallowClick = true;
+    }
+    exploring.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveExplore = (event: PointerEvent, last: { x: number; y: number }): void => {
+    const now = { x: event.clientX, y: event.clientY };
+    if (!handlers.canExplore()) {
+      last.x = now.x;
+      last.y = now.y;
+      return;
+    }
+    if (exploring.size === 1) {
+      if (!exploreArmed) {
+        if (Math.hypot(now.x - exploreFrom.x, now.y - exploreFrom.y) < EXPLORE_ARM_PX) return;
+        exploreArmed = true;
+        swallowClick = true;
+      } else if (exploreSlides) {
+        handlers.onSlide(now.x - last.x, now.y - last.y);
+      } else {
+        handlers.onTurn(now.x - last.x, now.y - last.y);
+      }
+    } else {
+      const other = [...exploring].find(([id]) => id !== event.pointerId)?.[1];
+      if (other) {
+        const step = pinchStep(last, other, now, other);
+        if (step.zoom !== 1) handlers.onZoom(step.zoom);
+        if (step.dx !== 0 || step.dy !== 0) handlers.onSlide(step.dx, step.dy);
+      }
+    }
+    last.x = now.x;
+    last.y = now.y;
+  };
+
+  const endExplore = (event: PointerEvent): boolean => {
+    if (!exploring.delete(event.pointerId)) return false;
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    return true;
+  };
+
   const onPointerDown = (event: PointerEvent): void => {
     canvas.focus();
+    swallowClick = false;
+    if (draggingPointer === undefined && (exploring.size > 0 || handlers.canExplore())) {
+      startExplore(event);
+      return;
+    }
     if (event.button !== 0 || draggingPointer !== undefined) return;
     draggingPointer = event.pointerId;
     lastClientX = event.clientX;
@@ -105,6 +215,11 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
   };
 
   const onPointerMove = (event: PointerEvent): void => {
+    const last = exploring.get(event.pointerId);
+    if (last) {
+      moveExplore(event, last);
+      return;
+    }
     if (event.pointerId !== draggingPointer) return;
     const dx = event.clientX - lastClientX;
     lastClientX = event.clientX;
@@ -119,7 +234,7 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
   };
 
   const endDrag = (event: PointerEvent): void => {
-    if (event.pointerId !== draggingPointer) return;
+    if (endExplore(event) || event.pointerId !== draggingPointer) return;
     draggingPointer = undefined;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
   };
@@ -225,7 +340,26 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
 
   const onBlur = (): void => {
     draggingPointer = undefined;
+    exploring.clear();
     abandonCharge();
+  };
+
+  const onWheel = (event: WheelEvent): void => {
+    if (!handlers.canExplore()) return;
+    event.preventDefault();
+    const scale = event.deltaMode === 1 ? WHEEL_LINE_PX : event.deltaMode === 2 ? WHEEL_PAGE_PX : 1;
+    handlers.onZoom(Math.exp(-event.deltaY * scale * WHEEL_ZOOM_PER_PIXEL));
+  };
+
+  // The right button slides the view after a shot, so its menu stays shut then.
+  const onContextMenu = (event: MouseEvent): void => {
+    if (handlers.canExplore()) event.preventDefault();
+  };
+
+  const onClick = (event: MouseEvent): void => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    event.stopImmediatePropagation();
   };
 
   const onPointerCancel = (event: PointerEvent): void => {
@@ -240,6 +374,10 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
   canvas.addEventListener('keydown', onKeyDown);
   canvas.addEventListener('keyup', onKeyUp);
   canvas.addEventListener('blur', onBlur);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('contextmenu', onContextMenu);
+  // Capture, so it runs before the click handlers the game puts on the canvas.
+  canvas.addEventListener('click', onClick, true);
 
   return () => {
     canvas.removeEventListener('pointerdown', onPointerDown);
@@ -249,6 +387,9 @@ export function attachInput(canvas: HTMLCanvasElement, handlers: InputHandlers):
     canvas.removeEventListener('keydown', onKeyDown);
     canvas.removeEventListener('keyup', onKeyUp);
     canvas.removeEventListener('blur', onBlur);
+    canvas.removeEventListener('wheel', onWheel);
+    canvas.removeEventListener('contextmenu', onContextMenu);
+    canvas.removeEventListener('click', onClick, true);
   };
 }
 
