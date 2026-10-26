@@ -307,6 +307,59 @@ check(
   `hidden: ${hiddenUp.join()}; shown: ${shownUp.join()}`,
 );
 
+// After a shot the table can be looked round with the mouse too: a drag turns
+// the view about the cloth, the wheel zooms, a right-drag slides it, and V
+// puts it back. H and H again have already said how the panels are wanted in
+// this review, so looking round leaves them up.
+{
+  await page.evaluate(() => window.__debug.setView('behind'));
+  await sleep(150);
+  const box = await page.locator('#game').boundingBox();
+  const at = { x: box.x + box.width / 2, y: box.y + box.height * 0.45 };
+  const onCloth = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.id, at);
+  const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  const before = await state();
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 80, at.y, { steps: 8 });
+  await page.mouse.up();
+  await sleep(150);
+  const turned = await state();
+  check(
+    'after a shot, a mouse drag on the table turns the view by hand and leaves the aim alone',
+    onCloth === 'game' && turned.free && apart(turned.camera, before.camera) > 0.05 && turned.aimAngle === before.aimAngle,
+    `on ${onCloth}, free=${turned.free}, moved ${apart(turned.camera, before.camera).toFixed(3)} m`,
+  );
+  check(
+    'with Hide and Show already pressed for this shot, looking round leaves the panels up',
+    !turned.bare && (await panelsUp(page)).includes('hud-report'),
+    `bare=${turned.bare}`,
+  );
+  await page.mouse.wheel(0, 300);
+  await sleep(200);
+  const wheeled = await state();
+  check(
+    'the wheel takes the free camera further off',
+    wheeled.orbit.distance > turned.orbit.distance * 1.3,
+    `${turned.orbit.distance.toFixed(2)} m to ${wheeled.orbit.distance.toFixed(2)} m`,
+  );
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(at.x - 80, at.y + 40, { steps: 8 });
+  await page.mouse.up({ button: 'right' });
+  await sleep(150);
+  const slid = await state();
+  check(
+    'a right-drag slides the view along the table without turning or zooming it',
+    apart(slid.orbit.pivot, wheeled.orbit.pivot) > 0.05 && Math.abs(slid.orbit.distance - wheeled.orbit.distance) < 1e-6,
+    `pivot moved ${apart(slid.orbit.pivot, wheeled.orbit.pivot).toFixed(3)} m`,
+  );
+  await page.keyboard.press('KeyV');
+  await sleep(200);
+  const back = await state();
+  check('V puts the free camera back in the view it left', !back.free && back.view === 'behind', `free=${back.free} view=${back.view}`);
+}
+
 await page.evaluate(() => window.__debug.retry());
 const retried = await state();
 check('a retry starts off the ideal line too', offIdeal(retried) >= 3, `${offIdeal(retried).toFixed(2)} deg off`);
@@ -2289,6 +2342,188 @@ for (const [name, viewport] of [
       (await phone.locator('#hud-status').isVisible()) && (await hide.count()) === 0,
     JSON.stringify(dealt),
   );
+
+  // After a shot the table can be looked round by hand, with real touches:
+  // one finger turns the view about the cloth, two pinch and slide it, and the
+  // first drag puts the panels away as Hide does. The earlier checks left the
+  // view overhead, from where a drag down has nowhere higher to go.
+  await phone.evaluate(() => window.__debug.setView('behind'));
+  /** A shot played to its report, past the self-estimate if it asks: looking round waits for the lines. */
+  const reviewed = async () => {
+    await playDealt(phone);
+    if ((await phoneState()).estimate?.asking) {
+      await phone.evaluate(() => window.__debug.estimate(null));
+      await sleep(150);
+    }
+  };
+  await reviewed();
+  /** Each frame lists every finger down, by id; a finger missing from the next frame has lifted. */
+  const gesture = async (frames) => {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: frames[0] });
+    for (const frame of frames.slice(1)) {
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: frame });
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await sleep(150);
+  };
+  /** Fingers moved in steps from where they are in `from` to where they are in `to`. */
+  const glide = (from, to, steps = 8) =>
+    Array.from({ length: steps + 1 }, (_, i) =>
+      from.map((f, k) => ({ id: k + 1, x: f.x + ((to[k].x - f.x) * i) / steps, y: f.y + ((to[k].y - f.y) * i) / steps })),
+    );
+  const middle = { x: viewport.width / 2, y: viewport.height / 2 };
+  const shift = (p, dx, dy) => ({ x: p.x + dx, y: p.y + dy });
+  const apart = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  const onCloth = await phone.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.id, middle);
+  const viewChip = phone.locator('.hud-chip[data-action="view"]');
+  const looked = await phoneState();
+  await gesture([[{ id: 1, ...middle }]]);
+  const afterTap = await phoneState();
+  check(
+    `phone, ${name}: after a shot, a tap on the table leaves the camera and the panels as they are`,
+    onCloth === 'game' && !looked.estimate?.asking && !afterTap.free && !afterTap.bare,
+    JSON.stringify({ onCloth, phase: afterTap.phase, free: afterTap.free, bare: afterTap.bare }),
+  );
+  await gesture(glide([middle], [shift(middle, 60, 0)]));
+  const turned = await phoneState();
+  const turnedUp = await panelsUp(phone);
+  const freeChipsOff = await offScreen(['retry', 'next', 'view', 'hide', 'levels']);
+  check(
+    `phone, ${name}: a drag on the table turns the view by hand and puts every panel but the toolbar away`,
+    turned.free && apart(turned.camera, looked.camera) > 0.05 && turned.aimAngle === looked.aimAngle &&
+      turned.bare && turnedUp.join() === 'hud-toolbar',
+    `free=${turned.free} moved ${apart(turned.camera, looked.camera).toFixed(3)} m, up: ${turnedUp.join()}`,
+  );
+  check(
+    `phone, ${name}: the view chip reads Free, and the chips from Retry to Levels stay on screen`,
+    (await viewChip.textContent()).trim().startsWith('Free') && freeChipsOff.length === 0,
+    `${(await viewChip.textContent()).trim()}; off: ${freeChipsOff.join()}`,
+  );
+  await phone.screenshot({ path: `${OUT}phone-${name}-free.png` });
+
+  if (name === 's24-vivaldi') {
+    await gesture(glide([middle], [shift(middle, 0, 50)]));
+    const raised = await phoneState();
+    check(
+      `phone, ${name}: a drag down lifts the camera`,
+      raised.camera.y > turned.camera.y + 0.05,
+      `${turned.camera.y.toFixed(3)} m to ${raised.camera.y.toFixed(3)} m`,
+    );
+    await phone.screenshot({ path: `${OUT}phone-${name}-free-above.png` });
+    await gesture(glide([shift(middle, -40, 0), shift(middle, 40, 0)], [shift(middle, -90, 0), shift(middle, 90, 0)]));
+    const pinched = await phoneState();
+    check(
+      `phone, ${name}: two fingers spread bring the camera closer`,
+      pinched.orbit.distance < raised.orbit.distance / 1.8,
+      `${raised.orbit.distance.toFixed(2)} m to ${pinched.orbit.distance.toFixed(2)} m`,
+    );
+    await gesture(glide([shift(middle, -40, 0), shift(middle, 40, 0)], [shift(middle, 10, 30), shift(middle, 90, 30)]));
+    const slid = await phoneState();
+    check(
+      `phone, ${name}: two fingers moved together slide the view along the table, and zoom nothing`,
+      apart(slid.orbit.pivot, pinched.orbit.pivot) > 0.02 && Math.abs(slid.orbit.distance / pinched.orbit.distance - 1) < 0.01,
+      `pivot moved ${apart(slid.orbit.pivot, pinched.orbit.pivot).toFixed(3)} m, distance ${pinched.orbit.distance.toFixed(3)} to ${slid.orbit.distance.toFixed(3)}`,
+    );
+    // Low across the cloth, for the eye.
+    await gesture(glide([middle], [shift(middle, 0, -200)]));
+    await phone.screenshot({ path: `${OUT}phone-${name}-free-low.png` });
+    // Far out and back in: the camera keeps inside the walls and above the
+    // rails, and answers the moment the pinch turns.
+    for (let i = 0; i < 4; i += 1) {
+      await gesture(glide([shift(middle, -120, 0), shift(middle, 120, 0)], [shift(middle, -10, 0), shift(middle, 10, 0)]));
+    }
+    const far = await phoneState();
+    await gesture(glide([shift(middle, -20, 0), shift(middle, 20, 0)], [shift(middle, -40, 0), shift(middle, 40, 0)]));
+    const back = await phoneState();
+    for (let i = 0; i < 6; i += 1) {
+      await gesture(glide([shift(middle, -10, 0), shift(middle, 10, 0)], [shift(middle, -150, 0), shift(middle, 150, 0)]));
+    }
+    const near = await phoneState();
+    const inside = (s) => Math.abs(s.camera.x) <= s.room.walls.x - 0.3 + 1e-6 && Math.abs(s.camera.z) <= s.room.walls.z - 0.3 + 1e-6;
+    check(
+      `phone, ${name}: however far it is pinched, the camera keeps inside the walls, above the rails and off the pivot`,
+      inside(far) && back.orbit.distance < far.orbit.distance / 1.5 && near.orbit.distance >= 0.2 - 1e-6 && near.camera.y >= 0.1 - 1e-6,
+      `far ${far.orbit.distance.toFixed(2)} m at (${far.camera.x.toFixed(2)}, ${far.camera.z.toFixed(2)}), back ${back.orbit.distance.toFixed(2)} m, near ${near.orbit.distance.toFixed(2)} m at ${near.camera.y.toFixed(3)} m high`,
+    );
+
+    const hideChip = phone.locator('.hud-chip[data-action="hide"]');
+    await hideChip.tap();
+    await sleep(150);
+    await gesture(glide([middle], [shift(middle, -40, 0)]));
+    const shown = await phoneState();
+    check(
+      `phone, ${name}: once Show brings the panels back, looking round leaves them up`,
+      shown.free && !shown.bare && (await phone.locator('#hud-report').isVisible()),
+      JSON.stringify({ free: shown.free, bare: shown.bare }),
+    );
+    await viewChip.tap();
+    await sleep(200);
+    const put = await phoneState();
+    check(
+      `phone, ${name}: the view chip puts the camera back in the view it left`,
+      !put.free && put.view === 'behind' && (await viewChip.textContent()).trim().startsWith('Behind'),
+      `free=${put.free} view=${put.view}`,
+    );
+
+    // A replay plays from where the camera has been put, and leaves it there.
+    await gesture(glide([middle], [shift(middle, 50, 20)]));
+    await phone.evaluate(() => window.__debug.replay());
+    await sleep(300);
+    const replaying = await phoneState();
+    await phone.focus('#game');
+    await phone.keyboard.press('Escape');
+    await sleep(700);
+    const replayed = await phoneState();
+    check(
+      `phone, ${name}: a replay plays from the free camera and leaves it free`,
+      replaying.replaying && replaying.free && !replayed.replaying && replayed.free && replayed.view === 'behind',
+      JSON.stringify({ replaying: replaying.replaying, during: replaying.free, after: replayed.free, view: replayed.view }),
+    );
+    await phone.locator('.hud-chip[data-action="next"]').tap();
+    await sleep(300);
+    const next = await phoneState();
+    check(
+      `phone, ${name}: the next shot deals in the view the camera left, with the panels up`,
+      next.phase === 'aiming' && !next.free && !next.bare && next.view === 'behind',
+      JSON.stringify({ phase: next.phase, free: next.free, bare: next.bare, view: next.view }),
+    );
+
+    // While aiming, a drag still aims.
+    await gesture(glide([middle], [shift(middle, 40, 0)]));
+    const aimed = await phoneState();
+    check(
+      `phone, ${name}: while aiming, a drag on the table still aims and leaves the camera alone`,
+      !aimed.free && Math.abs(aimed.aimAngle - next.aimAngle) > 0.01,
+      `aim moved ${(((aimed.aimAngle - next.aimAngle) * 180) / Math.PI).toFixed(2)} deg, free=${aimed.free}`,
+    );
+
+    // The next review starts afresh, and looking round holds the next shot
+    // back. A retry, so no tier or level ends on it and puts a card up.
+    await phone.evaluate(() => window.__debug.retry());
+    await sleep(150);
+    await reviewed();
+    await phone.evaluate(() => window.__debug.toggleAutoNext());
+    await sleep(150);
+    const counting = await phoneState();
+    await gesture(glide([middle], [shift(middle, 50, 0)]));
+    const held = await phoneState();
+    check(
+      `phone, ${name}: in the next review a drag puts the panels away again, and stops the next shot dealing itself`,
+      counting.autoNextIn !== null && held.bare && held.autoNextIn === null,
+      JSON.stringify({ counting: counting.autoNextIn, bare: held.bare, after: held.autoNextIn, milestone: held.milestone?.kind ?? null }),
+    );
+    await sleep(3500);
+    const waited = await phoneState();
+    check(
+      `phone, ${name}: three and a half seconds on, the shot is still there to look at`,
+      waited.shotId === held.shotId && waited.phase === 'evaluated' && waited.free,
+      JSON.stringify({ before: held.shotId, after: waited.shotId, phase: waited.phase }),
+    );
+    await phone.evaluate(() => window.__debug.toggleAutoNext());
+    await sleep(150);
+  }
+  await phone.locator('.hud-chip[data-action="next"]').tap();
+  await sleep(300);
 
   // Where the shot panel grows, the strip starts below it, the fraction to
   // call stands beside the table, and nothing sits on anything else.
